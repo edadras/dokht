@@ -181,6 +181,95 @@ class FitAnalysisTest extends TestCase
         $this->assertSame($card, $project->fresh()->scorecard);
     }
 
+    public function test_the_garment_girth_is_measured_from_the_pieces_markers(): void
+    {
+        // الگویی که آزادی ثبت‌شده‌اش صفر است، ولی نشانه‌های قطعه‌ها لباس بزرگ‌تری می‌گویند
+        $pattern = Pattern::factory()->create([
+            'workshop_id' => $this->workshop()->id,
+            'measurements' => Measurements::fromSize('40'),
+            'ease' => ['bust' => 0, 'bicep' => 0],
+        ]);
+
+        $rectangle = fn (float $width, float $height) => [
+            ['x' => 0, 'y' => 0], ['x' => $width, 'y' => 0],
+            ['x' => $width, 'y' => $height], ['x' => 0, 'y' => $height],
+        ];
+
+        // جلو و پشت، هر کدام روی دو لا: ۲۵ × ۲ × ۲ = ۱۰۰ سانتی‌متر دور سینه
+        foreach ([['front', 'بالاتنه جلو'], ['back', 'بالاتنه پشت']] as [$code, $name]) {
+            $pattern->pieces()->create([
+                'code' => $code,
+                'name' => $name,
+                'layer' => 'outer',
+                'cut_quantity' => 1,
+                'on_fold' => true,
+                'outline' => $rectangle(25, 60),
+                'markers' => [
+                    ['key' => 'bust', 'from' => ['x' => 0, 'y' => 20], 'to' => ['x' => 25, 'y' => 20]],
+                ],
+            ]);
+        }
+
+        // آستین چپ و راست: هر آستین خودش یک دور کامل بازو است، پس دو برابر نمی‌شود
+        $pattern->pieces()->create([
+            'code' => 'sleeve',
+            'name' => 'آستین',
+            'layer' => 'outer',
+            'cut_quantity' => 2,
+            'mirror' => true,
+            'outline' => $rectangle(34, 55),
+            'markers' => [['key' => 'bicep', 'y' => 6]],
+        ]);
+
+        $analysis = $this->service->analyze($pattern, $this->fabric(), Measurements::fromSize('40'));
+
+        $bust = $this->zone($analysis, 'bust');
+        $bicep = $this->zone($analysis, 'bicep');
+
+        $this->assertSame(100.0, $bust['garment_cm'], 'دور سینه باید از نشانه‌های قطعه‌ها بیاید.');
+        $this->assertSame(8.0, $bust['ease_cm']);
+        $this->assertSame('good', $bust['level']);
+
+        $this->assertSame(34.0, $bicep['garment_cm'], 'یک آستین یک دور بازو است، نه دو تا.');
+    }
+
+    public function test_a_partly_marked_pattern_falls_back_to_the_recorded_measurements(): void
+    {
+        $pattern = Pattern::factory()->create([
+            'workshop_id' => $this->workshop()->id,
+            'measurements' => Measurements::fromSize('40'),
+            'ease' => ['bust' => 6],
+        ]);
+
+        // فقط قطعه‌ی پشت خط سینه دارد؛ جمع‌کردن آن دور را نصفه نشان می‌دهد
+        $pattern->pieces()->create([
+            'code' => 'back',
+            'name' => 'بالاتنه پشت',
+            'layer' => 'outer',
+            'cut_quantity' => 1,
+            'on_fold' => true,
+            'outline' => [['x' => 0, 'y' => 0], ['x' => 25, 'y' => 0], ['x' => 25, 'y' => 60], ['x' => 0, 'y' => 60]],
+            'markers' => [['key' => 'bust', 'from' => ['x' => 0, 'y' => 20], 'to' => ['x' => 25, 'y' => 20]]],
+        ]);
+
+        $pattern->pieces()->create([
+            'code' => 'front',
+            'name' => 'بالاتنه جلو',
+            'layer' => 'outer',
+            'cut_quantity' => 1,
+            'on_fold' => true,
+            'outline' => [['x' => 0, 'y' => 0], ['x' => 25, 'y' => 0], ['x' => 25, 'y' => 60], ['x' => 0, 'y' => 60]],
+        ]);
+
+        $bust = $this->zone(
+            $this->service->analyze($pattern, $this->fabric(), Measurements::fromSize('40')),
+            'bust',
+        );
+
+        $this->assertSame(98.0, $bust['garment_cm'], 'باید به اندازه‌های ثبت‌شده‌ی الگو برگردد.');
+        $this->assertSame('good', $bust['level']);
+    }
+
     public function test_a_sheer_fabric_adds_a_lining_warning(): void
     {
         $fabric = Fabric::factory()->for(FabricType::factory()->fluid())->create([

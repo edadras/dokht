@@ -315,11 +315,10 @@ class FitAnalysisService
         foreach ($relevant as $piece) {
             $marker = $this->markerFor($piece, $zone);
 
-            if ($marker === null) {
-                continue;
-            }
-
-            $width = $marker['width'] ?? $this->chordWidth($piece, $marker['y'] ?? null);
+            // پایین دامن معمولاً نشانه ندارد؛ همان لبه‌ی پایینی قطعه‌ی دامن را می‌گیریم
+            $width = $marker === null
+                ? ($zone === 'hem' && $this->role($piece) === 'skirt' ? $this->bottomWidth($piece) : null)
+                : ($marker['width'] ?? $this->chordWidth($piece, $marker['y'] ?? null));
 
             if ($width === null || $width <= 0) {
                 continue;
@@ -498,6 +497,19 @@ class FitAnalysisService
         }
 
         return null;
+    }
+
+    /** پهنای لبه‌ی پایینی قطعه (کمی بالاتر از پایین‌ترین نقطه تا گوشه‌ها حساب نشوند). */
+    protected function bottomWidth(PatternPiece $piece): ?float
+    {
+        [, , , $maxY] = $piece->bounds();
+        $height = $piece->height();
+
+        if ($height <= 0) {
+            return null;
+        }
+
+        return $this->chordWidth($piece, $maxY - min(1.0, $height * 0.03));
     }
 
     /** پهنای افقی قطعه در ارتفاع y (برخورد خط افقی با چندضلعی). */
