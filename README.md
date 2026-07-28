@@ -61,6 +61,17 @@ php artisan test
 
 هر «موتور» طرح اولیه در کد یک سرویس مستقل است:
 
+### اندازه کاتالوگ
+
+- **۱۰۵ مدل الگو** در پنج گروه: بالاتنه (۱۳)، آستین (۱۶)، دامن (۲۴)، پایین‌تنه (۱۹) و لباس کامل (۳۳)
+- **۷۳ سبک** که روی قطعه‌های آماده اجرا می‌شوند: خط یقه، یقه، آستین یک‌سره با بدنه،
+  چین و گشادی، لبه، جیب، بست و جزئیات
+- **۵۳ نوع لباس**، **۴۴ نوع پارچه** و **۲۹ قاعده طراحی** در بانک پایه
+
+افزودن مدل یا سبک تازه فقط ساختن یک فایل در `app/Services/Pattern/Generators/` یا
+`app/Services/Pattern/Style/` است؛ هر دو رجیستری با پویش پوشه کار می‌کنند و مدل تازه
+خودکار در استودیوی طراحی، کتابخانه و پنل مدیریت ظاهر می‌شود.
+
 | موتور | جای آن در کد |
 | --- | --- |
 | شناخت پارچه (Fabric Intelligence) | `App\Support\FabricProfile`، `App\Services\Fabric\FabricCompatibilityService` |
@@ -70,6 +81,10 @@ php artisan test
 | تست تناسب (Virtual Fitting) | `App\Services\Fit\FitAnalysisService` |
 | برش و چیدمان (Cutting) | `App\Services\Cutting\NestingService`، `LayoutRenderer` |
 | تولید (Production) | `App\Services\TechPack\TechPackBuilder`، `App\Services\Export\*` |
+| ترکیب و استودیوی طراحی | `App\Services\Pattern\PatternComposer` + `/compose` |
+| دگرگونی الگو (چرخاندن ساسون، برش و باز کردن) | `App\Services\Pattern\Transform\*` |
+| ساخت الگو از عکس و طرح دستی | `App\Services\Vision\*` + `/design-import` |
+| بازارچه الگو | `App\Services\Marketplace\*` + `/market` |
 
 ### مدل داده
 
@@ -121,8 +136,9 @@ Workshop ──┬── User (مدیر، طراح، خیاط، مشاهده‌�
 
 ## خروجی‌ها
 
-الگوی قابل چاپ با مقیاس ۱:۱، SVG، DXF، JSON، نقشه برش، برگه اندازه، صورت مواد، دستور دوخت و
-کارت فنی (Tech Pack) نسخه‌دار.
+الگوی قابل چاپ با مقیاس ۱:۱، **PDF برداری چندصفحه‌ای با متن فارسی**، PNG، SVG،
+DXF ساده و DXF صنعتی **AAMA/ASTM**، JSON، نقشه برش، برگه اندازه، صورت مواد،
+دستور دوخت و کارت فنی (Tech Pack) نسخه‌دار — همه در یک فایل زیپ.
 
 ## مجوز
 
