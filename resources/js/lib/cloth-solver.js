@@ -832,7 +832,6 @@ export class ClothPatch {
 
             if (square > motion) {
                 motion = square;
-                this.motionIndex = i;
             }
 
             velocity[at] = dx * inverse;

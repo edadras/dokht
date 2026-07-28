@@ -53,8 +53,18 @@
                             x-bind:class="showZones ? 'bg-brand-600 text-white' : 'bg-stone-800 text-stone-200'">
                             نقشه‌ی فشار
                         </button>
+                        <button type="button" @click="toggleLive()" class="rounded-lg px-3 py-1.5 text-xs"
+                            x-bind:class="liveSim ? 'bg-brand-600 text-white' : 'bg-stone-800 text-stone-200'">
+                            شبیه‌سازی زنده
+                        </button>
                     </div>
                 </div>
+
+                {{-- توضیح یک‌خطی: کاربر باید بداند چه چیزی را دارد می‌بیند --}}
+                <p class="mt-3 text-xs leading-6 text-stone-500">
+                    پارچه زنده حساب می‌شود: زیر وزن خودش می‌افتد و به بدن برخورد می‌کند، پس لباس هیچ‌جا داخل
+                    مانکن فرو نمی‌رود و افتادگی‌اش از مشخصات همین پارچه می‌آید.
+                </p>
             @else
                 <x-empty-state icon="cube" title="نمای سه‌بعدی برای این گزارش موجود نیست"
                     description="الگوی این شبیه‌سازی حذف شده است." />

@@ -59,11 +59,24 @@
                             نقشه‌ی فشار
                         </button>
 
+                        <button type="button" @click="toggleLive()"
+                            class="rounded-lg px-3 py-1.5 text-xs font-medium"
+                            x-bind:class="liveSim ? 'bg-brand-600 text-white' : 'bg-stone-800 text-stone-200 hover:bg-stone-700'">
+                            شبیه‌سازی زنده
+                        </button>
+
                         <span class="ms-auto text-[11px] text-stone-400">
                             با کشیدن ماوس بچرخانید، با غلتک بزرگ و کوچک کنید.
                         </span>
                     </div>
                 </div>
+
+                {{-- توضیح یک‌خطی: کاربر باید بداند چه چیزی را دارد می‌بیند --}}
+                <p class="mt-3 text-xs leading-6 text-stone-500">
+                    پارچه همین‌جا زنده حساب می‌شود: زیر وزن خودش می‌افتد، به بدن می‌خورد و با هر تغییر حالت
+                    چند لحظه طول می‌کشد تا دوباره بنشیند. پارچه‌ی لخت‌تر بیشتر چین می‌خورد و به بدن می‌چسبد،
+                    پارچه‌ی سفت‌تر فرم خودش را نگه می‌دارد.
+                </p>
 
                 {{-- راهنمای رنگ --}}
                 <div class="mt-4 flex flex-wrap gap-2">

@@ -1545,20 +1545,7 @@ export default (config = {}) => ({
         stats.sleeping = ctx.world.sleeping;
         stats.energy = ctx.world.energy;
         stats.drift = ctx.world.drift;
-        stats.hot = ctx.cloth.map((item) => {
-            const p = item.patch;
-            let lo = 1e9, hi = -1e9, rlo = 1e9, rhi = -1e9;
-            for (let i = 0; i < p.count; i++) {
-                const y = p.positions[i * 3 + 1];
-                if (y < lo) lo = y;
-                if (y > hi) hi = y;
-            }
-            for (let r = 0; r < p.rows; r++) {
-                const y = p.positions[(r * p.segments) * 3 + 1];
-                if (y < rlo) rlo = y; if (y > rhi) rhi = y;
-            }
-            return [p.rows, p.segments, Math.round(lo * 1000), Math.round(hi * 1000), Math.round(rlo * 1000), Math.round(rhi * 1000)];
-        });
+        stats.pieces = ctx.cloth.length;
     },
 
     /* ------------------------------------------------------------------
