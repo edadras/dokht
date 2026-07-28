@@ -1,0 +1,101 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+@font-face {
+    font-family: 'Vazirmatn';
+    src: url('/fonts/vazirmatn-variable.woff2') format('woff2 supports variations'),
+        url('/fonts/vazirmatn-variable.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+@theme {
+    --font-sans: 'Vazirmatn', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+
+    /* رنگ اصلی: نیلی گرم */
+    --color-brand-50: #f5f3ff;
+    --color-brand-100: #ede9fe;
+    --color-brand-200: #ddd6fe;
+    --color-brand-300: #c4b5fd;
+    --color-brand-400: #a78bfa;
+    --color-brand-500: #8b5cf6;
+    --color-brand-600: #7c4ddb;
+    --color-brand-700: #6a3cc0;
+    --color-brand-800: #55309b;
+    --color-brand-900: #43277a;
+
+    /* رنگ مکمل برای بخش پارچه */
+    --color-clay-50: #fdf5f3;
+    --color-clay-100: #fbe8e4;
+    --color-clay-200: #f7d2ca;
+    --color-clay-300: #efb0a3;
+    --color-clay-400: #e4826e;
+    --color-clay-500: #d4573e;
+    --color-clay-600: #bf4029;
+    --color-clay-700: #9f3222;
+}
+
+@layer base {
+    body {
+        @apply bg-stone-50 font-sans text-stone-800 antialiased;
+    }
+
+    /* اعداد داخل ورودی‌ها لاتین و راست‌چین می‌مانند تا خوانا باشند */
+    input[type='number'] {
+        direction: ltr;
+        text-align: right;
+        -moz-appearance: textfield;
+        appearance: textfield;
+    }
+
+    input[type='number']::-webkit-outer-spin-button,
+    input[type='number']::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+
+    [x-cloak] {
+        display: none !important;
+    }
+
+    ::selection {
+        @apply bg-brand-200 text-brand-900;
+    }
+}
+
+@utility thin-scroll {
+    &::-webkit-scrollbar {
+        height: 8px;
+        width: 8px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        @apply rounded-full bg-stone-300;
+    }
+
+    &::-webkit-scrollbar-track {
+        @apply bg-transparent;
+    }
+}
+
+/* چاپ: کارت فنی و الگو باید تمیز و با مقیاس درست چاپ شوند */
+@media print {
+    .no-print {
+        display: none !important;
+    }
+
+    body {
+        background: #fff;
+    }
+
+    .print-page {
+        break-after: page;
+    }
+
+    @page {
+        margin: 12mm;
+    }
+}
