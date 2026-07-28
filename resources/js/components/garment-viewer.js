@@ -229,6 +229,15 @@ export default (config = {}) => ({
 
         this.addLights();
         this.buildModel();
+
+        /*
+         * مدل در حالت خنثی ساخته می‌شود ولی «ایستاده» یعنی دست‌ها هشت درجه از تن
+         * فاصله دارند. پیش از تحویل لباس به حل‌کننده باید بدن دقیقاً در همین حالت
+         * پایه باشد، وگرنه سرِ آستین یک تکان اولیه می‌خورد.
+         */
+        ctx.poseNow = this.poseAngles('stand');
+        this.writePose(ctx.poseNow);
+
         this.buildCloth();
         this.applyPose(this.pose);
         this.updateCamera();
@@ -1013,6 +1022,14 @@ export default (config = {}) => ({
         this.buildColliders();
         ctx.world.setColliders(ctx.colliders.map((entry) => entry.collider));
         this.refreshColliders();
+
+        // چند گام پیش از اولین رندر تا صفحه با لباسِ نشسته باز شود
+        ctx.world.presettle();
+
+        ctx.cloth.forEach((item) => {
+            item.geometry.attributes.position.needsUpdate = true;
+            item.geometry.computeVertexNormals();
+        });
     },
 
     /*
