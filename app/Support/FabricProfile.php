@@ -103,8 +103,8 @@ class FabricProfile implements Arrayable
 
             $out[$key] = match ($def['type']) {
                 'bool' => (bool) filter_var($value, FILTER_VALIDATE_BOOLEAN),
-                'ratio' => max(0, min(1, (float) $value)),
-                'percent', 'number' => max($def['min'] ?? 0, min($def['max'] ?? 1000, (float) $value)),
+                'ratio' => (float) max(0, min(1, (float) $value)),
+                'percent', 'number' => (float) max($def['min'] ?? 0, min($def['max'] ?? 1000, (float) $value)),
                 'option' => isset($def['options'][$value]) ? $value : $def['default'],
                 default => $value,
             };

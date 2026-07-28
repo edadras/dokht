@@ -1,58 +1,129 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# دوخت — سامانه کارگاه خیاطی
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+سامانه‌ای برای کارگاه‌های خیاطی: هر کسی ثبت‌نام می‌کند، کارگاه خودش را دارد و از ثبت اندازه مشتری
+تا انتخاب پارچه، ساخت الگو، تست سه‌بعدی لباس، چیدمان برش و کارت فنی، همه کار را در یک جا انجام می‌دهد.
 
-## About Laravel
+بر پایه **Laravel 13 / PHP 8.4 / MySQL** با رابط فارسی راست‌به‌چپ.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## اصل طراحی: ساده بمان
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+بنیادی‌ترین قاعده این پروژه این است که کاربر ساده نباید درگیر ده‌ها فیلد و فرم شود:
 
-## Learning Laravel
+- **ثبت‌نام** فقط چند فیلد دارد و کارگاه شخصی کاربر همان لحظه ساخته می‌شود.
+- **اندازه‌گیری** با شش عدد انجام می‌شود (قد، دور سینه، دور کمر، دور باسن، عرض سرشانه، قد آستین) و
+  بقیه اندازه‌ها به‌صورت خودکار تخمین زده می‌شوند (`App\Support\Measurements::complete()`).
+- **افزودن پارچه** با انتخاب یک پارچه از بانک پایه انجام می‌شود؛ شناسنامه فیزیکی کامل از همان نوع
+  پارچه به ارث می‌رسد و در صورت نیاز قابل بازنویسی است.
+- هر تنظیم حرفه‌ای پشت یک بخش بازشو (`<x-advanced-section>`) با مقدار پیش‌فرض درست قرار دارد.
+- کار روی هر لباس در قالب **پروژه** و در ۱۱ گام پیش می‌رود؛ در هر گام یک پرسش ساده پرسیده می‌شود.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+---
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## راه‌اندازی
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+نیازمندی‌ها: PHP ۸.۳ یا بالاتر، Composer، MySQL/MariaDB، Node.js ۲۰ یا بالاتر.
 
 ```bash
-composer require laravel/boost --dev
+git clone <repo> dokht && cd dokht
+composer install
+cp .env.example .env
+php artisan key:generate
 
-php artisan boost:install
+# ساخت دیتابیس
+mysql -u root -e "CREATE DATABASE dokht CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+# سپس در .env مقادیر DB_DATABASE / DB_USERNAME / DB_PASSWORD را تنظیم کنید
+
+php artisan migrate --seed        # جدول‌ها + بانک پارچه، انواع لباس، الگوهای پایه، قواعد و آموزش
+php artisan storage:link          # برای نمایش تصویر پارچه و نشان کارگاه
+
+npm install
+npm run build                     # یا npm run dev در حین توسعه
+
+php artisan serve
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+`php artisan migrate --seed` در محیط توسعه یک کارگاه نمونه با مشتری، پارچه، الگو، پروژه و سفارش
+هم می‌سازد (`DemoWorkshopSeeder`) تا بدون ورود داده بتوانید همه بخش‌ها را ببینید.
 
-## Contributing
+### آزمون‌ها
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+```bash
+php artisan test
+```
 
-## Code of Conduct
+آزمون‌ها روی SQLite در حافظه اجرا می‌شوند (`phpunit.xml`) و به دیتابیس MySQL دست نمی‌زنند.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+---
 
-## Security Vulnerabilities
+## ساختار سامانه
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+هر «موتور» طرح اولیه در کد یک سرویس مستقل است:
 
-## License
+| موتور | جای آن در کد |
+| --- | --- |
+| شناخت پارچه (Fabric Intelligence) | `App\Support\FabricProfile`، `App\Services\Fabric\FabricCompatibilityService` |
+| موتور قواعد (Rule Engine) | `App\Services\Rules\RuleEngine` + جدول `design_rules` |
+| الگوسازی (Pattern CAD) | `App\Services\Pattern\*` (سازنده‌های پارامتریک، جای دوخت، سایزبندی، رندر SVG، خروجی DXF) |
+| لباس سه‌بعدی و شبیه‌سازی پارچه | `App\Services\Simulation\ClothPreviewService` + `resources/js/components/garment-viewer.js` |
+| تست تناسب (Virtual Fitting) | `App\Services\Fit\FitAnalysisService` |
+| برش و چیدمان (Cutting) | `App\Services\Cutting\NestingService`، `LayoutRenderer` |
+| تولید (Production) | `App\Services\TechPack\TechPackBuilder`، `App\Services\Export\*` |
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### مدل داده
+
+```
+Workshop ──┬── User (مدیر، طراح، خیاط، مشاهده‌گر)
+           ├── Customer ── MeasurementSet (دفترچه اندازه، تاریخ‌دار)
+           ├── Fabric ── FabricType (بانک پایه پارچه با شناسنامه فیزیکی)
+           ├── Material (نخ، دکمه، زیپ، لایی، آستر)
+           ├── Pattern ── PatternPiece / PatternVersion
+           ├── Project ── Simulation / CuttingLayout / TechPack
+           └── Order ── OrderItem / Payment
+```
+
+داده‌های سراسری (بانک پارچه، انواع لباس، الگوهای پایه، قواعد، آموزش) بین همه کارگاه‌ها مشترک‌اند و
+از پنل مدیریت سامانه اداره می‌شوند.
+
+### جداسازی کارگاه‌ها
+
+هر مدل کارگاهی از `App\Models\Concerns\BelongsToWorkshop` استفاده می‌کند:
+
+- `workshop_id` هنگام ساخت به‌طور خودکار از کارگاه فعال پر می‌شود،
+- یک اسکوپ سراسری همه پرس‌وجوها را به همان کارگاه محدود می‌کند،
+- کارگاه فعال در `App\Support\WorkshopContext` نگه داشته و با میان‌افزار `workshop` تعیین می‌شود،
+- برای گزارش‌های سراسری از `->acrossWorkshops()` استفاده می‌شود.
+
+بنابراین هیچ کاربری داده کارگاه دیگر را نمی‌بیند، حتی اگر شناسه را دستی در نشانی وارد کند.
+
+### واحدها و قراردادها
+
+- همه اندازه‌ها **سانتی‌متر** است؛ مبدأ هر قطعه الگو گوشه بالای خودش، `x` به راست و `y` به پایین.
+- `PatternPiece::outline` یک چندضلعی بسته از نقاط `{x, y}` است؛ نقطه‌ای با `curve: true` و نقطه کنترل
+  `{cx, cy}` یعنی منحنی درجه‌دو تا آن نقطه.
+- شناسنامه پارچه فقط از کلیدهای `FabricProfile::SCHEMA` استفاده می‌کند و
+  `FabricProfile::physics()` آن را به پارامترهای موتور شبیه‌سازی تبدیل می‌کند.
+- تاریخ‌ها در دیتابیس میلادی ذخیره و در نمایش با `App\Support\Jalali` شمسی می‌شوند؛
+  ورودی کاربر با `Jalali::parseJalali()` خوانده و اعداد فارسی با `Jalali::latinDigits()` نرمال می‌شود.
+
+---
+
+## نقش‌ها
+
+| نقش | دسترسی |
+| --- | --- |
+| مدیر کارگاه | همه چیز، شامل تنظیمات و مدیریت اعضا |
+| طراح و الگوساز | مشتری، پارچه، الگو، پروژه |
+| خیاط | مشتری، سفارش، مشاهده الگو |
+| فقط مشاهده | خواندن |
+| مدیر سامانه (`is_admin`) | بانک پارچه، انواع لباس، الگوهای پایه و آموزش سراسری |
+
+## خروجی‌ها
+
+الگوی قابل چاپ با مقیاس ۱:۱، SVG، DXF، JSON، نقشه برش، برگه اندازه، صورت مواد، دستور دوخت و
+کارت فنی (Tech Pack) نسخه‌دار.
+
+## مجوز
+
+بر پایه فریم‌ورک Laravel که با مجوز [MIT](https://opensource.org/licenses/MIT) منتشر شده است.
