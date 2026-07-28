@@ -238,7 +238,12 @@ export class ClothPatch {
         this.pinRest = new Float32Array(pins.length * 3);
 
         this.groups = this.buildConstraints();
-        this.constraintCount = this.groups.reduce((sum, group) => sum + group.rest.length, 0);
+        this.buildTethers();
+        this.constraintCount =
+            this.groups.reduce((sum, group) => sum + group.rest.length, 0) + this.tetherMax.length;
+
+        // عکس مرجع برای تشخیص نشستن پارچه
+        this.snapshot = new Float32Array(positions);
         this.motion = 0;
     }
 
@@ -299,7 +304,6 @@ export class ClothPatch {
                 }
 
                 if (row + 1 < rows) {
-                    warp.push(here, at(row + 1, col));
                     shear.push(here, at(row + 1, col + 1));
                     shear.push(at(row, col + 1), at(row + 1, col));
                 }
@@ -310,13 +314,106 @@ export class ClothPatch {
             }
         }
 
-        make(weft, fabric.weft);
+        /*
+         * قیدهای عمودی از بالا به پایین ساخته می‌شوند، نه برعکس.
+         *
+         * حل گاوس-زایدل هر قید را به ترتیب اصلاح می‌کند؛ اگر از لبه‌ی پایین شروع
+         * کنیم، کشش درزها باید چند تکرار بالا برود تا به سرشانه برسد و لباس تا
+         * آن موقع کِش آمده است. با شروع از سرشانه، همان یک تکرار اول کشش را تا
+         * لبه می‌رساند و پارچه دیگر زیر وزن خودش «تلمبه» نمی‌زند.
+         */
+        for (let row = rows - 2; row >= 0; row--) {
+            for (let col = 0; col < segments; col++) {
+                warp.push(at(row + 1, col), at(row, col));
+            }
+        }
+
         make(warp, fabric.warp);
+        make(weft, fabric.weft);
         make(shear, fabric.shear);
         make(bendWarp, fabric.bend);
         make(bendWeft, fabric.bend);
 
         return groups;
+    }
+
+    /*
+     * «مهار بلند»: از هر رأس یک قید مستقیم به نزدیک‌ترین رأس دوخته‌شده‌ی همان
+     * ستون، با بیشترین طول ممکنِ همان مسیر.
+     *
+     * چرا لازم است؟ چون زنجیره‌ی درزها با دو سه تکرار هیچ‌وقت کامل حل نمی‌شود و
+     * دامنِ بلند زیر وزن خودش کِش می‌آید و بالا و پایین می‌رود. این قید فقط یک
+     * سقف است — اگر رأس از سرشانه دورتر از طول پارچه شد، همان‌جا برمی‌گردد — و
+     * چون سرِ دیگرش بی‌حرکت است، با یک تکرار حل می‌شود.
+     *
+     * طول مسیر از جمع طول درزهای همان ستون گرفته می‌شود؛ این عدد از فاصله‌ی
+     * واقعی روی پارچه بیشتر است، پس قید هیچ‌وقت لباس را بی‌جا تنگ نمی‌کند.
+     */
+    buildTethers() {
+        const { rows, segments, positions, invMass, fabric } = this;
+        const stretch = fabric.warp.maxScale;
+        const index = [];
+        const anchor = [];
+        const max = [];
+
+        const length = (a, b) => {
+            const dx = positions[a * 3] - positions[b * 3];
+            const dy = positions[a * 3 + 1] - positions[b * 3 + 1];
+            const dz = positions[a * 3 + 2] - positions[b * 3 + 2];
+
+            return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        };
+
+        const distance = new Float32Array(rows);
+        const owner = new Int32Array(rows);
+
+        for (let col = 0; col < segments; col++) {
+            distance.fill(Infinity);
+            owner.fill(-1);
+
+            for (let row = 0; row < rows; row++) {
+                const here = row * segments + col;
+
+                if (invMass[here] === 0) {
+                    distance[row] = 0;
+                    owner[row] = here;
+                } else if (row > 0 && owner[row - 1] >= 0) {
+                    distance[row] = distance[row - 1] + length(here, here - segments);
+                    owner[row] = owner[row - 1];
+                }
+            }
+
+            for (let row = rows - 2; row >= 0; row--) {
+                const here = row * segments + col;
+
+                if (owner[row + 1] < 0) {
+                    continue;
+                }
+
+                const candidate = distance[row + 1] + length(here, here + segments);
+
+                if (candidate < distance[row]) {
+                    distance[row] = candidate;
+                    owner[row] = owner[row + 1];
+                }
+            }
+
+            for (let row = 0; row < rows; row++) {
+                const here = row * segments + col;
+
+                if (owner[row] < 0 || owner[row] === here || invMass[here] === 0) {
+                    continue;
+                }
+
+                index.push(here);
+                anchor.push(owner[row]);
+                max.push(distance[row] * stretch);
+            }
+        }
+
+        this.tetherIndex = new Uint32Array(index);
+        this.tetherAnchor = new Uint32Array(anchor);
+        this.tetherMax = new Float32Array(max);
     }
 
     /*
@@ -407,6 +504,8 @@ export class ClothPatch {
     project() {
         const { positions, invMass, groups } = this;
 
+        this.projectTethers();
+
         for (let g = 0; g < groups.length; g++) {
             const group = groups[g];
             const { a, b, rest, softness, maxScale, minScale } = group;
@@ -471,6 +570,30 @@ export class ClothPatch {
         }
     }
 
+    /* سقف فاصله تا رأس دوخته‌شده؛ یک‌طرفه است و فقط وقتی پارچه دور شده کار می‌کند */
+    projectTethers() {
+        const { positions, tetherIndex, tetherAnchor, tetherMax } = this;
+
+        for (let i = 0; i < tetherMax.length; i++) {
+            const here = tetherIndex[i] * 3;
+            const to = tetherAnchor[i] * 3;
+            const dx = positions[here] - positions[to];
+            const dy = positions[here + 1] - positions[to + 1];
+            const dz = positions[here + 2] - positions[to + 2];
+            const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+            if (length <= tetherMax[i] || length < 1e-9) {
+                continue;
+            }
+
+            const scale = tetherMax[i] / length;
+
+            positions[here] = positions[to] + dx * scale;
+            positions[here + 1] = positions[to + 1] + dy * scale;
+            positions[here + 2] = positions[to + 2] + dz * scale;
+        }
+    }
+
     /*
      * گام ۳ — برخورد با بدن.
      *
@@ -478,11 +601,19 @@ export class ClothPatch {
      * به‌اضافه‌ی یک فاصله‌ی پوستی گذاشته می‌شود. اصلاح «سخت» است، نه فنری؛
      * چون قرار است هیچ‌وقت ران از دامن بیرون نزند، نه اینکه کمتر بزند.
      *
-     * اصطکاک: حرکت مماس بر سطحِ همان گام کم می‌شود، پس پارچه روی پوست ترمز
-     * می‌گیرد و سُر نمی‌خورد. پارچه‌ی زبر بیشتر ترمز می‌گیرد.
+     * دو نکته که بدون آن‌ها پارچه هیچ‌وقت نمی‌نشیند:
+     *   • همه‌ی برخوردگرها آزمایش می‌شوند، نه فقط اولی. ذره‌ای که بین ران چپ و
+     *     راست گیر کرده، اگر بعد از هل دادن از یکی بیرون بیاید و دیگری آزمایش
+     *     نشود، فریم بعد دوباره داخل آن یکی است و تا ابد بین دو ران می‌رقصد.
+     *   • جهش نداریم: مؤلفه‌ی عمودِ بر سطحِ سرعت پس از هل دادن صفر می‌شود.
+     *     وگرنه همان هل دادن خودش به پارچه سرعت رو به بیرون می‌دهد، پارچه بالا
+     *     می‌پرد، جاذبه برش می‌گرداند و صحنه هرگز آرام نمی‌گیرد.
+     * اصطکاک هم روی مؤلفه‌ی مماسی می‌نشیند تا پارچه روی پوست سُر نخورد؛ پارچه‌ی
+     * زبر بیشتر ترمز می‌گیرد.
      */
     collide(colliders, skin, friction) {
         const { positions, previous, invMass, count } = this;
+        const slide = 1 - friction;
 
         for (let i = 0; i < count; i++) {
             if (invMass[i] === 0) {
@@ -490,9 +621,6 @@ export class ClothPatch {
             }
 
             const at = i * 3;
-            const px = positions[at];
-            const py = positions[at + 1];
-            const pz = positions[at + 2];
 
             for (let c = 0; c < colliders.length; c++) {
                 const collider = colliders[c];
@@ -502,6 +630,9 @@ export class ClothPatch {
                 }
 
                 const box = collider.box;
+                const px = positions[at];
+                const py = positions[at + 1];
+                const pz = positions[at + 2];
 
                 if (px < box[0] || px > box[3] || py < box[1] || py > box[4] || pz < box[2] || pz > box[5]) {
                     continue;
@@ -510,8 +641,17 @@ export class ClothPatch {
                 applyMatrix(collider.inverse, positions[at], positions[at + 1], positions[at + 2], local);
 
                 const side = collider.sectionAt(local[1], section);
-                const rx = section[0];
-                const rz = section[1];
+                /*
+                 * فاصله‌ی پوستی همین‌جا به شعاع اضافه می‌شود، نه بعد از پیدا کردن
+                 * نقطه‌ی سطح.
+                 *
+                 * اگر بعد اضافه شود، ذره‌ای که درست روی پوست نشسته هر گام به
+                 * اندازه‌ی همان فاصله بیرون پرت می‌شود، گام بعد دوباره برمی‌گردد و
+                 * لباس یک لرزش دائمیِ چندمیلی‌متری می‌گیرد که هیچ‌وقت نمی‌خوابد.
+                 * با شعاع بادکرده، «روی سطح بودن» یک حالت پایدار است.
+                 */
+                const rx = section[0] + skin;
+                const rz = section[1] + skin;
 
                 let dy = 0;
                 let ry = 0;
@@ -521,14 +661,14 @@ export class ClothPatch {
                         continue;
                     }
 
-                    ry = collider.capLow;
+                    ry = collider.capLow + skin;
                     dy = local[1] - collider.ys[0];
                 } else if (side > 0) {
                     if (! collider.capMax) {
                         continue;
                     }
 
-                    ry = collider.capHigh;
+                    ry = collider.capHigh + skin;
                     dy = local[1] - collider.ys[collider.ys.length - 1];
                 }
 
@@ -571,9 +711,9 @@ export class ClothPatch {
                 ny /= nl;
                 nz /= nl;
 
-                local[0] = sx + nx * skin;
-                local[1] = baseY + sy + ny * skin;
-                local[2] = sz + nz * skin;
+                local[0] = sx;
+                local[1] = baseY + sy;
+                local[2] = sz;
 
                 applyMatrix(collider.matrix, local[0], local[1], local[2], world);
 
@@ -581,29 +721,26 @@ export class ClothPatch {
                 positions[at + 1] = world[1];
                 positions[at + 2] = world[2];
 
-                // اصطکاک روی مؤلفه‌ی مماسیِ جابه‌جایی همین گام
-                if (friction > 0) {
-                    applyMatrix(collider.matrix, nx, ny, nz, world);
+                // نرمالِ سطح در فضای جهانی (ماتریس صُلب است، پس فقط چرخانده می‌شود)
+                applyMatrix(collider.matrix, nx, ny, nz, world);
 
-                    const wx = world[0] - collider.matrix[12];
-                    const wy = world[1] - collider.matrix[13];
-                    const wz = world[2] - collider.matrix[14];
+                const wx = world[0] - collider.matrix[12];
+                const wy = world[1] - collider.matrix[13];
+                const wz = world[2] - collider.matrix[14];
 
-                    let mx = positions[at] - previous[at];
-                    let my = positions[at + 1] - previous[at + 1];
-                    let mz = positions[at + 2] - previous[at + 2];
-                    const along = mx * wx + my * wy + mz * wz;
+                const mx = positions[at] - previous[at];
+                const my = positions[at + 1] - previous[at + 1];
+                const mz = positions[at + 2] - previous[at + 2];
+                const along = mx * wx + my * wy + mz * wz;
 
-                    mx -= wx * along;
-                    my -= wy * along;
-                    mz -= wz * along;
+                // مؤلفه‌ی مماسی، با اصطکاک؛ مؤلفه‌ی رو به بیرون، حذف
+                const tx = (mx - wx * along) * slide + wx * Math.min(0, along);
+                const ty = (my - wy * along) * slide + wy * Math.min(0, along);
+                const tz = (mz - wz * along) * slide + wz * Math.min(0, along);
 
-                    previous[at] += mx * friction;
-                    previous[at + 1] += my * friction;
-                    previous[at + 2] += mz * friction;
-                }
-
-                break;
+                previous[at] = positions[at] - tx;
+                previous[at + 1] = positions[at + 1] - ty;
+                previous[at + 2] = positions[at + 2] - tz;
             }
         }
     }
@@ -627,6 +764,7 @@ export class ClothPatch {
 
             if (square > motion) {
                 motion = square;
+                this.motionIndex = i;
             }
 
             velocity[at] = dx * inverse;
@@ -637,10 +775,41 @@ export class ClothPatch {
         this.motion = Math.sqrt(motion);
     }
 
+    /*
+     * بیشترین جابه‌جایی نسبت به آخرین عکس مرجع.
+     *
+     * معیار خواب نمی‌تواند «حرکت در یک زیرگام» باشد: پارچه‌ی آویزان همیشه یک
+     * تکان ریزِ رفت‌وبرگشتی دارد و آن عدد هیچ‌وقت صفر نمی‌شود. چیزی که مهم است
+     * این است که شکل پارچه در طول چند فریم تغییر کند یا نه.
+     */
+    drift() {
+        const { positions, snapshot, count } = this;
+        let worst = 0;
+
+        for (let i = 0; i < count; i++) {
+            const at = i * 3;
+            const dx = positions[at] - snapshot[at];
+            const dy = positions[at + 1] - snapshot[at + 1];
+            const dz = positions[at + 2] - snapshot[at + 2];
+            const square = dx * dx + dy * dy + dz * dz;
+
+            if (square > worst) {
+                worst = square;
+            }
+        }
+
+        return Math.sqrt(worst);
+    }
+
+    remember() {
+        this.snapshot.set(this.positions);
+    }
+
     /* خواباندن کامل: سرعت‌ها صفر می‌شوند تا پارچه دیگر نلرزد */
     rest() {
         this.velocity.fill(0);
         this.previous.set(this.positions);
+        this.snapshot.set(this.positions);
         this.motion = 0;
     }
 }
@@ -720,11 +889,17 @@ export class ClothWorld {
         this.energy = 0;
         this.cost = 0;
         this.quality = 'full';
+        // چند فریم اول اندازه‌گیری نمی‌شوند؛ گرم شدن مرورگر نباید کیفیت را
+        // برای همیشه پایین بیاورد
+        this.warmup = 30;
+        this.overBudget = 0;
         this.enabled = true;
 
-        // آستانه‌ی خواب: جابه‌جایی کمتر از ده میکرون در یک گام یعنی پارچه نشسته
-        this.sleepMotion = 1.2e-5;
-        this.sleepFrames = 10;
+        // آستانه‌ی خواب: اگر شکل پارچه در ۱۲ فریم کمتر از نیم میلی‌متر جابه‌جا
+        // شود، دیگر چیزی برای دیدن نمانده و حل‌کننده می‌خوابد
+        this.sleepDrift = 5e-4;
+        this.sleepFrames = 12;
+        this.window = 0;
     }
 
     addPatch(patch) {
@@ -748,6 +923,8 @@ export class ClothWorld {
     wake() {
         this.sleeping = false;
         this.calm = 0;
+        this.window = 0;
+        this.patches.forEach((patch) => patch.remember());
     }
 
     /* یک گام کامل با زیرگام‌ها */
@@ -817,16 +994,25 @@ export class ClothWorld {
         }
 
         this.energy = motion;
+        this.window++;
 
-        if (motion < this.sleepMotion) {
-            this.calm++;
+        // مقایسه‌ی شکل با عکس مرجع فقط هر چند فریم یک بار؛ خودِ مقایسه هزینه دارد
+        if (this.window >= this.sleepFrames) {
+            let drift = 0;
 
-            if (this.calm >= this.sleepFrames) {
+            for (let p = 0; p < this.patches.length; p++) {
+                drift = Math.max(drift, this.patches[p].drift());
+            }
+
+            this.window = 0;
+            this.drift = drift;
+
+            if (drift < this.sleepDrift) {
                 this.sleeping = true;
                 this.patches.forEach((patch) => patch.rest());
+            } else {
+                this.patches.forEach((patch) => patch.remember());
             }
-        } else {
-            this.calm = 0;
         }
 
         return steps;
@@ -837,9 +1023,21 @@ export class ClothWorld {
      * می‌نشیند و ثابت می‌ماند. هیچ‌وقت به عقب برنمی‌گردیم تا کیفیت نوسان نکند.
      */
     adapt() {
-        if (this.cost <= this.budget) {
+        if (this.warmup > 0) {
+            this.warmup--;
+            this.cost = 0;
+
             return;
         }
+
+        // فقط کندیِ پایدار مهم است؛ یک فریم شلوغ دلیل افت کیفیت نیست
+        this.overBudget = this.cost > this.budget ? this.overBudget + 1 : 0;
+
+        if (this.overBudget < 8) {
+            return;
+        }
+
+        this.overBudget = 0;
 
         if (this.iterations > 1) {
             this.iterations--;
@@ -847,8 +1045,8 @@ export class ClothWorld {
         } else if (this.substeps > 1) {
             this.substeps = 1;
             this.quality = 'low';
-        } else if (this.sleepMotion < 2e-4) {
-            this.sleepMotion *= 4;
+        } else if (this.sleepFrames > 4) {
+            this.sleepDrift *= 6;
             this.sleepFrames = 4;
             this.maxSteps = 1;
             this.quality = 'frozen';

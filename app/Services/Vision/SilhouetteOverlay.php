@@ -15,10 +15,10 @@ class SilhouetteOverlay
 {
     /** پله‌هایی که روی رونما خط‌کشی می‌شوند: موقعیت نسبی و برچسب. */
     protected const GUIDES = [
-        ['position' => 0.10, 'top' => 'سرشانه', 'bottom' => 'کمر (بالا)'],
+        ['position' => 0.10, 'top' => 'سرشانه', 'bottom' => 'کمر'],
         ['position' => 0.48, 'top' => 'کمر', 'bottom' => 'میانه'],
         ['position' => 0.67, 'top' => 'باسن', 'bottom' => 'باسن'],
-        ['position' => 0.96, 'top' => 'لبه پایین', 'bottom' => 'لبه پایین'],
+        ['position' => 0.96, 'top' => 'لبه', 'bottom' => 'لبه'],
     ];
 
     /**
@@ -36,7 +36,7 @@ class SilhouetteOverlay
 
         $width = $mask->width;
         $height = $mask->height;
-        $font = max(4.0, $height * 0.042);
+        $font = max(3.5, $height * 0.036);
         $stroke = max(0.5, $height * 0.007);
 
         $contour = $this->simplify($mask->contour(), max(0.6, $height * 0.006));

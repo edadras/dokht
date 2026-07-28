@@ -79,79 +79,79 @@ class GarmentClassifier
     protected const CATALOGUE = [
         'tshirt' => ['family' => 'top', 'rules' => [
             'split_ratio' => [0, 0.10], 'neck_depth' => [0.025, 1], 'sleeve_bump' => [1.18, 2.2],
-            'length_ratio' => [0.9, 1.6], 'hem_ratio' => [0.75, 1.12], 'waist_pinch' => [-1, 0.08],
+            'length_ratio' => [1.2, 2.0], 'hem_ratio' => [0.75, 1.12], 'waist_pinch' => [-1, 0.08],
         ]],
         'shirt' => ['family' => 'top', 'rules' => [
             'split_ratio' => [0, 0.10], 'neck_depth' => [0.02, 1], 'sleeve_bump' => [1.18, 2.2],
-            'length_ratio' => [1.25, 1.95], 'hem_ratio' => [0.8, 1.18], 'waist_pinch' => [-1, 0.13],
+            'length_ratio' => [1.5, 2.3], 'hem_ratio' => [0.8, 1.18], 'waist_pinch' => [-1, 0.13],
         ]],
         'blouse' => ['family' => 'top', 'rules' => [
             'split_ratio' => [0, 0.10], 'neck_depth' => [0.03, 1], 'sleeve_bump' => [1.0, 2.0],
-            'length_ratio' => [1.0, 1.75], 'hem_ratio' => [0.78, 1.2], 'waist_pinch' => [0.06, 0.4],
+            'length_ratio' => [1.2, 2.0], 'hem_ratio' => [0.78, 1.2], 'waist_pinch' => [0.06, 0.4],
         ]],
         'shomiz' => ['family' => 'top', 'rules' => [
             'split_ratio' => [0, 0.10], 'neck_depth' => [0.02, 1], 'sleeve_bump' => [1.12, 2.2],
-            'length_ratio' => [1.7, 2.35], 'hem_ratio' => [1.0, 1.55], 'waist_pinch' => [-1, 0.1],
+            'length_ratio' => [1.9, 2.6], 'hem_ratio' => [1.0, 1.55], 'waist_pinch' => [-1, 0.1],
         ]],
         'top' => ['family' => 'top', 'rules' => [
             'split_ratio' => [0, 0.10], 'neck_depth' => [0.04, 1], 'sleeve_bump' => [0.85, 1.12],
-            'length_ratio' => [0.8, 1.5], 'hem_ratio' => [0.78, 1.15],
+            'length_ratio' => [1.0, 1.7], 'hem_ratio' => [0.78, 1.15],
         ]],
         'blazer' => ['family' => 'outer', 'rules' => [
             'split_ratio' => [0, 0.10], 'neck_depth' => [0.06, 1], 'sleeve_bump' => [1.18, 2.2],
-            'length_ratio' => [1.35, 2.05], 'hem_ratio' => [0.88, 1.2], 'waist_pinch' => [0.05, 0.32],
+            'length_ratio' => [1.5, 2.2], 'hem_ratio' => [0.88, 1.2], 'waist_pinch' => [0.05, 0.32],
         ]],
         'cardigan' => ['family' => 'outer', 'rules' => [
             'split_ratio' => [0, 0.10], 'neck_depth' => [0.05, 1], 'sleeve_bump' => [1.12, 2.2],
-            'length_ratio' => [1.25, 2.05], 'hem_ratio' => [0.85, 1.25], 'waist_pinch' => [-1, 0.12],
+            'length_ratio' => [1.4, 2.3], 'hem_ratio' => [0.85, 1.25], 'waist_pinch' => [-1, 0.12],
         ]],
         'manteau' => ['family' => 'outer', 'rules' => [
             'split_ratio' => [0, 0.10], 'neck_depth' => [0.03, 1], 'sleeve_bump' => [1.12, 2.2],
-            'length_ratio' => [2.0, 2.9], 'hem_ratio' => [0.92, 1.55], 'waist_pinch' => [-1, 0.12],
+            'length_ratio' => [2.3, 3.1], 'hem_ratio' => [0.92, 1.55], 'waist_pinch' => [-1, 0.12],
         ]],
         'coat' => ['family' => 'outer', 'rules' => [
             'split_ratio' => [0, 0.10], 'neck_depth' => [0.03, 1], 'sleeve_bump' => [1.12, 2.2],
-            'length_ratio' => [2.3, 3.4], 'hem_ratio' => [0.92, 1.45], 'waist_pinch' => [-1, 0.12],
+            'length_ratio' => [2.6, 3.6], 'hem_ratio' => [0.92, 1.45], 'waist_pinch' => [-1, 0.12],
         ]],
         'skirt_straight' => ['family' => 'bottom', 'rules' => [
             'split_ratio' => [0, 0.12], 'neck_depth' => [0, 0.02], 'sleeve_bump' => [0.85, 1.12],
-            'length_ratio' => [0.9, 2.8], 'hem_ratio' => [0.82, 1.2],
+            'length_ratio' => [1.6, 4.8], 'hem_ratio' => [0.82, 1.2],
         ]],
         'skirt_gored' => ['family' => 'bottom', 'rules' => [
             'split_ratio' => [0, 0.12], 'neck_depth' => [0, 0.02], 'sleeve_bump' => [0.85, 1.15],
-            'length_ratio' => [0.9, 2.8], 'hem_ratio' => [1.22, 1.75],
+            'length_ratio' => [1.6, 4.8], 'hem_ratio' => [1.22, 1.75],
         ]],
         'skirt_circle' => ['family' => 'bottom', 'rules' => [
             'split_ratio' => [0, 0.12], 'neck_depth' => [0, 0.02], 'sleeve_bump' => [0.85, 1.2],
-            'length_ratio' => [0.6, 2.4], 'hem_ratio' => [1.75, 6.0],
+            'length_ratio' => [1.2, 4.2], 'hem_ratio' => [1.75, 6.0],
         ]],
         'pants' => ['family' => 'bottom', 'rules' => [
             'split_ratio' => [0.35, 1], 'neck_depth' => [0, 0.03], 'sleeve_bump' => [0.85, 1.15],
-            'length_ratio' => [2.1, 4.5], 'hem_ratio' => [0.6, 1.45],
+            'length_ratio' => [2.6, 6.5], 'hem_ratio' => [0.6, 1.45],
         ]],
         'shorts' => ['family' => 'bottom', 'rules' => [
             'split_ratio' => [0.3, 1], 'neck_depth' => [0, 0.03], 'sleeve_bump' => [0.85, 1.15],
-            'length_ratio' => [0.6, 1.8], 'hem_ratio' => [0.7, 1.5],
+            'length_ratio' => [0.9, 2.5], 'hem_ratio' => [0.7, 1.5],
         ]],
         'jumpsuit' => ['family' => 'one_piece', 'rules' => [
             'split_ratio' => [0.25, 1], 'neck_depth' => [0.02, 1], 'sleeve_bump' => [0.9, 2.2],
-            'length_ratio' => [2.7, 5.5],
+            'length_ratio' => [3.2, 7.5],
         ]],
         'dress' => ['family' => 'one_piece', 'rules' => [
             'split_ratio' => [0, 0.12], 'neck_depth' => [0.025, 1], 'sleeve_bump' => [0.9, 2.2],
-            'length_ratio' => [1.85, 3.2], 'hem_ratio' => [0.85, 1.9],
+            'length_ratio' => [2.1, 3.4], 'hem_ratio' => [0.85, 1.9],
         ]],
         'cocktail_dress' => ['family' => 'formal', 'rules' => [
             'split_ratio' => [0, 0.12], 'neck_depth' => [0.035, 1], 'sleeve_bump' => [0.85, 1.6],
-            'length_ratio' => [1.7, 2.55], 'hem_ratio' => [0.85, 1.5], 'waist_pinch' => [0.08, 0.45],
+            'length_ratio' => [2.0, 2.9], 'hem_ratio' => [0.85, 1.5], 'waist_pinch' => [0.08, 0.45],
         ]],
         'evening_dress' => ['family' => 'formal', 'rules' => [
             'split_ratio' => [0, 0.12], 'neck_depth' => [0.035, 1], 'sleeve_bump' => [0.85, 1.4],
-            'length_ratio' => [2.6, 4.2], 'hem_ratio' => [0.95, 2.2], 'waist_pinch' => [0.05, 0.45],
+            'length_ratio' => [2.9, 4.5], 'hem_ratio' => [0.95, 2.2], 'waist_pinch' => [0.05, 0.45],
         ]],
         'bridal_dress' => ['family' => 'formal', 'rules' => [
             'split_ratio' => [0, 0.12], 'neck_depth' => [0.035, 1], 'sleeve_bump' => [0.85, 1.6],
-            'length_ratio' => [2.2, 4.2], 'hem_ratio' => [1.8, 6.0],
+            'length_ratio' => [2.6, 4.5], 'hem_ratio' => [1.8, 6.0],
         ]],
     ];
 
@@ -459,9 +459,9 @@ class GarmentClassifier
     protected function length(SilhouetteFeatures $features, string $family): array
     {
         $steps = match ($family) {
-            'bottom' => [['crop', 0.9], ['thigh', 1.25], ['knee', 1.85], ['midi', 2.55], ['maxi', INF]],
-            'one_piece', 'formal' => [['thigh', 1.9], ['knee', 2.35], ['midi', 2.9], ['maxi', INF]],
-            default => [['crop', 1.15], ['hip', 1.6], ['thigh', 2.05], ['midi', 2.6], ['maxi', INF]],
+            'bottom' => [['crop', 2.0], ['thigh', 2.45], ['knee', 3.05], ['midi', 3.9], ['maxi', INF]],
+            'one_piece', 'formal' => [['thigh', 2.25], ['knee', 2.75], ['midi', 3.25], ['maxi', INF]],
+            default => [['crop', 1.25], ['hip', 1.75], ['thigh', 2.15], ['midi', 2.7], ['maxi', INF]],
         };
 
         $value = 'maxi';
@@ -482,7 +482,7 @@ class GarmentClassifier
         return [
             'value' => $value,
             'label' => self::LENGTHS[$value],
-            'confidence' => round(min(0.9, 0.5 + 0.5 * min(1.0, $boundary / 0.35)) * $features->quality(), 3),
+            'confidence' => round(min(0.9, 0.5 + 0.5 * min(1.0, $boundary / 0.4)) * $features->quality(), 3),
             'reason' => 'قد شکل '.$this->n($features->lengthRatio).' برابر پهنای بالای آن است، پس بلندی «'
                 .self::LENGTHS[$value].'» تخمین زده شد. این تخمین فرض می‌کند تمام لباس در کادر دیده می‌شود.',
         ];

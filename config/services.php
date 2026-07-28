@@ -35,4 +35,26 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | دستیار کارگاه
+    |--------------------------------------------------------------------------
+    |
+    | پیش‌فرض دستیار «قواعد» است: پاسخ‌ها فقط از داده‌های همین سامانه و موتور
+    | قواعد ساخته می‌شوند و هیچ درخواستی به بیرون نمی‌رود. اگر driver روی claude
+    | گذاشته شود، همان داده‌ها به مدل زبانی داده می‌شود تا پاسخ روان‌تری بنویسد؛
+    | نبود کلید، خطا یا کندی سرویس، پاسخ را به همان قواعد برمی‌گرداند.
+    |
+    */
+
+    'assistant' => [
+        'driver' => env('ASSISTANT_DRIVER', 'rules'),
+        'key' => env('ANTHROPIC_API_KEY'),
+        'base_url' => env('ASSISTANT_BASE_URL', 'https://api.anthropic.com'),
+        'model' => env('ASSISTANT_MODEL', 'claude-opus-5'),
+        'version' => env('ASSISTANT_API_VERSION', '2023-06-01'),
+        'max_tokens' => (int) env('ASSISTANT_MAX_TOKENS', 1024),
+        'timeout' => (int) env('ASSISTANT_TIMEOUT', 20),
+    ],
+
 ];

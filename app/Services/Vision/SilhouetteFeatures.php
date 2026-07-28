@@ -173,7 +173,7 @@ final class SilhouetteFeatures
             $this->splitRatio / 0.30,
             max(0.0, $this->sleeveBump - 1) / 0.22,
             $this->neckDepth / 0.06,
-            abs($this->lengthRatio - 1.5) / 2.2,
+            abs($this->lengthRatio - 2.2) / 3.0,
         ];
 
         return round(max(0.0, min(1.0, max($signals))), 4);

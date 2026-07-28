@@ -30,6 +30,9 @@ class ProjectArchiveExporter
         protected BillOfMaterialsBuilder $bom = new BillOfMaterialsBuilder,
         protected LayoutRenderer $renderer = new LayoutRenderer,
         protected NestingService $nesting = new NestingService,
+        protected PatternPdfExporter $pdf = new PatternPdfExporter,
+        protected PatternPngExporter $png = new PatternPngExporter,
+        protected AamaDxfExporter $aama = new AamaDxfExporter,
     ) {}
 
     /**
@@ -45,6 +48,10 @@ class ProjectArchiveExporter
         if ($pattern) {
             $files['pattern.svg'] = $this->patternSvg($pattern);
             $files['pattern.dxf'] = $this->patternDxf($pattern);
+            $files['pattern-print.pdf'] = $this->safe(fn () => $this->pdf->export($pattern), '');
+            $files['pattern.png'] = $this->safe(fn () => $this->png->export($pattern, ['dpi' => 120]), '');
+            $files['pattern-aama.dxf'] = $this->safe(fn () => $this->aama->aama($pattern), '');
+            $files['pattern-astm.dxf'] = $this->safe(fn () => $this->aama->astm($pattern), '');
         }
 
         $files['tech-pack.json'] = $this->techPackJson($project);
@@ -272,6 +279,10 @@ class ProjectArchiveExporter
         $descriptions = [
             'pattern.svg' => 'الگو به شکل برداری؛ برای چاپ در اندازه واقعی یا پلاتر',
             'pattern.dxf' => 'الگو برای نرم‌افزارهای برش و پلاتر',
+            'pattern-print.pdf' => 'الگو روی برگه‌های A4 برای چاپ یک‌به‌یک (با خط‌کش کنترل مقیاس)',
+            'pattern.png' => 'تصویر الگو با چگالی ۱۲۰ نقطه بر اینچ، برای پیش‌نمایش و پیوست',
+            'pattern-aama.dxf' => 'الگو با لایه‌های شماره‌دار AAMA برای سامانه‌های صنعتی برش',
+            'pattern-astm.dxf' => 'همان خروجی در گویش ASTM D6673 با صفت‌های قطعه',
             'tech-pack.json' => 'کارت فنی کامل به شکل داده',
             'cutting-layout.svg' => 'نقشه چیدمان قطعه‌ها روی پارچه',
             'measurement-sheet.csv' => 'برگه اندازه‌های بدن',

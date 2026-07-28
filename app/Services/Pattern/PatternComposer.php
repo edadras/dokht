@@ -64,6 +64,12 @@ class PatternComposer
     /** بیشترین گودتر شدن مجاز حلقه آستین برای جادادن سرآستین. */
     public const MAX_ARMHOLE_DROP = 6.0;
 
+    /** پارامترهای مدل بالاتنه که به قطعه‌های کنارگذاشته‌شده (آستین و یقه) مربوطند. */
+    public const BODICE_IGNORED_PARAMS = [
+        'cap_ease', 'cuff', 'cuff_height', 'sleeve_length', 'collar_height',
+        'neckband_height', 'neckband_stretch', 'lapel_width', 'lapel_break', 'lining',
+    ];
+
     public function __construct(
         protected SeamAllowanceService $seams = new SeamAllowanceService,
         protected PatternVersionService $versions = new PatternVersionService,
@@ -203,11 +209,17 @@ class PatternComposer
             }
 
             $generator = GeneratorRegistry::make($key);
+            $schema = $generator->paramsSchema();
+
+            if ($group === 'bodice') {
+                // پارامترهای آستین و یقهٔ خود مدل به کار نمی‌آید؛ آن‌ها را جداگانه انتخاب کرده‌ایم
+                $schema = array_diff_key($schema, array_flip(static::BODICE_IGNORED_PARAMS));
+            }
 
             $out[$group] = [
                 'key' => $key,
                 'label' => $generator->label(),
-                'schema' => $generator->paramsSchema(),
+                'schema' => $schema,
                 'defaults' => $generator->defaultParams(),
             ];
         }
@@ -1693,11 +1705,20 @@ class PatternComposer
             $pairs = min(count($frontSides), count($backSides));
             $isPants = in_array($lowerFront['meta']['part'] ?? null, ['front_leg'], true);
 
+            // در شلوار لبه‌های پیش از دم پا درز پهلو و پس از آن درز داخل پا هستند
+            $hem = $this->edgeWithTag($lowerFront, 'hem') ?? PHP_INT_MAX;
+
             for ($i = 0; $i < $pairs; $i++) {
+                $label = match (true) {
+                    ! $isPants => 'درز پهلوی دامن'.($pairs > 1 ? ' '.($i + 1) : ''),
+                    $frontSides[$i] < $hem => 'درز پهلوی شلوار',
+                    default => 'درز داخل پا',
+                };
+
                 $relations[] = [
                     'from' => ['piece' => $lowerFront['code'], 'edge' => $frontSides[$i]],
                     'to' => ['piece' => $lowerBack['code'], 'edge' => $backSides[$i]],
-                    'label' => ($isPants ? 'درز پا' : 'درز پهلوی دامن').($pairs > 1 ? ' '.($i + 1) : ''),
+                    'label' => $label,
                 ];
             }
         }
@@ -1765,7 +1786,7 @@ class PatternComposer
     /** آزادی این بخش: مقدارهای تخت به‌علاوه مقدارهای ویژه همان بخش. */
     protected function groupEase(array $ease, string $group): array
     {
-        $flat = array_filter($ease, fn ($value, $key) => is_numeric($value), ARRAY_FILTER_USE_BOTH);
+        $flat = array_filter($ease, fn ($value) => is_numeric($value));
         $own = is_array($ease[$group] ?? null) ? $ease[$group] : [];
 
         return array_merge($flat, $own);
@@ -1774,7 +1795,7 @@ class PatternComposer
     /** پارامترهای این بخش (بدون پیش‌فرض ژنراتور). */
     protected function groupParams(array $params, string $group): array
     {
-        $flat = array_filter($params, fn ($value, $key) => ! is_array($value), ARRAY_FILTER_USE_BOTH);
+        $flat = array_filter($params, fn ($value) => ! is_array($value));
         $own = is_array($params[$group] ?? null) ? $params[$group] : [];
 
         unset($flat['waist_join']);

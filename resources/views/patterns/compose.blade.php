@@ -107,9 +107,9 @@
             ])
 
             {{-- اندازه‌ها: یک منبع، یا مشتری یا سایز استاندارد --}}
-            <x-card title="۵. اندازه‌ها برای چه کسی؟" icon="user"
-                subtitle="اندازه‌های نداشته خودکار تخمین زده می‌شود."
-                x-data="{ source: @js(old('customer_id') ? 'customer' : 'size') }">
+            <div x-data="{ source: @js(old('customer_id') ? 'customer' : 'size') }">
+                <x-card title="۵. اندازه‌ها برای چه کسی؟" icon="user"
+                    subtitle="اندازه‌های نداشته خودکار تخمین زده می‌شود.">
                 <div class="space-y-4">
                     <div class="flex flex-wrap gap-2">
                         <button type="button" @click="source = 'customer'; $nextTick(() => schedule())"
@@ -154,7 +154,8 @@
                         </x-field>
                     </div>
                 </div>
-            </x-card>
+                </x-card>
+            </div>
 
             {{-- همه چیز حرفه‌ای اینجا پنهان است --}}
             <x-advanced-section title="تنظیمات حرفه‌ای"

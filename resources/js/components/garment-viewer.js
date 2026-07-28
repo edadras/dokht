@@ -1533,6 +1533,13 @@ export default (config = {}) => ({
         stats.quality = ctx.world.quality;
         stats.sleeping = ctx.world.sleeping;
         stats.energy = ctx.world.energy;
+        stats.drift = ctx.world.drift;
+        stats.hot = ctx.cloth.map((item) => {
+            const p = item.patch;
+            const i = p.motionIndex || 0;
+
+            return [Math.floor(i / p.segments), i % p.segments, Math.round(p.motion * 10000) / 10, Math.round(p.positions[i * 3] * 1000), Math.round(p.positions[i * 3 + 1] * 1000), Math.round(p.positions[i * 3 + 2] * 1000)];
+        });
     },
 
     /* ------------------------------------------------------------------

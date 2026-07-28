@@ -270,6 +270,47 @@ class NestingServiceTest extends TestCase
         $this->assertGreaterThanOrEqual($plain['required_length_cm'], $result['required_length_cm']);
     }
 
+    public function test_a_plain_fabric_reports_no_pattern_matching_at_all(): void
+    {
+        $result = $this->nesting->nest($this->crowdedPattern(), null, ['fabric_width_cm' => 150]);
+
+        $this->assertFalse($result['pattern_match']['enabled']);
+        $this->assertFalse($result['pattern_match']['active']);
+        $this->assertSame([], $result['pattern_match']['axes']);
+        $this->assertSame([], $result['pattern_match']['seams']);
+        $this->assertSame(0.0, $result['pattern_match']['extra_length_cm']);
+    }
+
+    public function test_matching_falls_back_to_the_suggested_sewing_relations(): void
+    {
+        // الگو هیچ درزی ذخیره نکرده است؛ سرویس باید پیشنهاد «دوخت مجازی» را بخواند
+        $pattern = $this->patternWith([
+            $this->bodicePiece('front', 'تنه جلو', 'front_bodice', 'front', 26.0),
+            $this->bodicePiece('back', 'تنه پشت', 'back_bodice', 'back', 29.0),
+        ]);
+
+        $this->assertEmpty($pattern->sewing_relations);
+
+        $fabric = Fabric::factory()->striped()->create(['width_cm' => 150]);
+        $result = $this->nesting->nest($pattern, $fabric, ['include_allowance' => false]);
+
+        $match = $result['pattern_match'];
+
+        $this->assertGreaterThanOrEqual(1, $match['total']);
+        $this->assertGreaterThanOrEqual(1, $match['matched']);
+
+        $side = collect($match['seams'])->firstWhere('label', 'درز پهلو');
+
+        $this->assertNotNull($side);
+        $this->assertTrue($side['matched']);
+        $this->assertSame(0.0, $side['offset_mm']['y']);
+
+        $front = collect($result['placements'])->firstWhere('code', 'front');
+        $back = collect($result['placements'])->firstWhere('code', 'back');
+
+        $this->assertSame(0.0, fmod(($back['y'] + 29.0) - ($front['y'] + 26.0), 4.0));
+    }
+
     public function test_efficiency_uses_the_real_polygon_area(): void
     {
         $pattern = $this->patternWith([
@@ -444,6 +485,19 @@ class NestingServiceTest extends TestCase
         }
 
         return $pattern->load('pieces');
+    }
+
+    /** تنه‌ای با برچسب لبه‌ها و یک نشانه روی درز پهلو؛ برای آزمون تطبیق طرح. */
+    protected function bodicePiece(string $code, string $name, string $part, string $side, float $notchY): array
+    {
+        return $this->piece($code, $name, 34.0, 60.0, [
+            'notches' => [['x' => 34.0, 'y' => $notchY, 'edge' => 1, 'label' => 'نشانه کمر', 'pair' => 'side']],
+            'meta' => [
+                'part' => $part,
+                'side' => $side,
+                'edges' => ['shoulder', 'side', 'hem', 'default'],
+            ],
+        ]);
     }
 
     protected function piece(string $code, string $name, float $width, float $height, array $extra = []): array

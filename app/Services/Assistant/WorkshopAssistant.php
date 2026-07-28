@@ -17,8 +17,11 @@ use App\Support\Format;
  * استدلال (اینکه کدام قاعده یا کدام معیار پاسخ را ساخته) هم برگردانده می‌شود تا
  * کاربر پاسخ را باور کند و یاد بگیرد.
  */
-class WorkshopAssistant
+class WorkshopAssistant implements AssistantDriver
 {
+    /** جمله‌ای که به کاربر می‌گوید این پاسخ از کجا آمده است. */
+    public const SOURCE_LABEL = 'این پاسخ از قواعد سامانه آمده است';
+
     /** پرسش‌های نمونه که به‌شکل تراشه روی صفحه نشان داده می‌شود. */
     public const EXAMPLES = [
         'این پارچه برای این مدل مناسب است؟',
@@ -45,10 +48,15 @@ class WorkshopAssistant
         protected RuleEngine $engine,
     ) {}
 
+    public function driverName(): string
+    {
+        return 'rules';
+    }
+
     /**
      * پاسخ به یک پرسش.
      *
-     * @return array{question:string, topic:string, topic_label:string, headline:string, points:array<int,string>, reasons:array<int,array{label:string,text:string}>}
+     * @return array{question:string, topic:string, topic_label:string, headline:string, points:array<int,string>, reasons:array<int,array{label:string,text:string}>, source:string, source_label:string}
      */
     public function ask(
         string $question,
@@ -80,6 +88,8 @@ class WorkshopAssistant
             'headline' => '',
             'points' => [],
             'reasons' => [],
+            'source' => 'rules',
+            'source_label' => static::SOURCE_LABEL,
         ], $answer);
 
         foreach ($this->simulationReasons($project) as $reason) {
@@ -87,6 +97,95 @@ class WorkshopAssistant
         }
 
         return $answer;
+    }
+
+    /**
+     * داده‌های خامی که پاسخ روی آن‌ها بنا شده است؛ خوراک درایور مدل زبانی.
+     *
+     * این متد هیچ متنی برای کاربر نمی‌سازد، فقط «واقعیت‌های» سامانه را جمع می‌کند تا
+     * پاسخ مدل زبانی هم روی همان زمین بایستد و از خودش چیزی نبافد.
+     *
+     * @return array<string, mixed>
+     */
+    public function facts(
+        ?Fabric $fabric = null,
+        ?GarmentType $garmentType = null,
+        ?Project $project = null,
+    ): array {
+        $fabric ??= $project?->fabric;
+        $garmentType ??= $project?->garmentType;
+
+        $facts = [];
+
+        if ($fabric) {
+            $profile = $fabric->profile();
+
+            $facts['پارچه'] = array_filter([
+                'نام' => $fabric->displayName(),
+                'نوع' => $fabric->typeName(),
+                'طرح سطح' => $fabric->surfacePatternLabel(),
+                'عرض (سانتی‌متر)' => $fabric->effectiveWidth(),
+                'وزن' => Format::number((float) $profile->get('weight_gsm')).' گرم بر متر مربع ('.$profile->weightLabel().')',
+                'لختی' => $profile->drapeLabel(),
+                'ضخامت' => $profile->thicknessLabel(),
+                'کشسانی عرضی' => Format::percent((float) $profile->get('stretch_weft')),
+                'شفافیت' => Format::ratio((float) $profile->get('transparency')),
+                'آب‌رفت' => Format::percent((float) $profile->get('shrinkage')),
+                'خواب‌دار یا جهت‌دار' => $fabric->isDirectional() ? 'بله' : 'خیر',
+                'نیاز به تطبیق طرح' => $fabric->needsPatternMatching() ? 'بله' : 'خیر',
+            ], fn ($value) => $value !== null && $value !== '');
+        }
+
+        if ($garmentType) {
+            $facts['مدل لباس'] = array_filter([
+                'نام' => $garmentType->name_fa,
+                'دسته' => $garmentType->categoryLabel(),
+            ]);
+        }
+
+        if ($fabric && $garmentType) {
+            $score = $this->compatibility->score($fabric, $garmentType);
+
+            $facts['سازگاری پارچه با مدل'] = [
+                'نمره کل' => Format::number($score['overall']).' از ۱۰۰ ('.$score['verdict_label'].')',
+                'معیارها' => collect($score['criteria'])
+                    ->map(fn (array $criterion) => $criterion['label'].': '.Format::number($criterion['score']).' — '.$criterion['reason'])
+                    ->values()
+                    ->all(),
+            ];
+        }
+
+        $results = $this->engine->evaluateScopes(
+            RuleEngine::PROJECT_SCOPES,
+            $this->engine->factsFor($fabric, $garmentType, $project?->pattern),
+        );
+
+        if ($messages = $this->engine->messages($results)) {
+            $facts['قواعد برقرار'] = array_slice($messages, 0, 10);
+        }
+
+        if ($simulation = $project?->latestSimulation) {
+            $facts['آخرین شبیه‌سازی'] = array_filter([
+                'حالت بدن' => $simulation->poseLabel(),
+                'نمره تناسب' => $simulation->fit_score !== null ? Format::number((float) $simulation->fit_score).' از ۱۰۰' : null,
+                'نواحی' => collect($simulation->zones ?? [])
+                    ->map(fn ($zone) => is_array($zone)
+                        ? trim(($zone['label'] ?? '').': '.($zone['note'] ?? ($zone['level'] ?? '')))
+                        : (string) $zone)
+                    ->filter()
+                    ->take(8)
+                    ->values()
+                    ->all(),
+                'هشدارها' => collect($simulation->warnings ?? [])
+                    ->map(fn ($warning) => is_array($warning) ? ($warning['message'] ?? '') : (string) $warning)
+                    ->filter()
+                    ->take(6)
+                    ->values()
+                    ->all(),
+            ], fn ($value) => $value !== null && $value !== []);
+        }
+
+        return $facts;
     }
 
     /** موضوع پرسش را از کلیدواژه‌ها حدس می‌زند. */

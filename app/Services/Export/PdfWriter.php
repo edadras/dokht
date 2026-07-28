@@ -423,8 +423,8 @@ class PdfWriter
             ? '/F1 '.$fontObject.' 0 R'
             : '/F0 '.$fontObject.' 0 R';
 
-        $objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
-        $objects[2] = "<< /Type /Pages /Kids [".implode(' ', $kids)."] /Count {$pageCount} >>";
+        $objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+        $objects[2] = '<< /Type /Pages /Kids ['.implode(' ', $kids)."] /Count {$pageCount} >>";
 
         foreach ($this->pages as $index => $page) {
             $pageObject = $firstPageObject + ($index * 2);

@@ -89,11 +89,40 @@ class DesignProposal
         $family = $classification['garment']['family'];
         $types = $this->garmentTypes();
         $type = $types[$code] ?? null;
+        $library = $this->library($options['workshop_id'] ?? null);
 
-        $template = $this->template($code, $type, $options['workshop_id'] ?? null);
-        [$params, $paramReasons] = $template === null
-            ? [[], []]
-            : $this->params($template, $features, $classification);
+        // برای گزینه‌های جایگزین هم الگوی پایه و پارامترها آماده می‌شود تا کاربر بتواند
+        // بدون تحلیل دوباره، انتخابش را عوض کند.
+        $candidates = array_map(function (array $candidate) use ($types, $library, $features, $classification) {
+            $type = $types[$candidate['code']] ?? null;
+            $template = $this->template($candidate['code'], $type, $library);
+            [$params, $reasons] = $template === null ? [[], []] : $this->params($template, $features, $classification);
+
+            return [
+                'code' => $candidate['code'],
+                'id' => $type?->id,
+                'name' => $type?->name_fa ?? GarmentClassifier::name($candidate['code']),
+                'family' => $candidate['family'],
+                'confidence' => $candidate['confidence'],
+                'score' => $candidate['score'],
+                'reason' => $candidate['reason'],
+                'template' => $template === null ? null : [
+                    'id' => $template->id,
+                    'code' => $template->code,
+                    'name' => $template->name_fa,
+                    'generator' => $template->generator,
+                    'description' => $template->description,
+                    'reason' => $this->templateReason($template, $candidate['code'], $type),
+                    'schema' => $template->params_schema ?? [],
+                ],
+                'params' => $params,
+                'param_reasons' => $reasons,
+            ];
+        }, $classification['candidates']);
+
+        // گزینه نخست همان تشخیص اصلی است و اطمینان کاملش از دسته‌بند می‌آید
+        $candidates[0]['confidence'] = $classification['confidence'];
+        $primary = $candidates[0];
 
         return [
             'source' => $source,
@@ -107,35 +136,17 @@ class DesignProposal
                 'confidence' => $classification['confidence'],
                 'score' => $classification['garment']['score'],
             ],
-            'alternatives' => array_map(function (array $candidate) use ($types) {
-                $type = $types[$candidate['code']] ?? null;
-
-                return [
-                    'code' => $candidate['code'],
-                    'id' => $type?->id,
-                    'name' => $type?->name_fa ?? GarmentClassifier::name($candidate['code']),
-                    'confidence' => $candidate['confidence'],
-                    'score' => $candidate['score'],
-                    'reason' => $candidate['reason'],
-                ];
-            }, $classification['alternatives']),
+            'candidates' => $candidates,
+            'alternatives' => array_slice($candidates, 1, 3),
             'attributes' => [
                 'silhouette' => $classification['silhouette'],
                 'length' => $classification['length'],
                 'sleeve' => $classification['sleeve'],
                 'neckline' => $classification['neckline'],
             ],
-            'template' => $template === null ? null : [
-                'id' => $template->id,
-                'code' => $template->code,
-                'name' => $template->name_fa,
-                'generator' => $template->generator,
-                'description' => $template->description,
-                'reason' => $this->templateReason($template, $code, $type),
-                'schema' => $template->params_schema ?? [],
-            ],
-            'params' => $params,
-            'param_reasons' => $paramReasons,
+            'template' => $primary['template'],
+            'params' => $primary['params'],
+            'param_reasons' => $primary['param_reasons'],
             'evidence' => $classification['evidence'],
             'warnings' => $classification['warnings'],
             'confidence' => $classification['confidence'],
@@ -161,20 +172,24 @@ class DesignProposal
         return GarmentType::query()->active()->orderBy('sort')->get()->keyBy('code');
     }
 
-    /** انتخاب بهترین الگوی پایه موجود برای این نوع لباس. */
-    protected function template(string $code, ?GarmentType $type, ?int $workshopId): ?PatternTemplate
+    /** الگوهای پایه در دسترس این کارگاه (یک‌بار خوانده می‌شود). */
+    protected function library(?int $workshopId)
     {
-        $preferred = self::GENERATORS[$code] ?? ['bodice_block'];
-
-        $templates = PatternTemplate::query()
+        return PatternTemplate::query()
             ->availableTo($workshopId)
-            ->whereIn('generator', $preferred)
             ->orderBy('sort')
             ->orderBy('id')
             ->get();
+    }
+
+    /** انتخاب بهترین الگوی پایه موجود برای این نوع لباس. */
+    protected function template(string $code, ?GarmentType $type, $library): ?PatternTemplate
+    {
+        $preferred = self::GENERATORS[$code] ?? ['bodice_block'];
+        $templates = $library->whereIn('generator', $preferred);
 
         if ($templates->isEmpty()) {
-            return PatternTemplate::query()->availableTo($workshopId)->orderBy('sort')->first();
+            return $library->first();
         }
 
         return $templates->sortBy(fn (PatternTemplate $template) => [

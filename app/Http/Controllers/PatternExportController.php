@@ -4,6 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Pattern;
 use App\Models\PatternPiece;
+use App\Services\Export\AamaDxfExporter;
+use App\Services\Export\ExportTooLargeException;
+use App\Services\Export\PatternPdfExporter;
+use App\Services\Export\PatternPngExporter;
 use App\Services\Pattern\DxfExporter;
 use App\Services\Pattern\SeamAllowanceService;
 use App\Services\Pattern\SvgRenderer;
@@ -18,6 +22,15 @@ use Illuminate\View\View;
  * چاپ ۱:۱ روی کاغذ A4 انجام می‌شود: هر قطعه به «کاشی»های ۱۹×۲۷٫۷ سانتی‌متری بریده
  * می‌شود و هر کاشی یک صفحه است. اندازه بیرونی SVG در میلی‌متر داده می‌شود و viewBox
  * در سانتی‌متر، پس مقیاس دقیقاً یک‌به‌یک است.
+ *
+ * قالب‌های خروجی:
+ *   svg   نقشه برداری همه قطعه‌ها
+ *   pdf   سند برداری چندصفحه‌ای A4، آماده چاپ یک‌به‌یک (PatternPdfExporter)
+ *   png   تصویر نقطه‌ای با چگالی دلخواه ?dpi= و ?seam= (PatternPngExporter)
+ *   dxf   DXF ساده R12 با لایه‌های نام‌دار
+ *   aama  DXF صنعتی با لایه‌های شماره‌دار AAMA
+ *   astm  همان، در گویش ASTM D6673 با صفت‌های قطعه
+ *   json  ساختار قابل‌حمل الگو
  */
 class PatternExportController extends Controller
 {
@@ -35,6 +48,9 @@ class PatternExportController extends Controller
         protected SvgRenderer $renderer,
         protected DxfExporter $dxf,
         protected SeamAllowanceService $seams,
+        protected PatternPdfExporter $pdf = new PatternPdfExporter,
+        protected PatternPngExporter $png = new PatternPngExporter,
+        protected AamaDxfExporter $aama = new AamaDxfExporter,
     ) {}
 
     public function print(Request $request, Pattern $pattern): View
@@ -79,11 +95,12 @@ class PatternExportController extends Controller
         ]);
     }
 
-    public function export(Pattern $pattern, string $format): Response
+    public function export(Request $request, Pattern $pattern, string $format): Response
     {
         $pattern->load(['pieces', 'garmentType', 'template']);
         $name = Str::slug($pattern->name) ?: 'pattern';
         $base = 'pattern-'.$pattern->id.'-'.$name;
+        $withSeam = ! $request->boolean('no_seam');
 
         return match ($format) {
             'svg' => $this->download(
@@ -96,12 +113,68 @@ class PatternExportController extends Controller
                 $base.'.dxf',
                 'application/dxf',
             ),
+            'pdf' => $this->binary(
+                $this->pdf->export($pattern, ['seam_allowance' => $withSeam]),
+                $base.'.pdf',
+                'application/pdf',
+            ),
+            'png' => $this->exportPng($request, $pattern, $base),
+            'aama' => $this->download(
+                $this->aama->aama($pattern, ['sizes' => $this->sizes($request)]),
+                $base.'-aama.dxf',
+                'application/dxf',
+            ),
+            'astm' => $this->download(
+                $this->aama->astm($pattern, ['sizes' => $this->sizes($request)]),
+                $base.'-astm.dxf',
+                'application/dxf',
+            ),
             default => $this->download(
                 json_encode($this->payload($pattern), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
                 $base.'.json',
                 'application/json',
             ),
         };
+    }
+
+    /**
+     * خروجی PNG با گزینه‌های ?dpi= و ?seam=.
+     *
+     * اگر اندازه خواسته‌شده از سقف پیکسل بگذرد، به جای خطای ۵۰۰ یک پاسخ ۴۲۲ با
+     * توضیح فارسی برمی‌گردد تا کاربر بداند چه چیزی را کم کند.
+     */
+    protected function exportPng(Request $request, Pattern $pattern, string $base): Response
+    {
+        try {
+            $png = $this->png->export($pattern, [
+                'dpi' => $request->query('dpi'),
+                'seam_allowance' => $request->boolean('seam'),
+            ]);
+        } catch (ExportTooLargeException $exception) {
+            return response($exception->getMessage(), 422, [
+                'Content-Type' => 'text/plain; charset=UTF-8',
+            ]);
+        }
+
+        $dpi = PatternPngExporter::clampDpi($request->query('dpi'));
+
+        return $this->binary($png, $base.'-'.$dpi.'dpi.png', 'image/png');
+    }
+
+    /**
+     * سایزهای خواسته‌شده برای خروجی صنعتی: ?sizes=38,40,42
+     *
+     * @return array<int, string>
+     */
+    protected function sizes(Request $request): array
+    {
+        $sizes = $request->query('sizes');
+
+        if (! is_string($sizes) || trim($sizes) === '') {
+            return [];
+        }
+
+        return array_values(array_filter(array_map('trim', explode(',', $sizes))));
     }
 
     /**
@@ -182,6 +255,16 @@ class PatternExportController extends Controller
     {
         return response($body, 200, [
             'Content-Type' => $contentType.'; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+            'Content-Length' => (string) strlen($body),
+        ]);
+    }
+
+    /** دانلود دودویی (PDF و PNG): بدون charset، چون محتوا متنی نیست. */
+    protected function binary(string $body, string $filename, string $contentType): Response
+    {
+        return response($body, 200, [
+            'Content-Type' => $contentType,
             'Content-Disposition' => 'attachment; filename="'.$filename.'"',
             'Content-Length' => (string) strlen($body),
         ]);
