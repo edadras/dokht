@@ -9,6 +9,12 @@
         {{-- گام یک: انتخاب مدل از کتابخانه --}}
         <x-card title="۱. مدل الگو را انتخاب کنید" icon="book"
             subtitle="مدل‌های پایه آماده‌اند؛ اندازه‌ها روی همان مدل پیاده می‌شود.">
+            @if ($templates->isEmpty())
+                <x-alert type="warning">
+                    هنوز الگوی پایه‌ای در کتابخانه نیست. از مدیر سامانه بخواهید کتابخانه الگوها را پر کند.
+                </x-alert>
+            @endif
+
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 @foreach ($templates as $template)
                     <label class="cursor-pointer">
