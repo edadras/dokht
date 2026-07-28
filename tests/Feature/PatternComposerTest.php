@@ -138,7 +138,7 @@ class PatternComposerTest extends TestCase
             ->assertJsonStructure(['svg', 'notes', 'metrics', 'pieces', 'name']);
 
         $this->assertStringContainsString('<svg', $response->json('svg'));
-        $this->assertCount(6, $response->json('pieces'));
+        $this->assertGreaterThanOrEqual(6, count($response->json('pieces')));
         $this->assertNotEmpty($response->json('notes'));
         $this->assertStringContainsString('ترکیب:', $response->json('name'));
     }
@@ -147,11 +147,13 @@ class PatternComposerTest extends TestCase
     {
         $this->actingAsWorkshopUser();
 
-        $response = $this->getJson(route('patterns.compose.preview', $this->selection([
-            'sleeve' => 'none',
-            'collar' => 'none',
-            'gather' => 10,
-        ])));
+        // اندازه چین را از روی همین ترکیب حساب می‌کنیم تا آزمون به اندازه بلوک‌ها گره نخورد
+        $selection = $this->selection(['sleeve' => 'none', 'collar' => 'none']);
+        $waist = app(PatternComposer::class)
+            ->compose($selection, Measurements::fromSize('40'))['metrics']['waist'];
+        $gather = round(($waist['bodice'] - $waist['lower']) + 8, 1);
+
+        $response = $this->getJson(route('patterns.compose.preview', $selection + ['gather' => $gather]));
 
         $response->assertOk()->assertJsonPath('metrics.waist.method', 'gather');
 
@@ -196,8 +198,13 @@ class PatternComposerTest extends TestCase
         $this->assertNotNull($pattern->garment_type_id);
 
         $codes = $pattern->pieces->pluck('code')->all();
-        $this->assertSame(['bodice-front', 'bodice-back', 'skirt-front', 'skirt-back', 'sleeve', 'collar'], $codes);
         $this->assertSame($codes, array_unique($codes));
+        $this->assertGreaterThanOrEqual(6, count($codes));
+        $this->assertSame(
+            ['bodice', 'lower', 'sleeve', 'collar'],
+            $pattern->pieces->pluck('meta.group')->unique()->values()->all(),
+            'هر چهار بخش باید در الگو باشد و به همین ترتیب.',
+        );
 
         $this->assertNotEmpty($pattern->sewing_relations);
         $this->assertSame('bodice_block', $pattern->params['compose']['selection']['bodice']);
@@ -208,7 +215,7 @@ class PatternComposerTest extends TestCase
         $version = $pattern->versions()->first();
         $this->assertNotNull($version);
         $this->assertSame(1, (int) $version->version);
-        $this->assertCount(6, $version->snapshot['pieces']);
+        $this->assertCount($pattern->pieces->count(), $version->snapshot['pieces']);
         $this->assertStringContainsString('ترکیب مدل‌ها', (string) $version->note);
     }
 

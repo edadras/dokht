@@ -145,8 +145,9 @@ abstract class RaglanCutStyle extends SleeveBodiceStyle
         $plan = $this->cutPlan($a, $p);
         $centroid = $a['centroid'];
 
-        // ۱) سر خط رگلان روی خط یقه
-        $neckSpan = max(1.5, min($a['neck_length'] - 1.5, $plan['neck']));
+        // ۱) سر خط رگلان روی خط یقه؛ بیش از نیمه خط یقه را نمی‌گیرد، وگرنه چیزی از
+        //    یقه روی بالاتنه نمی‌ماند و خط رگلان روی خودش تا می‌خورد
+        $neckSpan = max(1.5, min($a['neck_length'] * 0.55, $plan['neck']));
         $tNeck = $this->tAtLength($outline, $a['neck_edge'], $a['neck_length'] - $neckSpan);
         [$neckCut, , $neckPoint] = $this->splitEdge($outline, $a['neck_edge'], $tNeck);
         $neckArc = $a['neck_length'] - Geometry::edgeLength(

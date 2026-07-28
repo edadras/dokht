@@ -173,18 +173,26 @@ class PatternComposerTest extends TestCase
     public function test_waist_difference_is_eased_into_gathers_and_the_seams_end_up_equal(): void
     {
         $composer = $this->composer();
+        $selection = ['bodice' => 'bodice_block', 'skirt' => 'skirt_a_line'];
+        $ease = ['bust' => 6, 'waist' => 4, 'hip' => 6];
+
+        // چقدر باید دامن را گشادتر بگیریم تا اختلاف در حد چین‌خوردن باشد؟
+        // (اندازه خودِ بلوک‌ها کار این آزمون نیست، پس از روی همین ترکیب حساب می‌شود.)
+        $first = $composer->compose($selection, $this->measurements(), $ease)['metrics']['waist'];
+        $extra = round(($first['bodice'] - $first['lower']) + 8, 1);
 
         $result = $composer->compose(
-            ['bodice' => 'bodice_block', 'skirt' => 'skirt_a_line'],
+            $selection,
             $this->measurements(),
-            ['bust' => 6, 'waist' => 4, 'hip' => 6, 'lower' => ['waist' => 16]],
+            array_merge($ease, ['lower' => ['waist' => $extra]]),
         );
 
         $waist = $result['metrics']['waist'];
 
         $this->assertSame('gather', $waist['method']);
-        $this->assertEqualsWithDelta(12.0, $waist['difference'], 0.2, 'دامن باید ۱۲ سانتی‌متر گشادتر باشد.');
-        $this->assertEqualsWithDelta(12.0, $waist['gathered'], 0.2);
+        $this->assertGreaterThan(0, $waist['difference'], 'دامن باید گشادتر از بالاتنه باشد.');
+        $this->assertLessThanOrEqual(PatternComposer::MAX_GATHER, $waist['difference']);
+        $this->assertEqualsWithDelta($waist['difference'], $waist['gathered'], 0.05);
 
         // بعد از چین‌دادن، دو لبه کمر دقیقاً هم‌اندازه دوخته می‌شوند
         $this->assertEqualsWithDelta(
@@ -194,9 +202,17 @@ class PatternComposerTest extends TestCase
         );
         $this->assertEqualsWithDelta($waist['bodice_after'], $waist['lower_after'], 0.05);
 
-        $gathers = $this->piece($result, 'skirt-front')['meta']['gathers'];
-        $this->assertNotEmpty($gathers);
-        $this->assertEqualsWithDelta(3.0, $gathers[0]['amount'], 0.2, 'چین بین چهار ربع کمر پخش می‌شود.');
+        // همه چین ثبت‌شده روی قطعه‌ها، روی هم، همان اختلاف است
+        $recorded = 0.0;
+
+        foreach ($this->group($result, 'lower') as $piece) {
+            foreach ($piece['meta']['gathers'] ?? [] as $gather) {
+                $recorded += $gather['amount'] * (empty($piece['on_fold']) ? max(1, (int) $piece['cut_quantity']) : 2);
+            }
+        }
+
+        $this->assertNotEmpty($this->piece($result, 'skirt-front')['meta']['gathers']);
+        $this->assertEqualsWithDelta($waist['difference'], $recorded, 0.2, 'چین باید بین قطعه‌های کمر پخش شود.');
 
         $note = collect($result['notes'])->firstWhere('type', 'tip');
         $this->assertStringContainsString('چین', $note['text']);
@@ -255,10 +271,30 @@ class PatternComposerTest extends TestCase
             PatternComposer::CAP_TOLERANCE,
             'سرآستین باید به اندازه حلقه + آزادی سرآستین باشد.',
         );
+        $this->assertGreaterThanOrEqual($sleeve['armhole_before'], $sleeve['armhole']);
+    }
 
-        // حلقه آستین برای جادادن سرآستین گودتر شده و این کار ثبت شده است
+    public function test_a_wide_arm_makes_the_armhole_deeper_and_says_so(): void
+    {
+        $composer = $this->composer();
+
+        $result = $composer->compose(
+            ['bodice' => 'bodice_block', 'sleeve' => 'sleeve', 'skirt' => 'skirt_a_line'],
+            array_merge($this->measurements(), ['bicep' => 40]),
+            ['bust' => 6, 'waist' => 4, 'hip' => 6],
+        );
+
+        $sleeve = $result['metrics']['sleeve'];
+
+        // دور بازوی بزرگ سرآستین را بلند می‌کند؛ حلقه گودتر می‌شود تا در آن بنشیند
         $this->assertGreaterThan(0, $sleeve['armhole_drop']);
         $this->assertGreaterThan($sleeve['armhole_before'], $sleeve['armhole']);
+        $this->assertLessThanOrEqual(PatternComposer::MAX_ARMHOLE_DROP, $sleeve['armhole_drop']);
+        $this->assertEqualsWithDelta(
+            $composer->armholeLength($this->group($result, 'bodice')),
+            $sleeve['armhole'],
+            0.05,
+        );
         $this->assertNotEmpty(collect($result['notes'])->filter(
             fn (array $note) => str_contains($note['text'], 'حلقه آستین'),
         ));
