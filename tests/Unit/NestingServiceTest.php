@@ -75,6 +75,125 @@ class NestingServiceTest extends TestCase
         }
     }
 
+    public function test_the_layout_is_deterministic_for_the_same_input(): void
+    {
+        $pattern = $this->crowdedPattern();
+
+        $first = $this->nesting->nest($pattern, null, ['fabric_width_cm' => 150]);
+        $second = $this->nesting->nest($pattern, null, ['fabric_width_cm' => 150]);
+        $third = (new NestingService)->nest($pattern->fresh('pieces'), null, ['fabric_width_cm' => 150]);
+
+        $this->assertSame($first['placements'], $second['placements']);
+        $this->assertSame($first['placements'], $third['placements']);
+        $this->assertSame($first['required_length_cm'], $third['required_length_cm']);
+        $this->assertSame($first['efficiency'], $third['efficiency']);
+    }
+
+    public function test_every_pair_of_placed_pieces_keeps_at_least_the_gap(): void
+    {
+        $pattern = $this->crowdedPattern();
+
+        foreach ([0.0, 1.0, 2.5] as $gap) {
+            $result = $this->nesting->nest($pattern, null, ['fabric_width_cm' => 150, 'gap_cm' => $gap]);
+
+            $this->assertSame([], $result['unplaced']);
+            $this->assertNotEmpty($result['placements']);
+
+            $this->assertSeparated($result, $gap);
+        }
+    }
+
+    public function test_pieces_stay_inside_the_usable_width_and_the_required_length(): void
+    {
+        $pattern = $this->crowdedPattern();
+
+        $result = $this->nesting->nest($pattern, null, ['fabric_width_cm' => 110]);
+
+        foreach ($result['placements'] as $placement) {
+            $this->assertGreaterThanOrEqual(-0.001, $placement['x']);
+            $this->assertLessThanOrEqual(
+                $result['usable_width_cm'] + 0.001,
+                $placement['x'] + $placement['width'],
+                'قطعه از عرض مفید پارچه بیرون زده است.',
+            );
+            $this->assertLessThanOrEqual(
+                $result['required_length_cm'] + 0.001,
+                $placement['y'] + $placement['height'],
+                'قطعه از طول محاسبه‌شده پارچه بیرون زده است.',
+            );
+        }
+    }
+
+    public function test_the_packer_beats_a_naive_one_piece_per_row_baseline(): void
+    {
+        $pattern = $this->crowdedPattern();
+
+        $result = $this->nesting->nest($pattern, null, [
+            'fabric_width_cm' => 150,
+            'gap_cm' => 1,
+            'include_allowance' => false,
+        ]);
+
+        // چیدمان ساده «هر قطعه یک ردیف»: طول برابر جمع بلندی قطعه‌ها می‌شود
+        $naive = -1.0;
+
+        foreach ($result['placements'] as $placement) {
+            $naive += $placement['height'] + 1;
+        }
+
+        $this->assertSame([], $result['unplaced']);
+        $this->assertGreaterThan(0, $naive);
+        $this->assertLessThan(
+            $naive * 0.45,
+            $result['required_length_cm'],
+            'چیدمان باید دست‌کم دوسوم از حالت «هر قطعه یک ردیف» کوتاه‌تر باشد.',
+        );
+        $this->assertGreaterThan(78, $result['efficiency']);
+    }
+
+    public function test_on_fold_pieces_hug_the_fold_even_in_a_crowded_layout(): void
+    {
+        $pattern = $this->crowdedPattern();
+
+        $result = $this->nesting->nest($pattern, null, ['fabric_width_cm' => 150]);
+
+        $onFold = array_values(array_filter($result['placements'], fn (array $p) => $p['on_fold']));
+
+        $this->assertGreaterThanOrEqual(2, count($onFold));
+
+        foreach ($onFold as $placement) {
+            $this->assertSame(0.0, $placement['x'], 'قطعه روی تا از لبه تا کنده شده است.');
+            $this->assertSame(0, $placement['rotation']);
+        }
+
+        $this->assertSeparated($result, 1.0);
+    }
+
+    public function test_respecting_nap_never_turns_a_piece_sideways(): void
+    {
+        $pattern = $this->crowdedPattern();
+
+        $result = $this->nesting->nest($pattern, null, ['fabric_width_cm' => 150, 'respect_nap' => true]);
+
+        $this->assertSame([], $result['unplaced']);
+        $this->assertSame([0], array_values(array_unique(array_column($result['placements'], 'rotation'))));
+        $this->assertSeparated($result, 1.0);
+    }
+
+    public function test_stripe_matching_keeps_the_gap_and_the_snapped_offsets(): void
+    {
+        $fabric = Fabric::factory()->striped()->create(['width_cm' => 150]);
+
+        $result = $this->nesting->nest($this->crowdedPattern(), $fabric);
+
+        $this->assertSame([], $result['unplaced']);
+        $this->assertSeparated($result, (float) $result['options']['gap_cm']);
+
+        foreach ($result['placements'] as $placement) {
+            $this->assertEqualsWithDelta(0.0, fmod($placement['y'], 4.0), 0.001);
+        }
+    }
+
     public function test_a_piece_wider_than_the_fabric_produces_a_persian_warning_naming_it(): void
     {
         $pattern = $this->patternWith([
@@ -268,6 +387,51 @@ class NestingServiceTest extends TestCase
         $this->assertSame(0.0, $result['required_length_cm']);
         $this->assertSame(0.0, $result['efficiency']);
         $this->assertStringContainsString('قطعه‌ای ندارد', implode(' ', $result['warnings']));
+    }
+
+    /**
+     * هیچ دو قطعه‌ای — با احتساب جای دوخت — نباید کمتر از فاصله خواسته‌شده به هم برسند.
+     *
+     * چون کادر هر قطعه جای دوخت را در خود دارد، جدا بودن کادرها به اندازه فاصله
+     * تضمین می‌کند که خط برش دو قطعه هم روی هم نمی‌افتد.
+     */
+    protected function assertSeparated(array $result, float $gap): void
+    {
+        $placements = $result['placements'];
+
+        foreach ($placements as $index => $a) {
+            foreach (array_slice($placements, $index + 1) as $b) {
+                $dx = max($a['x'] - ($b['x'] + $b['width']), $b['x'] - ($a['x'] + $a['width']));
+                $dy = max($a['y'] - ($b['y'] + $b['height']), $b['y'] - ($a['y'] + $a['height']));
+
+                $this->assertTrue(
+                    $dx >= $gap - 0.001 || $dy >= $gap - 0.001,
+                    sprintf(
+                        'قطعه «%s» و «%s» فاصله %s سانتی‌متری را نگه نداشته‌اند (افقی %.2f، عمودی %.2f).',
+                        $a['code'],
+                        $b['code'],
+                        $gap,
+                        $dx,
+                        $dy,
+                    ),
+                );
+            }
+        }
+    }
+
+    /** الگویی با قطعه‌های ریز و درشت، قرینه و روی تا؛ محک واقعی چیدمان. */
+    protected function crowdedPattern(): Pattern
+    {
+        return $this->patternWith([
+            $this->piece('front', 'تنه جلو', 34, 66, ['cut_quantity' => 2, 'mirror' => true]),
+            $this->piece('back', 'تنه پشت', 32, 58, ['on_fold' => true]),
+            $this->piece('sleeve', 'آستین', 38, 52, ['cut_quantity' => 2, 'mirror' => true]),
+            $this->piece('yoke', 'یوک', 26, 12, ['cut_quantity' => 2, 'on_fold' => true]),
+            $this->piece('collar', 'یقه', 30, 9, ['cut_quantity' => 2, 'on_fold' => true]),
+            $this->piece('cuff', 'مچ', 24, 11, ['cut_quantity' => 2]),
+            $this->piece('pocket', 'جیب', 14, 16, ['cut_quantity' => 2]),
+            $this->piece('placket', 'پاتلت', 6, 62),
+        ]);
     }
 
     /** @param  array<int, array<string, mixed>>  $pieces */

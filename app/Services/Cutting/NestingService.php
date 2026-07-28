@@ -17,9 +17,15 @@ use Throwable;
  * باشد، فقط نیمی از عرض قابل استفاده است و لبه تا در x = ۰ قرار می‌گیرد؛ پس قطعه‌های
  * «روی تا» همیشه به x = ۰ چسبیده‌اند.
  *
- * چیدمان با الگوریتم «خط آسمان» (skyline first-fit) انجام می‌شود: به جای ردیف‌های
- * ساده، ارتفاع اشغال‌شده در هر نقطه از عرض نگه داشته می‌شود تا قطعه‌های کوچک در
- * گودی‌های بین قطعه‌های بزرگ جا بیفتند و دورریز کمتر شود.
+ * چیدمان با الگوریتم «خط آسمان» (skyline) انجام می‌شود: به جای ردیف‌های ساده،
+ * ارتفاع اشغال‌شده در هر نقطه از عرض نگه داشته می‌شود تا قطعه‌های کوچک در گودی‌های
+ * بین قطعه‌های بزرگ جا بیفتند و دورریز کمتر شود.
+ *
+ * روی این پایه، یک جست‌وجوی «بهترین از میان چند راهبرد» نشسته است: چند ترتیب
+ * قطعی از قطعه‌ها (بلندی، عرض، مساحت، بلندترین ضلع، محیط، و «روی تا اول») در دو
+ * معیار انتخاب جا (پایین‌ترین نقطه، یا کم‌ترین فضای مرده) چیده می‌شوند و بعد با
+ * جابه‌جا کردن قطعه‌ها در صف بهبود موضعی می‌گیرند. کوتاه‌ترین طول پارچه برنده است.
+ * هیچ‌جا تصادف در کار نیست، پس یک الگوی یکسان همیشه یک چیدمان یکسان می‌دهد.
  */
 class NestingService
 {
@@ -308,49 +314,321 @@ class NestingService
     }
 
     /**
-     * چیدمان نمونه‌ها با الگوریتم خط آسمان.
+     * چیدمان نمونه‌ها: بهترین نتیجه از میان چند راهبرد قطعی انتخاب می‌شود.
      *
      * @param  array<int, array<string, mixed>>  $instances
      * @return array{placements: array<int, array<string, mixed>>, required_length_cm: float, unplaced: array<int, array<string, mixed>>, forced_rotation: array<int, string>, stripe_shift_cm: float}
      */
     protected function pack(array $instances, array $options, float $usable, float $repeat = 0.0): array
     {
-        $gap = (float) $options['gap_cm'];
-        $limit = $usable + $gap;
-        $skyline = [['x' => 0.0, 'w' => $limit, 'y' => 0.0]];
-
-        $placements = [];
+        $boxes = [];
         $unplaced = [];
         $forced = [];
-        $shift = 0.0;
-        $length = 0.0;
 
-        foreach ($instances as $instance) {
-            $candidates = $this->orientations($instance, $options);
-            $fitting = array_values(array_filter($candidates, fn (array $o) => $o['w'] <= $usable + 1e-9));
+        foreach ($instances as $index => $instance) {
+            $box = $this->box($instance, $options, $usable);
 
-            if ($fitting === [] && ! $options['respect_nap'] && $instance['h'] <= $usable + 1e-9) {
-                // قطعه فقط با چرخش جا می‌شود؛ می‌چرخانیم و هشدار می‌دهیم
-                $fitting = [['rotation' => 90, 'w' => $instance['h'], 'h' => $instance['w'], 'forced' => true]];
-                $forced[] = $instance['code'];
-            }
-
-            if ($fitting === []) {
+            if ($box === null) {
+                // قطعه در هیچ جهتی در عرض مفید جا نمی‌شود
                 $unplaced[] = $instance;
 
                 continue;
             }
 
+            if ($box['forced']) {
+                $forced[] = $instance['code'];
+            }
+
+            $boxes[$index] = $box;
+        }
+
+        $winner = $this->search($boxes, $options, $usable, $repeat);
+
+        $placements = [];
+        $shift = 0.0;
+        $length = 0.0;
+
+        // رکوردها به ترتیب اصلی قطعه‌های الگو ساخته می‌شوند، نه به ترتیب چیدن
+        foreach (array_keys($boxes) as $index) {
+            $spot = $winner['spots'][$index] ?? null;
+
+            if ($spot === null) {
+                $unplaced[] = $instances[$index];
+
+                continue;
+            }
+
+            $shift += (float) $spot['offset'];
+            $length = max($length, (float) $spot['y'] + (float) $spot['orientation']['h']);
+
+            $placements[] = $this->placement(
+                $instances[$index],
+                $spot['orientation'],
+                (float) $spot['x'],
+                (float) $spot['y'],
+                (float) $spot['offset'],
+            );
+        }
+
+        return [
+            'placements' => $placements,
+            'required_length_cm' => round($length, 1),
+            'unplaced' => $unplaced,
+            'forced_rotation' => array_values(array_unique($forced)),
+            'stripe_shift_cm' => round($shift, 1),
+        ];
+    }
+
+    /**
+     * داده سبک یک نمونه برای جست‌وجو: جهت‌هایی که در عرض مفید جا می‌شوند.
+     *
+     * خروجی null یعنی قطعه به هیچ روی در این عرض جا نمی‌شود.
+     *
+     * @return array{orientations: array<int, array{rotation: int, w: float, h: float}>, on_fold: bool, w: float, h: float, forced: bool}|null
+     */
+    protected function box(array $instance, array $options, float $usable): ?array
+    {
+        $fitting = array_values(array_filter(
+            $this->orientations($instance, $options),
+            fn (array $orientation) => $orientation['w'] <= $usable + 1e-9,
+        ));
+
+        $forced = false;
+
+        if ($fitting === [] && ! $options['respect_nap'] && $instance['h'] <= $usable + 1e-9) {
+            // قطعه فقط با چرخش جا می‌شود؛ می‌چرخانیم و هشدار می‌دهیم
+            $fitting = [['rotation' => 90, 'w' => (float) $instance['h'], 'h' => (float) $instance['w']]];
+            $forced = true;
+        }
+
+        if ($fitting === []) {
+            return null;
+        }
+
+        return [
+            'orientations' => $fitting,
+            'on_fold' => (bool) $instance['on_fold'],
+            'w' => (float) $instance['w'],
+            'h' => (float) $instance['h'],
+            'forced' => $forced,
+        ];
+    }
+
+    /**
+     * جست‌وجوی بهترین چیدمان: چند ترتیب شروع × دو معیار انتخاب جا، و بعد بهبود موضعی.
+     *
+     * برای اینکه صفحه‌های سنگین کند نشوند، شمار چیدمان‌های آزمایشی سقف دارد؛ سقف
+     * فقط به تعداد قطعه‌ها بستگی دارد تا نتیجه قطعی بماند.
+     *
+     * @param  array<int, array<string, mixed>>  $boxes
+     * @return array{length: float, spots: array<int, array<string, mixed>>, unplaced: array<int, int>}
+     */
+    protected function search(array $boxes, array $options, float $usable, float $repeat): array
+    {
+        if ($boxes === []) {
+            return ['length' => 0.0, 'spots' => [], 'unplaced' => []];
+        }
+
+        $budget = (int) max(240, min(2400, intdiv(24000, max(10, count($boxes)))));
+        $spent = 0;
+        $best = null;
+        $starts = [];
+
+        foreach ($this->sequences($boxes) as $sequence) {
+            foreach (['level', 'waste'] as $mode) {
+                $run = $this->layout($boxes, $sequence, $options, $usable, $repeat, $mode);
+                $spent++;
+                $starts[] = ['sequence' => $sequence, 'mode' => $mode, 'run' => $run];
+
+                if ($this->shorter($run, $best)) {
+                    $best = $run;
+                }
+            }
+        }
+
+        foreach ($starts as $start) {
+            if ($spent >= $budget) {
+                break;
+            }
+
+            $run = $this->improve(
+                $boxes,
+                $start['sequence'],
+                $start['run'],
+                $options,
+                $usable,
+                $repeat,
+                $start['mode'],
+                $spent,
+                $budget,
+            );
+
+            if ($this->shorter($run, $best)) {
+                $best = $run;
+            }
+        }
+
+        return $best ?? ['length' => 0.0, 'spots' => [], 'unplaced' => array_keys($boxes)];
+    }
+
+    /**
+     * بهبود موضعی: هر قطعه را در همه جای‌های صف امتحان می‌کند و اگر پارچه کوتاه‌تر
+     * شد، جابه‌جایی را می‌پذیرد. اولین بهبود پذیرفته و پویش از سر گرفته می‌شود.
+     *
+     * @param  array<int, array<string, mixed>>  $boxes
+     * @param  array<int, int>  $sequence
+     * @param  array{length: float, spots: array<int, array<string, mixed>>, unplaced: array<int, int>}  $run
+     * @return array{length: float, spots: array<int, array<string, mixed>>, unplaced: array<int, int>}
+     */
+    protected function improve(
+        array $boxes,
+        array $sequence,
+        array $run,
+        array $options,
+        float $usable,
+        float $repeat,
+        string $mode,
+        int &$spent,
+        int $budget,
+    ): array {
+        $count = count($sequence);
+
+        for ($round = 0; $round < $count && $spent < $budget; $round++) {
+            $moved = false;
+
+            for ($from = 0; $from < $count && ! $moved && $spent < $budget; $from++) {
+                for ($to = 0; $to < $count && ! $moved && $spent < $budget; $to++) {
+                    if ($from === $to) {
+                        continue;
+                    }
+
+                    // قطعه از جای خودش برداشته و در جای دیگری از صف گذاشته می‌شود
+                    $candidate = $sequence;
+                    $picked = array_splice($candidate, $from, 1);
+                    array_splice($candidate, $to, 0, $picked);
+
+                    $trial = $this->layout($boxes, $candidate, $options, $usable, $repeat, $mode);
+                    $spent++;
+
+                    if ($this->shorter($trial, $run)) {
+                        [$sequence, $run, $moved] = [$candidate, $trial, true];
+                    }
+                }
+            }
+
+            if (! $moved) {
+                break;
+            }
+        }
+
+        return $run;
+    }
+
+    /** آیا چیدمان تازه از چیدمان مرجع بهتر است؟ اول قطعه‌های جانشده، بعد طول پارچه. */
+    protected function shorter(?array $run, ?array $reference): bool
+    {
+        if ($run === null) {
+            return false;
+        }
+
+        if ($reference === null) {
+            return true;
+        }
+
+        $left = count($run['unplaced']);
+        $right = count($reference['unplaced']);
+
+        if ($left !== $right) {
+            return $left < $right;
+        }
+
+        return $run['length'] < $reference['length'] - 1e-9;
+    }
+
+    /**
+     * ترتیب‌های شروع جست‌وجو؛ همه بر پایه اندازه قطعه‌ها و کاملاً قطعی.
+     *
+     * @param  array<int, array<string, mixed>>  $boxes
+     * @return array<int, array<int, int>>
+     */
+    protected function sequences(array $boxes): array
+    {
+        $metrics = [
+            'height' => fn (array $box) => [$box['h'], $box['w']],
+            'width' => fn (array $box) => [$box['w'], $box['h']],
+            'area' => fn (array $box) => [$box['w'] * $box['h'], $box['h']],
+            'longest' => fn (array $box) => [max($box['w'], $box['h']), $box['w'] * $box['h']],
+            'girth' => fn (array $box) => [$box['w'] + $box['h'], $box['h']],
+        ];
+
+        $sequences = [];
+
+        foreach ($metrics as $metric) {
+            $sequences[] = $this->sequenceBy($boxes, $metric);
+        }
+
+        // قطعه‌های «روی تا» اول: ستون لبه تا زود بسته می‌شود و بقیه عرض آزاد می‌ماند
+        foreach (['height', 'width', 'area'] as $name) {
+            $metric = $metrics[$name];
+            $sequences[] = $this->sequenceBy(
+                $boxes,
+                fn (array $box) => array_merge([$box['on_fold'] ? 1 : 0], $metric($box)),
+            );
+        }
+
+        return $sequences;
+    }
+
+    /**
+     * مرتب‌سازی نزولی نمونه‌ها بر پایه یک سنجه؛ در تساوی، ترتیب اصلی حفظ می‌شود.
+     *
+     * @param  array<int, array<string, mixed>>  $boxes
+     * @return array<int, int>
+     */
+    protected function sequenceBy(array $boxes, callable $metric): array
+    {
+        $keys = array_keys($boxes);
+
+        usort($keys, fn (int $a, int $b) => [$metric($boxes[$b]), -$b] <=> [$metric($boxes[$a]), -$a]);
+
+        return $keys;
+    }
+
+    /**
+     * یک بار چیدن قطعه‌ها به ترتیب داده‌شده روی خط آسمان.
+     *
+     * @param  array<int, array<string, mixed>>  $boxes
+     * @param  array<int, int>  $sequence
+     * @return array{length: float, spots: array<int, array<string, mixed>>, unplaced: array<int, int>}
+     */
+    protected function layout(
+        array $boxes,
+        array $sequence,
+        array $options,
+        float $usable,
+        float $repeat,
+        string $mode,
+    ): array {
+        $gap = (float) $options['gap_cm'];
+        $limit = $usable + $gap;
+        $skyline = [['x' => 0.0, 'w' => $limit, 'y' => 0.0]];
+
+        $spots = [];
+        $unplaced = [];
+        $length = 0.0;
+
+        foreach ($sequence as $index) {
+            $box = $boxes[$index];
             $best = null;
 
-            foreach ($fitting as $orientation) {
-                $spot = $this->findSpot($skyline, $orientation['w'] + $gap, $limit, $instance['on_fold']);
+            foreach ($box['orientations'] as $orientation) {
+                $spot = $this->findSpot($skyline, (float) $orientation['w'] + $gap, $limit, $box['on_fold'], $mode);
 
                 if ($spot === null) {
                     continue;
                 }
 
-                $y = $spot['y'];
+                $y = (float) $spot['y'];
                 $offset = 0.0;
 
                 if ($repeat > 0) {
@@ -371,33 +649,24 @@ class NestingService
             }
 
             if ($best === null) {
-                $unplaced[] = $instance;
+                $unplaced[] = $index;
 
                 continue;
             }
 
-            $orientation = $best['orientation'];
-            $shift += $best['offset'];
-
-            $placements[] = $this->placement($instance, $orientation, (float) $best['x'], (float) $best['y'], $best['offset']);
+            $spots[$index] = $best;
 
             $skyline = $this->insert(
                 $skyline,
                 (float) $best['x'],
-                $orientation['w'] + $gap,
-                $best['y'] + $orientation['h'] + $gap,
+                (float) $best['orientation']['w'] + $gap,
+                (float) $best['y'] + (float) $best['orientation']['h'] + $gap,
             );
 
-            $length = max($length, $best['y'] + $orientation['h']);
+            $length = max($length, (float) $best['y'] + (float) $best['orientation']['h']);
         }
 
-        return [
-            'placements' => $placements,
-            'required_length_cm' => round($length, 1),
-            'unplaced' => $unplaced,
-            'forced_rotation' => array_values(array_unique($forced)),
-            'stripe_shift_cm' => round($shift, 1),
-        ];
+        return ['length' => $length, 'spots' => $spots, 'unplaced' => $unplaced];
     }
 
     /**
@@ -796,34 +1065,67 @@ class NestingService
         return array_values(array_unique($warnings));
     }
 
-    /** پیدا کردن پایین‌ترین جای ممکن برای یک قطعه روی خط آسمان. */
-    protected function findSpot(array $skyline, float $footprint, float $limit, bool $atFold): ?array
-    {
-        if ($atFold) {
-            $y = $this->levelAt($skyline, 0, $footprint, $limit);
-
-            return $y === null ? null : ['x' => 0.0, 'y' => $y];
-        }
-
+    /**
+     * پیدا کردن بهترین جای یک قطعه روی خط آسمان.
+     *
+     * در معیار «level» پایین‌ترین نقطه برنده است و فضای مرده تنها داور تساوی است؛
+     * در معیار «waste» اول کم‌ترین فضای مرده زیر قطعه اهمیت دارد، یعنی قطعه ترجیح
+     * می‌دهد در گودی کنار یک قطعه بلندتر بیفتد تا اینکه ردیف تازه‌ای باز کند.
+     */
+    protected function findSpot(
+        array $skyline,
+        float $footprint,
+        float $limit,
+        bool $atFold,
+        string $mode = 'level',
+    ): ?array {
         $best = null;
 
         foreach ($skyline as $index => $node) {
+            // قطعه روی تا فقط به لبه تا (x = ۰) می‌چسبد
+            if ($atFold && $index > 0) {
+                break;
+            }
+
             $y = $this->levelAt($skyline, $index, $footprint, $limit);
 
             if ($y === null) {
                 continue;
             }
 
-            if (
-                $best === null
-                || $y < $best['y'] - 1e-9
-                || (abs($y - $best['y']) < 1e-9 && $node['x'] < $best['x'] - 1e-9)
-            ) {
-                $best = ['x' => (float) $node['x'], 'y' => $y];
+            $x = (float) $node['x'];
+            $dead = $this->deadSpace($skyline, $x, $footprint, $y);
+
+            $rank = $mode === 'waste'
+                ? [round($dead, 4), round($y, 4), $x]
+                : [round($y, 4), round($dead, 4), $x];
+
+            if ($best === null || $rank < $best['rank']) {
+                $best = ['rank' => $rank, 'x' => $x, 'y' => $y];
             }
         }
 
         return $best;
+    }
+
+    /** فضای مرده‌ای که با نشستن قطعه در این جا، زیر آن بی‌استفاده می‌ماند. */
+    protected function deadSpace(array $skyline, float $x, float $footprint, float $level): float
+    {
+        $end = $x + $footprint;
+        $dead = 0.0;
+
+        foreach ($skyline as $node) {
+            $from = max((float) $node['x'], $x);
+            $to = min((float) $node['x'] + (float) $node['w'], $end);
+
+            if ($to <= $from + 1e-9) {
+                continue;
+            }
+
+            $dead += ($level - (float) $node['y']) * ($to - $from);
+        }
+
+        return $dead;
     }
 
     /** ارتفاع اشغال‌شده در بازه‌ای از عرض، از گره داده‌شده به بعد. */

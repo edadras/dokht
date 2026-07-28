@@ -4,13 +4,22 @@
  * این فایل چهار کار انجام می‌دهد:
  *   ۱) از اندازه‌های بدن یک مانکن پارامتری می‌سازد (تن، گردن، سر، دست‌ها، پاها).
  *   ۲) روی همان مانکن لباسی می‌پوشاند که فرم و قدش از الگو می‌آید.
- *   ۳) با چند تکرار ساده پارچه را «می‌نشاند» تا افتادگی و چین آن دیده شود.
+ *   ۳) با یک پاس ساده پارچه را «می‌نشاند» تا افتادگی و چین آن دیده شود.
  *   ۴) نواحی تنگ و گشاد را با رنگ روی لباس نشان می‌دهد.
+ *
+ * نکتهٔ کلیدی شکل‌گیری: بدن و لباس هر دو از یک جدول مشترک «مقطع بدن» ساخته
+ * می‌شوند (bodyProfile). هر مقطع یک بیضی افقی است با نیم‌پهنا (rx) و نیم‌عمق (rz)
+ * جدا از هم؛ چون بدن از پهلو گشاد و از جلو به عقب باریک است و سرشانه پهن ولی
+ * کم‌عمق است. لباس همان جدول را با «آزادی» هر ناحیه می‌خواند، پس هیچ‌وقت از بدن
+ * جدا نمی‌افتد و هیچ‌وقت هم داخل بدن فرو نمی‌رود.
  *
  * هیچ کتابخانه‌ی کمکی لازم نیست؛ چرخش با ماوس هم دستی نوشته شده است.
  */
 
 const RAD = Math.PI / 180;
+
+/* کمترین فاصلهٔ پارچه از پوست (متر)؛ جلوی فرورفتن لباس در بدن را می‌گیرد */
+const SKIN_GAP = 0.006;
 
 /*
  * کتابخانه سه‌بعدی فقط زمانی دانلود می‌شود که کاربر به صفحه نمای سه‌بعدی برسد؛
@@ -43,6 +52,45 @@ const loadThree = async () => {
 
 /* تبدیل دور (سانتی‌متر) به شعاع در مقیاس صحنه (متر) */
 const radius = (girthCm) => Math.max(0.02, girthCm / (2 * Math.PI) / 100);
+
+/* تبدیل آزادی (سانتی‌متر) به فاصلهٔ شعاعی؛ آزادی منفی هم مجاز است (لباس تنگ) */
+const gapFor = (cm) => cm / (2 * Math.PI) / 100;
+
+const lerp = (a, b, t) => a + (b - a) * t;
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+/* منحنی نرم؛ برای گوشه‌های سرشانه و باز شدن دامن */
+const smooth = (t) => t * t * (3 - 2 * t);
+
+/*
+ * درون‌یابی خطی روی جدولی از [ارتفاع, مقدار۱, مقدار۲, ...] که بر اساس ارتفاع
+ * صعودی مرتب شده است. بیرون از بازه، نزدیک‌ترین سطر برگردانده می‌شود.
+ */
+const sample = (table, y) => {
+    if (y <= table[0][0]) {
+        return table[0].slice(1);
+    }
+
+    const last = table[table.length - 1];
+
+    if (y >= last[0]) {
+        return last.slice(1);
+    }
+
+    for (let i = 0; i < table.length - 1; i++) {
+        const low = table[i];
+        const high = table[i + 1];
+
+        if (y >= low[0] && y <= high[0]) {
+            const t = (y - low[0]) / Math.max(1e-6, high[0] - low[0]);
+
+            return low.slice(1).map((value, index) => lerp(value, high[index + 1], t));
+        }
+    }
+
+    return last.slice(1);
+};
 
 /* عدد شبه‌تصادفی ثابت برای هر شماره؛ چین‌ها همیشه یک شکل دربیایند */
 const hash = (i) => {
@@ -213,6 +261,7 @@ export default (config = {}) => ({
             underBust: radius(avatar.under_bust || (avatar.bust || 92) - 14),
             bust: radius(avatar.bust || 92),
             neck: radius(avatar.neck || 36),
+            armhole: radius(avatar.armhole || 40),
             bicep: radius(avatar.bicep || 28),
             wrist: radius(avatar.wrist || 16),
             thigh: radius(avatar.thigh || 56),
@@ -223,6 +272,8 @@ export default (config = {}) => ({
 
         ctx.level = level;
         ctx.radii = r;
+        ctx.armLength = (avatar.arm_length || 58) / 100;
+        ctx.profile = this.bodyProfile();
 
         const skin = new THREE.MeshStandardMaterial({ color: '#d9c3ad', roughness: 0.85, metalness: 0.02 });
         ctx.disposables.push(skin);
@@ -237,38 +288,41 @@ export default (config = {}) => ({
         ctx.kneeL = new THREE.Group();
         ctx.kneeR = new THREE.Group();
 
+        /*
+         * لولای کمر: بالاتنه باید دور خط کمر خم شود، نه دور کف صحنه. گروه spine
+         * روی خط کمر می‌نشیند و گروه torso همان‌قدر پایین می‌آید تا مختصات بچه‌هایش
+         * همان ارتفاع واقعی بماند.
+         */
+        ctx.spine = new THREE.Group();
+        ctx.spine.position.y = level.waist;
+        ctx.torso.position.y = -level.waist;
+
         ctx.scene.add(ctx.root);
-        ctx.root.add(ctx.torso, ctx.legL, ctx.legR);
+        ctx.root.add(ctx.spine, ctx.legL, ctx.legR);
+        ctx.spine.add(ctx.torso);
         ctx.torso.add(ctx.armL, ctx.armR);
 
-        // ---- تن: یک چرخانه از خط باسن تا گردن ----
-        const torsoMesh = new THREE.Mesh(
-            new THREE.LatheGeometry(
-                this.spline([
-                    [r.hip * 0.92, level.crotch],
-                    [r.hip, level.hip],
-                    [r.highHip, level.highHip],
-                    [r.waist, level.waist],
-                    [r.underBust, level.underBust],
-                    [r.bust, level.bust],
-                    [r.bust * 0.94, level.armhole],
-                    [r.shoulder * 0.92, level.shoulder],
-                    [r.neck * 1.1, level.neck],
-                ]),
-                40,
-            ),
-            skin,
-        );
-        torsoMesh.scale.z = 0.74; // بدن از جلو به عقب باریک‌تر از پهلو است
+        // ---- تن: سطحی از مقطع‌های بیضی، از خط فاق تا گردن ----
+        const torsoRings = [];
+        const torsoSteps = 34;
+
+        for (let i = 0; i <= torsoSteps; i++) {
+            const y = lerp(level.crotch, level.neck, i / torsoSteps);
+            const [rx, rz] = sample(ctx.profile, y);
+
+            torsoRings.push(this.ringPoints({ y, rx, rz }, 48));
+        }
+
+        const torsoMesh = new THREE.Mesh(this.ringSurface(torsoRings), skin);
         ctx.torso.add(torsoMesh);
         ctx.disposables.push(torsoMesh.geometry);
 
         // ---- گردن و سر ----
         const neck = new THREE.Mesh(
-            new THREE.CylinderGeometry(r.neck * 0.9, r.neck * 1.05, Math.max(0.03, level.chin - level.neck), 20),
+            new THREE.CylinderGeometry(r.neck * 0.9, r.neck * 1.05, Math.max(0.03, level.chin - level.neck + 0.02), 20),
             skin,
         );
-        neck.position.y = (level.neck + level.chin) / 2;
+        neck.position.y = (level.neck + level.chin) / 2 - 0.01;
         ctx.torso.add(neck);
         ctx.disposables.push(neck.geometry);
 
@@ -279,13 +333,19 @@ export default (config = {}) => ({
         ctx.disposables.push(head.geometry);
 
         // ---- دست‌ها: هر دست یک گروه با لولا روی سرشانه ----
-        const armLength = (avatar.arm_length || 58) / 100;
+        const armLength = ctx.armLength;
+        ctx.armTable = [
+            [-armLength, r.wrist],
+            [-armLength * 0.55, r.bicep * 0.72],
+            [-armLength * 0.12, r.bicep],
+            [0, r.bicep * 1.02],
+        ];
 
         [
             [ctx.armL, 1],
             [ctx.armR, -1],
         ].forEach(([group, side]) => {
-            group.position.set(side * r.shoulder * 0.94, level.shoulder - 0.03, 0);
+            group.position.set(side * r.shoulder * 0.87, level.shoulder - 0.035, 0);
 
             const arm = new THREE.Mesh(
                 new THREE.LatheGeometry(
@@ -301,6 +361,15 @@ export default (config = {}) => ({
             );
             group.add(arm);
             ctx.disposables.push(arm.geometry);
+
+            /*
+             * سرشانه‌ی گرد: بالای چرخانه‌ی بازو باز است و لبه‌ی تیزش بیرون از تن
+             * مثل یک باله‌ی تخت دیده می‌شود. این کره همان سوراخ را می‌بندد.
+             */
+            const ball = new THREE.Mesh(new THREE.SphereGeometry(r.bicep * 1.05, 18, 12), skin);
+            ball.scale.set(1, 0.8, 1);
+            group.add(ball);
+            ctx.disposables.push(ball.geometry);
 
             const hand = new THREE.Mesh(new THREE.SphereGeometry(r.wrist * 1.35, 14, 10), skin);
             hand.position.y = -armLength - r.wrist;
@@ -357,6 +426,136 @@ export default (config = {}) => ({
     },
 
     /* ------------------------------------------------------------------
+     * مقطع بدن در هر ارتفاع
+     * ------------------------------------------------------------------
+     * تنها منبع شکل بدن. هر سطر [ارتفاع, نیم‌پهنا, نیم‌عمق] است.
+     *
+     * دو نکته:
+     *   • نیم‌عمق جدا از نیم‌پهنا نوشته می‌شود؛ سرشانه پهن است ولی عمق آن به
+     *     اندازه‌ی عمق سینه است، نه بیشتر. (اشتباهِ قدیمی این بود که نیم‌پهنای
+     *     سرشانه به‌عنوان «شعاع» دور محور چرخانده می‌شد و لباس به شکل شنل درمی‌آمد.)
+     *   • پایین‌تر از فاق «بدن» یعنی پوشش هر دو پا؛ پس دامن‌های بلند و باریک هم
+     *     می‌دانند تا کجا می‌توانند تنگ شوند.
+     */
+    bodyProfile() {
+        const ctx = contextFor(this.$el);
+        const level = ctx.level;
+        const r = ctx.radii;
+
+        // فاصله‌ی مرکز هر پا از محور بدن (همان جایی که گروه پا گذاشته می‌شود)
+        const legOffset = r.hip * 0.42;
+        const legAnkle = legOffset + r.ankle * 1.25;
+        const legKnee = legOffset + r.knee;
+
+        return [
+            [level.ankle, legAnkle, legAnkle * 0.82],
+            [level.knee, legKnee, legKnee * 0.82],
+            [level.crotch, r.hip * 0.95, r.hip * 0.95 * 0.74],
+            [level.hip, r.hip, r.hip * 0.76],
+            [level.highHip, r.highHip, r.highHip * 0.76],
+            [level.waist, r.waist, r.waist * 0.74],
+            [level.underBust, r.underBust, r.underBust * 0.78],
+            [level.bust, r.bust, r.bust * 0.84],
+            // از سینه به بالا بدن آرام‌آرام پهن می‌شود (سرشانه پهن ولی کم‌عمق است)؛
+            // اگر یک‌باره پهن شود، روی شانه‌ها یک طاقچه‌ی معلق درمی‌آید.
+            [level.armhole, r.bust * 1.02, r.bust * 0.74],
+            [level.shoulder, r.shoulder * 0.9, r.bust * 0.68],
+            // شیب سرشانه: از سرشانه به گردن تند بالا می‌آید تا جای یقه باز شود
+            [lerp(level.shoulder, level.neck, 0.45), r.neck * 1.38, r.neck * 1.3],
+            [level.neck, r.neck * 1.1, r.neck * 1.04],
+        ];
+    },
+
+    /* مقطع بدن (نیم‌پهنا و نیم‌عمق) در ارتفاع دلخواه */
+    bodyAt(y) {
+        const [rx, rz] = sample(contextFor(this.$el).profile, y);
+
+        return { rx, rz };
+    },
+
+    /* شعاع بازو در ارتفاع محلیِ گروه دست (۰ روی سرشانه، منفی به سمت مچ) */
+    armAt(y) {
+        return sample(contextFor(this.$el).armTable, y)[0];
+    },
+
+    /* ------------------------------------------------------------------
+     * ابزار هندسه: حلقه → سطح
+     * ------------------------------------------------------------------ */
+
+    /*
+     * یک حلقه‌ی افقی از نقطه‌ها.
+     *
+     * حلقه یک بیضی با نیم‌پهنای rx و نیم‌عمق rz است. اگر پارچه چین داشته باشد
+     * (spec.fold) شعاع با یک موج دوره‌ای کم و زیاد می‌شود و جاهایی که پارچه بیرون
+     * می‌زند کمی هم پایین می‌افتد؛ همین دو با هم «چینِ عمودی» می‌سازند.
+     */
+    ringPoints(spec, segments, drape = null) {
+        const points = [];
+        const fold = spec.fold || 0;
+        const lobes = drape?.lobes ?? 8;
+        const phase = drape?.phase ?? 0;
+
+        for (let j = 0; j < segments; j++) {
+            const angle = (j / segments) * Math.PI * 2;
+            // فاز با ارتفاع کمی می‌چرخد تا چین‌ها مثل پارچه‌ی واقعی مورب بیفتند
+            const wave = Math.sin(angle * lobes + spec.y * 6 + phase);
+            const swell = 1 + fold * wave;
+
+            points.push(
+                new THREE.Vector3(
+                    spec.rx * Math.cos(angle) * swell,
+                    spec.y - fold * spec.rx * 0.8 * (0.5 + wave * 0.5),
+                    spec.rz * Math.sin(angle) * swell,
+                ),
+            );
+        }
+
+        return points;
+    },
+
+    /*
+     * حلقه‌ها (از پایین به بالا، هرکدام با تعداد نقطه‌ی یکسان) را به یک سطح
+     * لوله‌ای بسته تبدیل می‌کند. ترتیب مثلث‌ها طوری است که نرمال‌ها به بیرون
+     * بیفتند، وگرنه نور روی لباس تخت و مرده می‌شود.
+     */
+    ringSurface(rings) {
+        const segments = rings[0].length;
+        const rows = rings.length;
+        const positions = new Float32Array(rows * segments * 3);
+        const indices = [];
+
+        for (let row = 0; row < rows; row++) {
+            for (let j = 0; j < segments; j++) {
+                const point = rings[row][j];
+                const at = (row * segments + j) * 3;
+
+                positions[at] = point.x;
+                positions[at + 1] = point.y;
+                positions[at + 2] = point.z;
+            }
+        }
+
+        for (let row = 0; row < rows - 1; row++) {
+            for (let j = 0; j < segments; j++) {
+                const next = (j + 1) % segments;
+                const a = row * segments + j;
+                const b = row * segments + next;
+                const c = (row + 1) * segments + j;
+                const d = (row + 1) * segments + next;
+
+                indices.push(a, c, d, a, d, b);
+            }
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+
+        return geometry;
+    },
+
+    /* ------------------------------------------------------------------
      * لباس
      * ------------------------------------------------------------------ */
     buildGarment() {
@@ -374,106 +573,285 @@ export default (config = {}) => ({
         ctx.disposables.push(ctx.fabricMaterial, ctx.zoneMaterial);
         ctx.garmentMeshes = [];
 
-        // آزادی هر ناحیه به شعاع تبدیل می‌شود (فاصله‌ی پارچه از بدن)
-        const gap = (key, fallback) => radius(Math.max(0, ease[key] ?? fallback) + 0.8) - radius(0.8);
+        const drape = this.drapeOf(fabric, physics);
 
-        const silhouette = garment.silhouette || 'straight';
-        const flare = { fitted: 0, straight: 0.35, a_line: 0.8, flared: 1.6 }[silhouette] ?? 0.35;
-        const bodiceBottom = Math.max(level.hip * 0.5, level.shoulder - (lengths.bodice || 42) / 100);
-
-        // ---- بالاتنه: همان فرم بدن با آزادی، از پایین بالاتنه تا سرشانه ----
-        const bodice = new THREE.Mesh(
-            new THREE.LatheGeometry(
-                this.spline(
-                    [
-                        [r.bust + gap('bust', 6) + flare * 0.035, bodiceBottom],
-                        [r.waist + gap('waist', 4) + flare * 0.02, level.waist],
-                        [r.underBust + gap('bust', 6) * 0.9, level.underBust],
-                        [r.bust + gap('bust', 6), level.bust],
-                        [r.bust * 0.95 + gap('armhole', 4) * 0.6, level.armhole],
-                        [r.shoulder * 0.95 + gap('shoulder', 1), level.shoulder],
-                        [r.neck * 1.35, level.neck - 0.02],
-                    ].filter(([, y], index) => index === 0 || y > bodiceBottom),
-                ),
-                44,
-            ),
-            ctx.fabricMaterial,
-        );
-        bodice.scale.z = 0.78;
-        this.settle(bodice.geometry, physics, fabric, bodiceBottom, level.shoulder);
-        this.paintZones(bodice.geometry, 'body');
-        ctx.torso.add(bodice);
-        ctx.disposables.push(bodice.geometry);
-        ctx.garmentMeshes.push(bodice);
-
-        // ---- دامن: مخروط گشاد؛ گشادی از فرم لباس و نرمی از لختی پارچه ----
+        /*
+         * کدام قطعه‌ها در الگو هست؟ اگر لیست قطعه‌ها نیامده باشد فقط از قدها
+         * تصمیم می‌گیریم. این باعث می‌شود دامنِ تنها، بالاتنه‌ی الکی نداشته باشد.
+         */
+        const pieces = Array.isArray(garment.pieces) ? garment.pieces : [];
+        const roles = new Set(pieces.map((piece) => piece.role));
+        const hasList = pieces.length > 0;
+        const hasBodice = hasList ? roles.has('torso') || roles.has('collar') : true;
+        const hasSkirtPiece = roles.has('skirt') || roles.has('leg');
         const skirtLength = (lengths.skirt || 0) / 100;
-
-        if (skirtLength > 0.05) {
-            const topY = bodiceBottom;
-            const bottomY = Math.max(0.06, topY - skirtLength);
-            const softness = 0.4 + (fabric.drape ?? 0.5) * 0.8;
-            const topR = r.hip + gap('hip', 6);
-            const bottomR = topR * (1 + flare * softness) + gap('hem', 8);
-
-            const skirt = new THREE.Mesh(
-                new THREE.LatheGeometry(
-                    this.spline([
-                        [bottomR, bottomY],
-                        [topR + (bottomR - topR) * 0.45, bottomY + skirtLength * 0.45],
-                        [topR, topY],
-                    ]),
-                    48,
-                ),
-                ctx.fabricMaterial,
-            );
-            skirt.scale.z = 0.86;
-            this.settle(skirt.geometry, physics, fabric, bottomY, topY);
-            this.paintZones(skirt.geometry, 'body');
-            ctx.torso.add(skirt);
-            ctx.disposables.push(skirt.geometry);
-            ctx.garmentMeshes.push(skirt);
-        }
-
-        // ---- آستین‌ها: فرزند گروه دست تا با حالت‌های بدن حرکت کنند ----
         const sleeveLength = (lengths.sleeve || 0) / 100;
 
-        if (sleeveLength > 0.05) {
+        /* آزادی هر ناحیه به فاصله‌ی شعاعی تبدیل می‌شود (فاصله‌ی پارچه از بدن) */
+        const easeTable = [
+            [level.ankle, gapFor(ease.hem ?? 8)],
+            [level.hip, gapFor(ease.hip ?? 6)],
+            [level.waist, gapFor(ease.waist ?? 4)],
+            [level.bust, gapFor(ease.bust ?? 6)],
+            [level.armhole, gapFor(ease.armhole ?? 4) * 0.7],
+            [level.shoulder, gapFor(ease.shoulder ?? 1)],
+            [level.neck, gapFor(ease.shoulder ?? 1)],
+        ];
+        const easeAt = (y) => sample(easeTable, y)[0];
+
+        /*
+         * فرم لباس: ضریب گشادی لبه‌ی پایین نسبت به باسن. پارچه‌ی نرم‌تر همان فرم
+         * را بیشتر باز می‌کند، پس کلوشِ حریر از کلوشِ گاباردین گشادتر می‌افتد.
+         */
+        const silhouette = garment.silhouette || 'straight';
+        const spread = { fitted: 0.94, straight: 1, a_line: 1.32, flared: 1.8 }[silhouette] ?? 1;
+        const spreadSoft = 1 + (spread - 1) * (0.7 + drape.drape * 0.6);
+        // اختلاف آزادی لبه با باسن؛ منفی باشد لباس مدادی (تنگ‌شونده) می‌شود
+        const hemShift = gapFor((ease.hem ?? 0) - (ease.hip ?? 0));
+        const hipRx = this.bodyAt(level.hip).rx + easeAt(level.hip);
+
+        /*
+         * مقطع پوسته‌ی لباس در هر ارتفاع.
+         *   بالاتر از باسن → مقطع بدن + آزادی همان ناحیه (لباس بدن را دنبال می‌کند)
+         *   پایین‌تر از باسن → از خط باسن به سمت گشادی لبه باز (یا تنگ) می‌شود
+         */
+        /*
+         * پهنای سرشانه‌ی لباس. لباس روی سرشانه تا نوک شانه می‌رسد و از آنجا آستین
+         * شروع می‌شود؛ پس پوسته باید از خط سینه به بالا یکنواخت پهن شود. اگر این
+         * کار را نکنیم بین حلقهٔ آستین و سرشانه یک طاقچهٔ افقی می‌ماند که مثل
+         * بالشتک شانه بیرون می‌زند.
+         */
+        const shoulderRx = r.shoulder * 0.95 + easeAt(level.shoulder);
+        const bustRx = this.bodyAt(level.bust).rx + easeAt(level.bust);
+
+        const shellAt = (y, hemY) => {
+            const body = this.bodyAt(y);
+            let rx = body.rx + easeAt(y);
+            let rz = body.rz + easeAt(y) * 0.85;
+
+            if (y > level.bust && y <= level.shoulder) {
+                const t = smooth(clamp((y - level.bust) / Math.max(0.02, level.shoulder - level.bust), 0, 1));
+
+                rx = Math.max(rx, lerp(bustRx, shoulderRx, t));
+            }
+
+            if (y < level.hip && hemY < level.hip) {
+                const t = clamp((level.hip - y) / Math.max(0.08, level.hip - hemY), 0, 1);
+                const hemRx = hipRx * spreadSoft + hemShift;
+                // خط A و کلوش بیشترِ گشادی را نزدیک لبه باز می‌کنند
+                const curve = spread > 1.05 ? Math.pow(t, 1.35) : t;
+
+                rx = lerp(hipRx, hemRx, curve);
+                rz = rx * 0.84;
+            }
+
+            return {
+                rx: Math.max(body.rx + SKIN_GAP, rx),
+                rz: Math.max(body.rz + SKIN_GAP, rz),
+                bodyRx: body.rx,
+                bodyRz: body.rz,
+            };
+        };
+
+        /* ---- بالاتنه: از لبه‌ی پایین تا سرشانه، بسته روی شانه، باز روی یقه ---- */
+        let bodiceHemY = level.waist;
+
+        if (hasBodice) {
+            const torsoLength = (lengths.bodice || 42) / 100;
+
+            bodiceHemY = level.shoulder - torsoLength;
+
+            // اگر دامنِ جدا داریم، بالاتنه سر خط کمر تمام می‌شود
+            if (hasSkirtPiece && skirtLength > 0.05) {
+                bodiceHemY = Math.max(bodiceHemY, level.waist - 0.03);
+            }
+
+            bodiceHemY = clamp(bodiceHemY, level.ankle + 0.05, level.underBust);
+
+            const rings = [];
+            const steps = 28;
+            // پارچه از سرشانه آویزان است؛ پایین‌تر از کمر رهاست و چین می‌خورد
+            const support = level.waist;
+
+            for (let i = 0; i <= steps; i++) {
+                const y = lerp(bodiceHemY, level.shoulder, i / steps);
+
+                rings.push({
+                    y,
+                    ...shellAt(y, bodiceHemY),
+                    free: clamp((support - y) / Math.max(0.12, support - bodiceHemY), 0, 1),
+                });
+            }
+
+            /*
+             * سرشانه تا یقه: چند حلقه که از خط سرشانه به دهانه‌ی یقه می‌رسند.
+             * همین سطح، بالاتنه را روی شانه‌ها می‌بندد و فقط یقه را باز می‌گذارد.
+             */
+            const shoulderRing = rings[rings.length - 1];
+            const neckRx = Math.max(r.neck * 1.45, this.bodyAt(level.neck).rx + 0.012);
+            const neckRz = Math.max(r.neck * 1.4, this.bodyAt(level.neck).rz + 0.012);
+            const capSteps = 5;
+
+            for (let i = 1; i <= capSteps; i++) {
+                const t = smooth(i / capSteps);
+                const y = lerp(level.shoulder, level.neck - 0.03, i / capSteps);
+                const body = this.bodyAt(y);
+
+                rings.push({
+                    y,
+                    rx: Math.max(body.rx + SKIN_GAP, lerp(shoulderRing.rx, neckRx, t)),
+                    rz: Math.max(body.rz + SKIN_GAP, lerp(shoulderRing.rz, neckRz, t)),
+                    bodyRx: body.rx,
+                    bodyRz: body.rz,
+                    free: 0,
+                });
+            }
+
+            // لبه‌ی برگشته‌ی یقه: دهانه به‌جای یک سوراخ، یقه‌ی تمام‌شده دیده شود
+            rings.push({
+                y: level.neck - 0.012,
+                rx: neckRx * 1.13,
+                rz: neckRz * 1.13,
+                bodyRx: r.neck,
+                bodyRz: r.neck,
+                free: 0,
+            });
+
+            this.addGarmentMesh(this.settle(rings, drape), drape, 72, 'body');
+        }
+
+        /* ---- دامن: از خط کمر (یا لبه‌ی بالاتنه) به پایین ---- */
+        if (skirtLength > 0.05) {
+            const topY = hasBodice ? Math.min(level.waist + 0.01, bodiceHemY + 0.02) : level.waist + 0.02;
+            const hemY = clamp(topY - skirtLength, level.ankle + 0.03, topY - 0.08);
+
+            const rings = [];
+            const steps = 26;
+
+            for (let i = 0; i <= steps; i++) {
+                const y = lerp(hemY, topY, i / steps);
+
+                rings.push({
+                    y,
+                    ...shellAt(y, hemY),
+                    free: clamp((topY - y) / Math.max(0.1, topY - hemY), 0, 1),
+                });
+            }
+
+            // کمربندِ دامنِ تنها: دو حلقه‌ی صاف روی خط کمر
+            if (! hasBodice) {
+                const top = rings[rings.length - 1];
+
+                [0.012, 0.026].forEach((offset) => {
+                    rings.push({
+                        y: topY + offset,
+                        rx: top.rx * 1.004,
+                        rz: top.rz * 1.004,
+                        bodyRx: top.bodyRx,
+                        bodyRz: top.bodyRz,
+                        free: 0,
+                    });
+                });
+            }
+
+            this.addGarmentMesh(this.settle(rings, drape), drape, 72, 'body');
+        }
+
+        /* ---- آستین‌ها: لوله‌ای روی دست، فرزند گروه دست تا با حالت بدن بچرخند ---- */
+        if (sleeveLength > 0.05 && (! hasList || roles.has('sleeve'))) {
+            // چین‌های آستین ریزتر از تن است (محیط کوچک‌تر، تعداد قطاع کمتر)
+            const sleeveDrape = {
+                ...drape,
+                lobes: Math.max(4, Math.round(drape.lobes * 0.5)),
+                fold: drape.fold * 0.7,
+                sag: drape.sag * 0.5,
+            };
+
+            const armLength = ctx.armLength;
+            const tip = Math.min(sleeveLength, armLength * 0.99);
+            const capRadius = r.bicep * 1.02 * 1.16 + gapFor(Math.max(0, ease.armhole ?? 4)) * 0.6;
+            const sleeveEase = gapFor(Math.max(0, ease.bicep ?? 5));
+
+            const rings = [];
+            const steps = 18;
+
+            // بدنه‌ی آستین: از لبه (پایین) تا حلقه‌ی آستین
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                const y = lerp(-tip, -0.012, t);
+                const arm = this.armAt(y);
+                const rx = arm * lerp(1.07, 1.18, t) + sleeveEase * lerp(0.55, 1, t);
+
+                rings.push({
+                    y,
+                    rx,
+                    rz: rx * 0.95,
+                    bodyRx: arm,
+                    bodyRz: arm * 0.95,
+                    free: (1 - t) * 0.85,
+                });
+            }
+
+            /*
+             * سرِ آستین: یک گنبد کوتاه که روی مفصل شانه می‌نشیند و درز حلقه‌ی
+             * آستین را می‌پوشاند، پس آستین دیگر مثل ورقه‌ی افقی بیرون نمی‌زند.
+             */
+            [
+                [0.006, 0.99],
+                [0.02, 0.88],
+                [0.032, 0.66],
+                [0.04, 0.34],
+                [0.045, 0.08],
+            ].forEach(([offset, scale]) => {
+                rings.push({
+                    y: offset,
+                    rx: capRadius * scale,
+                    rz: capRadius * scale * 0.95,
+                    bodyRx: 0,
+                    bodyRz: 0,
+                    free: 0,
+                });
+            });
+
+            const settled = this.settle(rings, sleeveDrape);
+
             [ctx.armL, ctx.armR].forEach((group) => {
-                const sleeve = new THREE.Mesh(
-                    new THREE.LatheGeometry(
-                        this.spline([
-                            [r.wrist * 1.25 + gap('bicep', 5) * 0.4, -sleeveLength],
-                            [r.bicep * 0.9 + gap('bicep', 5) * 0.7, -sleeveLength * 0.5],
-                            [r.bicep + gap('bicep', 5), -0.05],
-                            [r.bust * 0.42 + gap('armhole', 4), 0.02],
-                        ]),
-                        24,
-                    ),
-                    ctx.fabricMaterial,
-                );
-                this.settle(sleeve.geometry, physics, fabric, -sleeveLength, 0.02);
-                this.paintZones(sleeve.geometry, 'sleeve');
-                group.add(sleeve);
-                ctx.disposables.push(sleeve.geometry);
-                ctx.garmentMeshes.push(sleeve);
+                this.addGarmentMesh(settled, sleeveDrape, 32, 'sleeve', group);
             });
         }
 
         this.applyZoneMaterial();
     },
 
+    /* حلقه‌های نشسته را به مش تبدیل می‌کند، رنگ نواحی را می‌زند و به صحنه می‌افزاید */
+    addGarmentMesh(rings, drape, segments, kind, parent = null) {
+        const ctx = contextFor(this.$el);
+        const geometry = this.ringSurface(rings.map((spec) => this.ringPoints(spec, segments, drape)));
+
+        this.paintZones(geometry, kind);
+
+        const mesh = new THREE.Mesh(geometry, ctx.fabricMaterial);
+
+        (parent || ctx.torso).add(mesh);
+        ctx.disposables.push(geometry);
+        ctx.garmentMeshes.push(mesh);
+
+        return mesh;
+    },
+
     /* جنس پارچه: رنگ، زبری، براقی و شفافیت از شناسنامه‌ی پارچه می‌آید */
     fabricMaterial(fabric, withZones) {
-        const sheen = fabric.sheen ?? 0.15;
-        const transparency = fabric.transparency ?? 0.05;
+        const sheen = clamp(fabric.sheen ?? 0.15, 0, 1);
+        const transparency = clamp(fabric.transparency ?? 0.05, 0, 1);
+        // پارچه‌های تقریباً نافذ نباید شفاف شوند، وگرنه مانکن از پشت لباس دیده می‌شود
+        const seeThrough = transparency > 0.18;
 
         return new THREE.MeshStandardMaterial({
             color: withZones ? '#ffffff' : fabric.color || '#b9a48c',
-            roughness: Math.max(0.08, 1 - sheen * 0.85),
-            metalness: Math.min(0.45, sheen * 0.5),
-            transparent: transparency > 0.02,
-            opacity: Math.max(0.35, 1 - transparency * 0.75),
+            roughness: clamp(1 - sheen * 0.8, 0.12, 0.95),
+            metalness: clamp(sheen * 0.32, 0, 0.35),
+            transparent: seeThrough,
+            opacity: seeThrough ? clamp(1 - transparency * 0.55, 0.45, 1) : 1,
             side: THREE.DoubleSide,
             vertexColors: !!withZones,
         });
@@ -482,47 +860,50 @@ export default (config = {}) => ({
     /* ------------------------------------------------------------------
      * نشستن پارچه
      * ------------------------------------------------------------------
-     * حل‌کننده‌ی واقعی نداریم؛ چند تکرار ثابت اجرا می‌شود: وزن پارچه نقاط را پایین
-     * می‌کشد، لختی آن‌ها را به بدن می‌چسباند و سفتی جلوی هر دو را می‌گیرد. نتیجه این
-     * است که ابریشم موج می‌خورد و به بدن می‌چسبد ولی جین صاف و ایستا می‌ماند.
+     * حل‌کننده‌ی واقعی نداریم؛ سه اثر از شناسنامه‌ی فیزیکی پارچه ساخته می‌شود:
+     *   • چسبیدن  (cling) پارچه‌ی لخت خودش را به بدن می‌چسباند.
+     *   • افتادگی (sag)   وزن پارچه لبه را پایین می‌کشد.
+     *   • چین     (fold)  نرمی خمش، موج‌های عمودی می‌سازد.
+     * پس حریر موج می‌خورد و به بدن می‌نشیند ولی گاباردین صاف و ایستا می‌ماند.
      */
-    settle(geometry, physics, fabric, minY, maxY) {
-        const position = geometry.attributes.position;
-        const count = position.count;
-        const span = Math.max(0.05, maxY - minY);
+    drapeOf(fabric, physics) {
+        const drape = clamp(fabric.drape ?? 0.5, 0, 1);
+        const weight = clamp((physics.weight ?? 0.15) * 3.5, 0, 1);
+        // سفتی خمش، هم دامنه‌ی چین و هم چسبیدن را کم می‌کند
+        const softness = 1 / (1 + clamp(physics.bending ?? 0.12, 0, 1) * 12);
 
-        const weight = Math.min(1, (physics.weight ?? 0.15) * 4); // کیلوگرم بر متر مربع → ۰..۱
-        const drape = fabric.drape ?? 0.5;
-        const softness = 1 - Math.min(0.95, (physics.bending ?? 0.1) * 2.6); // میرایی سفتی
-        const lobes = Math.round(4 + drape * 8);
-        const iterations = 5;
+        return {
+            drape,
+            softness,
+            lobes: Math.round(6 + drape * 10),
+            phase: 1.7,
+            fold: 0.13 * drape * softness,
+            cling: 0.34 * drape * softness,
+            sag: 0.05 * weight * drape + 0.008,
+        };
+    },
 
-        const amplitude = 0.012 * drape * softness + 0.003;
-        const sag = 0.05 * weight * drape;
-        const cling = 0.09 * drape * softness;
+    /*
+     * سه اثر بالا روی حلقه‌ها اعمال می‌شود (نه روی رأس‌ها) چون در این مرحله
+     * می‌دانیم مقطع بدن زیر هر حلقه چقدر است و پارچه هرگز داخل بدن نمی‌رود.
+     * spec.free یعنی «چقدر این حلقه از درز نگه‌دارنده دور است»: ۰ روی سرشانه یا
+     * کمربند، ۱ روی لبه‌ی پایین.
+     */
+    settle(rings, drape) {
+        return rings.map((spec) => {
+            const free = clamp(spec.free ?? 0, 0, 1);
+            const pull = drape.cling * free;
+            const bodyRx = spec.bodyRx ?? 0;
+            const bodyRz = spec.bodyRz ?? 0;
 
-        for (let iteration = 0; iteration < iterations; iteration++) {
-            const damping = 1 - iteration / iterations;
-
-            for (let i = 0; i < count; i++) {
-                const x = position.getX(i);
-                const y = position.getY(i);
-                const z = position.getZ(i);
-
-                const t = Math.min(1, Math.max(0, (maxY - y) / span)); // پایین‌تر، افتادگی بیشتر
-                const angle = Math.atan2(z, x);
-                const noise = hash(i + iteration * 977) - 0.5;
-                const ripple = Math.sin(angle * lobes + t * 5.5) * amplitude * t * damping;
-                const shrink = 1 - cling * t * damping + ripple / Math.max(0.03, Math.hypot(x, z));
-
-                position.setX(i, x * shrink + noise * amplitude * 0.35 * damping);
-                position.setZ(i, z * shrink + noise * amplitude * 0.35 * damping);
-                position.setY(i, y - sag * t * t * damping * 0.35);
-            }
-        }
-
-        position.needsUpdate = true;
-        geometry.computeVertexNormals();
+            return {
+                ...spec,
+                rx: Math.max(bodyRx + SKIN_GAP, spec.rx - (spec.rx - bodyRx) * pull),
+                rz: Math.max(bodyRz + SKIN_GAP, spec.rz - (spec.rz - bodyRz) * pull),
+                y: spec.y - drape.sag * free * free,
+                fold: drape.fold * Math.pow(free, 1.3),
+            };
+        });
     },
 
     /* ------------------------------------------------------------------
@@ -538,24 +919,34 @@ export default (config = {}) => ({
 
         const green = '#16a34a';
 
+        geometry.computeBoundingBox();
+        const minY = geometry.boundingBox.min.y;
+        const maxY = geometry.boundingBox.max.y;
+
         const anchors =
             kind === 'sleeve'
                 ? [
-                      [0.02, map.armhole || map.bust || green],
-                      [-0.2, map.bicep || map.bust || green],
-                      [-1, map.bicep || green],
+                      [maxY, map.armhole || map.bust || green],
+                      [-0.02, map.armhole || map.bicep || green],
+                      [minY, map.bicep || green],
                   ]
                 : [
-                      [level.shoulder, map.shoulder || green],
-                      [level.bust, map.bust || green],
-                      [level.waist, map.waist || green],
+                      [minY, map.hem || map.hip || green],
                       [level.hip, map.hip || green],
-                      [0, map.hem || map.hip || green],
+                      [level.waist, map.waist || green],
+                      [level.bust, map.bust || green],
+                      [level.shoulder, map.shoulder || green],
+                      [maxY, map.shoulder || green],
                   ];
 
         const sorted = anchors
+            .filter(([y]) => y >= minY - 1e-6 && y <= maxY + 1e-6)
             .map(([y, color]) => ({ y, color: new THREE.Color(color) }))
             .sort((a, b) => a.y - b.y);
+
+        if (sorted.length === 0) {
+            sorted.push({ y: minY, color: new THREE.Color(map.bust || green) });
+        }
 
         const position = geometry.attributes.position;
         const colors = new Float32Array(position.count * 3);
@@ -575,7 +966,7 @@ export default (config = {}) => ({
             }
 
             const range = Math.max(0.0001, upper.y - lower.y);
-            const t = Math.min(1, Math.max(0, (y - lower.y) / range));
+            const t = clamp((y - lower.y) / range, 0, 1);
 
             mixed.copy(lower.color).lerp(upper.color, t);
             colors[i * 3] = mixed.r;
@@ -618,10 +1009,10 @@ export default (config = {}) => ({
 
         ctx.root.rotation.y = (p.spin || 0) * RAD;
         ctx.root.position.y = p.drop || 0;
-        ctx.torso.rotation.x = (p.torso || 0) * RAD;
+        ctx.spine.rotation.x = (p.torso || 0) * RAD;
 
-        ctx.armL.rotation.set((p.armL || 0) * RAD, 0, (p.armLZ || -6) * RAD);
-        ctx.armR.rotation.set((p.armR || 0) * RAD, 0, (p.armRZ || 6) * RAD);
+        ctx.armL.rotation.set((p.armL || 0) * RAD, 0, (p.armLZ || -8) * RAD);
+        ctx.armR.rotation.set((p.armR || 0) * RAD, 0, (p.armRZ || 8) * RAD);
 
         ctx.legL.rotation.x = (p.legL || 0) * RAD;
         ctx.legR.rotation.x = (p.legR || 0) * RAD;
@@ -779,7 +1170,7 @@ export default (config = {}) => ({
         contexts.delete(this.$el);
     },
 
-    /* نقطه‌های کلیدی را به یک خط نرم تبدیل می‌کند (ورودی چرخانه‌ها) */
+    /* نقطه‌های کلیدی را به یک خط نرم تبدیل می‌کند (ورودی چرخانه‌های دست و پا) */
     spline(points) {
         const vectors = points.map(([x, y]) => new THREE.Vector2(Math.max(0.005, x), y));
 
