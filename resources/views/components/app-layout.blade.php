@@ -82,7 +82,8 @@
                 </div>
             </header>
 
-            <main class="flex-1 px-4 py-6 lg:px-8">
+            {{-- overflow-x-clip: محتوای پهن (مثل تخته تولید) داخل خودش می‌لغزد و صفحه را جابه‌جا نمی‌کند --}}
+            <main class="flex-1 overflow-x-clip px-4 py-6 lg:px-8">
                 <div class="{{ $wide ? '' : 'mx-auto max-w-6xl' }}">
                     <x-flash />
                     {{ $slot }}
