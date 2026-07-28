@@ -685,7 +685,9 @@ abstract class SleeveBodiceStyle implements StyleModifier
         $u = $this->unit($this->vec($from, $to));
         $normal = ['x' => -$u['y'], 'y' => $u['x']];
         $mid = ['x' => ((float) $from['x'] + (float) $to['x']) / 2, 'y' => ((float) $from['y'] + (float) $to['y']) / 2];
-        $direction = $this->dot($normal, $this->vec($mid, $toward)) >= 0 ? 1 : -1;
+
+        // بردار عمود seamOfLength وارونِ این یکی است، پس علامت برعکس داده می‌شود
+        $direction = $this->dot($normal, $this->vec($mid, $toward)) >= 0 ? -1 : 1;
 
         return $this->seamOfLength($from, $to, $target, $direction);
     }

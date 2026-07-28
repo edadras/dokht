@@ -97,7 +97,7 @@ class RuffleCollar extends BaseCollar
                 'raw_length' => round($raw, 2),
                 'gathered' => round($raw - $length, 2),
                 'fullness' => $fullness,
-                'style' => 'gathered',
+                'fullness_style' => 'gathered',
             ],
         ];
     }
@@ -178,7 +178,7 @@ class RuffleCollar extends BaseCollar
                 'sections' => $sections,
                 'neckline_total' => round($target, 2),
                 'outer_edge' => round($outer, 2),
-                'style' => 'circular',
+                'fullness_style' => 'circular',
             ],
         ];
     }

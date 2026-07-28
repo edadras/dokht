@@ -362,6 +362,8 @@ abstract class RaglanCutStyle extends SleeveBodiceStyle
             $join = $this->keepJoinOnItsSide($join, $neck, $underarm, $sign, $width, $bend);
 
             $out[$side] = [
+                // مرجع باد کردن درزهای این طرف: بیرون از آستین، تا سر آستین محدب بماند
+                'outward' => ['x' => 1.4 * $width * $sign, 'y' => $height * 0.5],
                 'tip' => $tip,
                 'neck' => $neck,
                 'underarm' => $underarm,
@@ -430,19 +432,19 @@ abstract class RaglanCutStyle extends SleeveBodiceStyle
             Geometry::point($layout['front']['neck']['x'], $layout['front']['neck']['y']),
             $this->bowSeam($layout['front']['neck'], $snp, $layout['front']['neck_target'], $centre),
             $this->bowSeam($snp, $layout['back']['neck'], $layout['back']['neck_target'], $centre),
-            $this->bowSeam($layout['back']['neck'], $layout['back']['join'], $back['raglan'], $centre),
-            $this->bowSeam($layout['back']['join'], $layout['back']['underarm'], $back['lower'], $centre),
+            $this->bowSeam($layout['back']['neck'], $layout['back']['join'], $back['raglan'], $layout['back']['outward']),
+            $this->bowSeam($layout['back']['join'], $layout['back']['underarm'], $back['lower'], $layout['back']['outward']),
             Geometry::point($hemBack['x'], $hemBack['y']),
             Geometry::point($hemCentre['x'], $hemCentre['y']),
             Geometry::point($hemFront['x'], $hemFront['y']),
             Geometry::point($layout['front']['underarm']['x'], $layout['front']['underarm']['y']),
-            $this->bowSeam($layout['front']['underarm'], $layout['front']['join'], $front['lower'], $centre),
+            $this->bowSeam($layout['front']['underarm'], $layout['front']['join'], $front['lower'], $layout['front']['outward']),
         ];
 
         $edges = ['neck', 'neck', 'armhole', 'armhole', 'side', 'hem', 'hem', 'side', 'armhole', 'armhole'];
 
         // لبه بسته‌شدن (از سر درز رگلان جلو به خط یقه) هم باید طول درست داشته باشد
-        $outline[0] = $this->bowSeam($layout['front']['join'], $layout['front']['neck'], $front['raglan'], $centre);
+        $outline[0] = $this->bowSeam($layout['front']['join'], $layout['front']['neck'], $front['raglan'], $layout['front']['outward']);
 
         $piece = $this->piece([
             'code' => $this->sleeveCode(),
@@ -489,13 +491,13 @@ abstract class RaglanCutStyle extends SleeveBodiceStyle
             $centre = ['x' => $sign * $hemHalf * 0.35, 'y' => $layout['centre']['y']];
 
             $outline = [
-                $this->bowSeam($half['join'], $half['neck'], $cut['raglan'], $centre),
+                $this->bowSeam($half['join'], $half['neck'], $cut['raglan'], $half['outward']),
                 $this->bowSeam($half['neck'], $snp, $half['neck_target'], $centre),
                 Geometry::point($half['tip']['x'], $half['tip']['y']),
                 Geometry::point(0.0, $length),
                 Geometry::point($sign * $hemHalf, $length),
                 Geometry::point($half['underarm']['x'], $half['underarm']['y']),
-                $this->bowSeam($half['underarm'], $half['join'], $cut['lower'], $centre),
+                $this->bowSeam($half['underarm'], $half['join'], $cut['lower'], $half['outward']),
             ];
 
             $piece = $this->piece([
