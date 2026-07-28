@@ -12,16 +12,19 @@ use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CuttingLayoutController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DesignImportController;
 use App\Http\Controllers\DesignRuleController;
 use App\Http\Controllers\FabricBankController;
 use App\Http\Controllers\FabricController;
 use App\Http\Controllers\GuideController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\LibraryController;
+use App\Http\Controllers\MarketplaceController;
 use App\Http\Controllers\MaterialController;
 use App\Http\Controllers\MeasurementSetController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderItemController;
+use App\Http\Controllers\PatternComposerController;
 use App\Http\Controllers\PatternController;
 use App\Http\Controllers\PatternExportController;
 use App\Http\Controllers\PatternVersionController;
@@ -116,12 +119,39 @@ Route::middleware(['auth', 'workshop'])->group(function () {
     Route::post('patterns/{pattern}/publish', [PatternController::class, 'publish'])->name('patterns.publish');
     Route::get('patterns/{pattern}/print', [PatternExportController::class, 'print'])->name('patterns.print');
     Route::get('patterns/{pattern}/export/{format}', [PatternExportController::class, 'export'])
-        ->whereIn('format', ['svg', 'dxf', 'json'])->name('patterns.export');
+        ->whereIn('format', ['svg', 'dxf', 'aama', 'astm', 'png', 'pdf', 'json'])->name('patterns.export');
     Route::get('patterns/{pattern}/versions', [PatternVersionController::class, 'index'])->name('patterns.versions');
     Route::post('patterns/{pattern}/versions', [PatternVersionController::class, 'store'])
         ->name('patterns.versions.store');
     Route::post('patterns/{pattern}/versions/{version}/restore', [PatternVersionController::class, 'restore'])
         ->name('patterns.versions.restore');
+
+    // ترکیب مدل: بالاتنه + آستین + دامن + یقه در یک الگو
+    Route::get('compose', [PatternComposerController::class, 'create'])->name('patterns.compose');
+    Route::post('compose', [PatternComposerController::class, 'store'])->name('patterns.compose.store');
+    Route::get('compose/preview', [PatternComposerController::class, 'preview'])->name('patterns.compose.preview');
+
+    // ساخت الگو از روی عکس لباس یا طرح دستی
+    Route::get('design-import', [DesignImportController::class, 'create'])->name('design-import.create');
+    Route::post('design-import/photo', [DesignImportController::class, 'photo'])->name('design-import.photo');
+    Route::post('design-import/sketch', [DesignImportController::class, 'sketch'])->name('design-import.sketch');
+    Route::post('design-import/apply', [DesignImportController::class, 'apply'])->name('design-import.apply');
+
+    // بازارچه الگو
+    Route::get('market', [MarketplaceController::class, 'index'])->name('market.index');
+    Route::get('market/purchases', [MarketplaceController::class, 'purchases'])->name('market.purchases');
+    Route::get('market/sales', [MarketplaceController::class, 'sales'])->name('market.sales');
+    Route::post('market/listings', [MarketplaceController::class, 'store'])->name('market.listings.store');
+    Route::get('market/{listing}', [MarketplaceController::class, 'show'])->name('market.show');
+    Route::patch('market/{listing}', [MarketplaceController::class, 'update'])->name('market.listings.update');
+    Route::delete('market/{listing}', [MarketplaceController::class, 'destroy'])->name('market.listings.destroy');
+    Route::post('market/{listing}/order', [MarketplaceController::class, 'order'])->name('market.order');
+    Route::post('market/purchases/{purchase}/confirm', [MarketplaceController::class, 'confirm'])
+        ->name('market.purchases.confirm');
+    Route::post('market/purchases/{purchase}/cancel', [MarketplaceController::class, 'cancel'])
+        ->name('market.purchases.cancel');
+    Route::post('market/purchases/{purchase}/copy', [MarketplaceController::class, 'copy'])
+        ->name('market.purchases.copy');
 
     // کتابخانه مدل‌ها و الگوهای منتشرشده
     Route::get('library', [LibraryController::class, 'index'])->name('library.index');

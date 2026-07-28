@@ -28,8 +28,14 @@
         <x-nav-link :href="route('projects.index')" :active="request()->routeIs('projects.*')" icon="shirt">
             پروژه‌ها
         </x-nav-link>
-        <x-nav-link :href="route('patterns.index')" :active="request()->routeIs('patterns.*')" icon="scissors">
+        <x-nav-link :href="route('patterns.index')" :active="request()->routeIs('patterns.index') || request()->routeIs('patterns.show') || request()->routeIs('patterns.create') || request()->routeIs('patterns.edit') || request()->routeIs('patterns.editor')" icon="scissors">
             الگوها
+        </x-nav-link>
+        <x-nav-link :href="route('patterns.compose')" :active="request()->routeIs('patterns.compose*')" icon="grid">
+            ترکیب مدل
+        </x-nav-link>
+        <x-nav-link :href="route('design-import.create')" :active="request()->routeIs('design-import.*')" icon="palette">
+            از عکس یا طرح
         </x-nav-link>
         <x-nav-link :href="route('fabrics.index')" :active="request()->routeIs('fabrics.*')" icon="layers">
             پارچه‌های من
@@ -46,6 +52,9 @@
         </x-nav-link>
         <x-nav-link :href="route('library.index')" :active="request()->routeIs('library.*')" icon="grid">
             کتابخانه مدل‌ها
+        </x-nav-link>
+        <x-nav-link :href="route('market.index')" :active="request()->routeIs('market.*')" icon="money">
+            بازارچه الگو
         </x-nav-link>
         <x-nav-link :href="route('guides.index')" :active="request()->routeIs('guides.*')" icon="book">
             آموزش
