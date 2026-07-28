@@ -1261,19 +1261,36 @@ export default (config = {}) => ({
         this.applyZoneMaterial();
     },
 
-    /* شبیه‌سازی زنده: خاموش که باشد، پارچه در همان حالتِ فعلی یخ می‌زند */
+    /*
+     * شبیه‌سازی زنده.
+     *
+     * خاموش که باشد، پارچه شکل همان لحظه را نگه می‌دارد و فقط مثل یک پوسته‌ی
+     * سفت با بدن حرکت می‌کند — درست همان رفتار قبلی. روشن که شود، لباس دوباره
+     * زیر وزن خودش می‌افتد و روی بدن می‌نشیند.
+     */
     toggleLive() {
         this.liveSim = !this.liveSim;
 
         const ctx = contextFor(this.$root);
 
-        if (ctx.world) {
-            ctx.world.enabled = this.liveSim;
-
-            if (this.liveSim) {
-                ctx.world.wake();
-            }
+        if (! ctx.world) {
+            return;
         }
+
+        ctx.world.enabled = this.liveSim;
+
+        if (this.liveSim) {
+            ctx.world.wake();
+
+            return;
+        }
+
+        ctx.root.updateMatrixWorld(true);
+
+        ctx.cloth.forEach((item) => {
+            ctx.tmpMatrix.copy(item.group.matrixWorld).invert();
+            item.patch.freeze(ctx.tmpMatrix.elements);
+        });
     },
 
     /* ------------------------------------------------------------------
@@ -1494,7 +1511,18 @@ export default (config = {}) => ({
 
             const moving = this.advancePose(dt);
 
-            if (ctx.world && (moving || ! ctx.world.sleeping)) {
+            if (ctx.world && ! this.liveSim) {
+                // شبیه‌سازی خاموش: پارچه فقط با بدن جابه‌جا می‌شود
+                if (moving) {
+                    ctx.root.updateMatrixWorld(true);
+
+                    ctx.cloth.forEach((item) => {
+                        item.patch.applyFrozen(item.group.matrixWorld.elements);
+                        item.geometry.attributes.position.needsUpdate = true;
+                        item.geometry.computeVertexNormals();
+                    });
+                }
+            } else if (ctx.world && (moving || ! ctx.world.sleeping)) {
                 if (moving) {
                     ctx.world.wake();
                 }

@@ -273,6 +273,53 @@ class DesignImportTest extends TestCase
         $this->assertSame(120.0, (float) $pattern->params['length'], 'مقدار بیرون از بازه باید بریده شود.');
     }
 
+    /**
+     * پارامترهای پیشنهادی باید روی پله‌های مجاز خودشان بنشینند.
+     *
+     * وگرنه مرورگر فیلد عددی را نامعتبر می‌داند و چون این فیلدها داخل بخش پیشرفتهٔ
+     * بسته‌اند، دکمه «بساز الگو» بی‌صدا کار نمی‌کند.
+     */
+    public function test_suggested_parameters_are_valid_for_their_own_schema(): void
+    {
+        Storage::fake('public');
+        $this->actingAsWorkshopUser();
+        $this->library();
+
+        $response = $this->post(route('design-import.photo'), ['photo' => $this->skirtPhoto()]);
+        $proposal = $response->baseResponse->getSession()->get('designProposal');
+
+        $checked = 0;
+
+        foreach ($proposal['candidates'] as $candidate) {
+            $schema = $candidate['template']['schema'] ?? [];
+
+            foreach ($candidate['params'] as $key => $value) {
+                $rule = $schema[$key] ?? null;
+                $this->assertNotNull($rule, "پارامتر «{$key}» در شمای تولیدکننده نیست.");
+
+                if (($rule['type'] ?? null) === 'toggle') {
+                    $this->assertIsBool($value);
+
+                    continue;
+                }
+
+                $this->assertGreaterThanOrEqual($rule['min'], $value);
+                $this->assertLessThanOrEqual($rule['max'], $value);
+
+                $step = (float) ($rule['step'] ?? 0);
+
+                if ($step > 0) {
+                    $offset = ((float) $value - (float) $rule['min']) / $step;
+                    $this->assertEqualsWithDelta(round($offset), $offset, 0.001, "پارامتر «{$key}» روی پله مجاز ننشسته.");
+                }
+
+                $checked++;
+            }
+        }
+
+        $this->assertGreaterThan(0, $checked);
+    }
+
     public function test_low_confidence_input_says_so_on_the_page(): void
     {
         Storage::fake('public');

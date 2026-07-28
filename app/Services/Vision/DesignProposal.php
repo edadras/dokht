@@ -310,7 +310,18 @@ class DesignProposal
                 continue;
             }
 
-            $clean[$key] = round(max((float) ($rule['min'] ?? -1e6), min((float) ($rule['max'] ?? 1e6), (float) $value)), 2);
+            $min = (float) ($rule['min'] ?? -1e6);
+            $max = (float) ($rule['max'] ?? 1e6);
+            $step = (float) ($rule['step'] ?? 0);
+            $number = max($min, min($max, (float) $value));
+
+            // مقدار روی پله‌های مجاز همان پارامتر می‌نشیند؛ وگرنه مرورگر فیلد را نامعتبر
+            // می‌داند و — چون فیلد داخل بخش پیشرفتهٔ بسته است — فرم بی‌صدا فرستاده نمی‌شود.
+            if ($step > 0) {
+                $number = max($min, min($max, $min + round(($number - $min) / $step) * $step));
+            }
+
+            $clean[$key] = round($number, 2);
         }
 
         return $clean;

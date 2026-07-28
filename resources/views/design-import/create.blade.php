@@ -223,7 +223,8 @@
                     'name' => $c['name'],
                     'confidence' => $c['confidence'],
                     'template_id' => $c['template']['id'] ?? null,
-                ])->all()), source: @js($proposal['source']) }" class="space-y-6">
+                ])->all()), source: @js($proposal['source']),
+                    patternName: @js($proposal['garment']['name']) }" class="space-y-6">
                 @csrf
 
                 <input type="hidden" name="source" :value="source">
@@ -235,7 +236,8 @@
                     <div class="space-y-5">
                         <div class="flex flex-wrap gap-2">
                             @foreach ($candidates as $index => $candidate)
-                                <button type="button" @click="choice = {{ $index }}"
+                                <button type="button"
+                                    @click="choice = {{ $index }}; patternName = candidates[{{ $index }}].name"
                                     :class="choice === {{ $index }} ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-stone-200 bg-white text-stone-600'"
                                     class="rounded-xl border-2 px-3 py-2 text-xs font-semibold transition"
                                     title="{{ $candidate['reason'] }}">
@@ -317,8 +319,8 @@
 
                             <x-field label="نام الگو" name="name" class="sm:col-span-2"
                                 hint="اگر خالی بماند، نام الگوی پایه گذاشته می‌شود.">
-                                <x-input name="name" :value="$proposal['garment']['name']"
-                                    placeholder="مثلاً پیراهن خانم رضایی" />
+                                <x-input name="name" x-model="patternName"
+                                    :value="$proposal['garment']['name']" placeholder="مثلاً پیراهن خانم رضایی" />
                             </x-field>
                         </div>
                     </div>
@@ -405,7 +407,7 @@
                                         ] as $label => $value)
                                             <tr>
                                                 <td class="py-1.5 text-stone-500">{{ $label }}</td>
-                                                <td class="py-1.5 font-semibold text-stone-800">
+                                                <td dir="ltr" class="py-1.5 text-end font-semibold text-stone-800">
                                                     {{ Jalali::digits(number_format((float) $value, 2)) }}
                                                 </td>
                                             </tr>

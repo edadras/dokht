@@ -195,6 +195,9 @@ export class Collider {
 /* سهم هر تکرار از کشش «چسبندگی به اندام» */
 const FOLLOW_RATE = 0.2;
 
+/* بیشترین سرعت مجاز هر رأس (متر بر ثانیه) */
+const MAX_SPEED = 6;
+
 /* بافرهای موقتِ سطح ماژول؛ داخل حلقه‌ی داغ هیچ شیئی ساخته نمی‌شود */
 const local = [0, 0, 0];
 const world = [0, 0, 0];
@@ -504,6 +507,8 @@ export class ClothPatch {
     predict(dt, gravity, damping) {
         const { positions, previous, velocity, invMass, count } = this;
         const keep = 1 - damping;
+        // سقف سرعت: اگر قیدها لحظه‌ای با هم بجنگند، هیچ رأسی نباید از صحنه بپرد
+        const limit = MAX_SPEED;
 
         for (let i = 0; i < count; i++) {
             const at = i * 3;
@@ -523,6 +528,19 @@ export class ClothPatch {
             velocity[at] *= keep;
             velocity[at + 1] = velocity[at + 1] * keep + gravity * dt;
             velocity[at + 2] *= keep;
+
+            const speed =
+                velocity[at] * velocity[at] +
+                velocity[at + 1] * velocity[at + 1] +
+                velocity[at + 2] * velocity[at + 2];
+
+            if (speed > limit * limit) {
+                const brake = limit / Math.sqrt(speed);
+
+                velocity[at] *= brake;
+                velocity[at + 1] *= brake;
+                velocity[at + 2] *= brake;
+            }
 
             positions[at] += velocity[at] * dt;
             positions[at + 1] += velocity[at + 1] * dt;
@@ -872,6 +890,52 @@ export class ClothPatch {
         this.snapshot.set(this.positions);
     }
 
+    /*
+     * یخ زدن.
+     *
+     * وقتی کاربر شبیه‌سازی زنده را خاموش می‌کند، پارچه باید شکل همان لحظه‌اش را
+     * نگه دارد ولی همچنان روی بدن سوار بماند؛ وگرنه با عوض کردن حالت، لباس در
+     * هوا جا می‌ماند و مثل یک ایراد به‌نظر می‌رسد. پس شکل فعلی در دستگاه مختصات
+     * همان گروه بدن ذخیره می‌شود و بعد فقط با ماتریس آن گروه جابه‌جا می‌شود.
+     */
+    freeze(inverse) {
+        const { positions, count } = this;
+
+        this.frozen ??= new Float32Array(count * 3);
+
+        for (let i = 0; i < count; i++) {
+            const at = i * 3;
+
+            applyMatrix(inverse, positions[at], positions[at + 1], positions[at + 2], local);
+
+            this.frozen[at] = local[0];
+            this.frozen[at + 1] = local[1];
+            this.frozen[at + 2] = local[2];
+        }
+    }
+
+    applyFrozen(matrix) {
+        const { positions, frozen, count } = this;
+
+        if (! frozen) {
+            return;
+        }
+
+        for (let i = 0; i < count; i++) {
+            const at = i * 3;
+
+            applyMatrix(matrix, frozen[at], frozen[at + 1], frozen[at + 2], world);
+
+            positions[at] = world[0];
+            positions[at + 1] = world[1];
+            positions[at + 2] = world[2];
+        }
+
+        this.previous.set(positions);
+        this.snapshot.set(positions);
+        this.velocity.fill(0);
+    }
+
     /* خواباندن کامل: سرعت‌ها صفر می‌شوند تا پارچه دیگر نلرزد */
     rest() {
         this.velocity.fill(0);
@@ -962,9 +1026,11 @@ export class ClothWorld {
         this.overBudget = 0;
         this.enabled = true;
 
-        // آستانه‌ی خواب: اگر شکل پارچه در ۱۲ فریم کمتر از نیم میلی‌متر جابه‌جا
-        // شود، دیگر چیزی برای دیدن نمانده و حل‌کننده می‌خوابد
-        this.sleepDrift = 5e-4;
+        // آستانه‌ی خواب: اگر شکل پارچه در ۱۲ فریم (حدود یک‌پنجم ثانیه) کمتر از یک
+        // میلی‌متر جابه‌جا شود، دیگر چیزی برای دیدن نمانده و حل‌کننده می‌خوابد.
+        // پارچه‌ی خیلی لخت مثل حریر یک لرزش ریزِ همیشگی دارد که با چشم دیده
+        // نمی‌شود؛ معیار «تغییر شکل» است نه «سکون کامل».
+        this.sleepDrift = 1e-3;
         this.sleepFrames = 12;
         this.window = 0;
     }
@@ -1049,7 +1115,9 @@ export class ClothWorld {
             return 0;
         }
 
-        const spent = now() - started;
+        // هزینه را برای «هر گام» می‌سنجیم، نه برای هر فریم؛ وگرنه روی صفحه‌ای که
+        // به دلیلی کند شده و سه گام در فریم می‌رود، بودجه الکی سه‌برابر می‌شود
+        const spent = (now() - started) / steps;
 
         this.cost = this.cost === 0 ? spent : this.cost * 0.8 + spent * 0.2;
         this.adapt();
