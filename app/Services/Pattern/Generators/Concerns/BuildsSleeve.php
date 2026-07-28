@@ -51,6 +51,7 @@ trait BuildsSleeve
         $hemHalf = $hemWidth / 2;
 
         $outline = $this->capOutline($width, $capHeight);
+        $capPoints = count($outline);
         $edges = ['armhole', 'armhole', 'armhole', 'armhole'];
 
         // درز پهلوی پشت آستین، دم آستین و درز جلو
@@ -68,15 +69,22 @@ trait BuildsSleeve
 
         $capLength = Geometry::edgesLength($outline, [0, 1, 2, 3]);
 
+        // نیمه چپ منحنی سرآستین (لبه‌های ۰ و ۱) جلوی آستین است و نیمه راست (لبه‌های
+        // ۲ و ۳) پشت آن؛ پس رأس (۰، ارتفاع سرآستین) زیر بغل جلو و رأس آخرِ سرآستین
+        // (پهنا، ارتفاع سرآستین) زیر بغل پشت است. هر رأس روی دو لبه می‌نشیند و
+        // نشانه زیر بغل را روی درز پهلو می‌گذاریم، نه روی حلقه.
+        $topNotch = Geometry::pointOnEdge($outline, 1, 1.0);
         $frontNotch = Geometry::pointOnEdge($outline, 1, 0.55);
-        $backNotch = Geometry::pointOnEdge($outline, 2, 0.45);
+        $backOne = Geometry::pointOnEdge($outline, 2, 0.40);
+        $backTwo = Geometry::pointOnEdge($outline, 2, 0.52);
 
         $notches = [
-            $this->notch($center, 0, 2, 'نوک آستین (سرشانه)', 'sleeve_top'),
-            $this->notch($frontNotch['x'], $frontNotch['y'], 1, 'نشانه جلو آستین', 'armhole_front'),
-            $this->notch($backNotch['x'], $backNotch['y'], 2, 'نشانه پشت آستین', 'armhole_back'),
-            $this->notch(0, $capHeight, 4, 'زیر بغل پشت', 'underarm'),
-            $this->notch($width, $capHeight, 6, 'زیر بغل جلو', 'underarm'),
+            $this->notchAt($outline, $edges, $topNotch['x'], $topNotch['y'], 'نوک آستین (سرشانه)', 'sleeve_top', 'armhole'),
+            $this->notchAt($outline, $edges, $frontNotch['x'], $frontNotch['y'], 'نشانه تکی جلو آستین', 'armhole_front', 'armhole'),
+            $this->notchAt($outline, $edges, $backOne['x'], $backOne['y'], 'نشانه دوتایی پشت آستین (۱)', 'armhole_back', 'armhole'),
+            $this->notchAt($outline, $edges, $backTwo['x'], $backTwo['y'], 'نشانه دوتایی پشت آستین (۲)', 'armhole_back', 'armhole'),
+            $this->notchAt($outline, $edges, 0, $capHeight, 'زیر بغل جلو', 'underarm', 'side'),
+            $this->notchAt($outline, $edges, (float) $outline[$capPoints - 1]['x'], $capHeight, 'زیر بغل پشت', 'underarm', 'side'),
         ];
 
         $sleeve = $this->piece([
@@ -102,6 +110,7 @@ trait BuildsSleeve
                 'bicep_width' => round($width, 2),
                 'hem_width' => round($hemWidth, 2),
                 'sleeve_length' => round($bodyLength, 2),
+                'notch_convention' => 'یک نشانه جلو، دو نشانه پشت',
             ],
         ]);
 
@@ -112,6 +121,51 @@ trait BuildsSleeve
         }
 
         return $pieces;
+    }
+
+    /**
+     * نشانه‌ای که شماره لبه‌اش از روی جای واقعی نقطه درمی‌آید، نه با شمردن دستی.
+     *
+     * یک رأس همیشه روی دو لبه است (لبه‌ای که به آن می‌رسد و لبه‌ای که از آن
+     * می‌رود)؛ نشانه باید لبه‌ای را ادعا کند که هنگام دوخت روی آن پیاده می‌شود.
+     * پس از میان لبه‌هایی که نقطه واقعاً رویشان می‌نشیند، آن‌که برچسب خواسته‌شده
+     * را دارد انتخاب می‌شود و اگر چنین لبه‌ای نبود، نزدیک‌ترین لبه.
+     *
+     * @param  array<int, array<string, mixed>>  $outline
+     * @param  array<int, string>  $edges
+     * @return array<string, mixed>
+     */
+    protected function notchAt(
+        array $outline,
+        array $edges,
+        float $x,
+        float $y,
+        string $label,
+        ?string $pair = null,
+        ?string $prefer = null,
+    ): array {
+        $at = ['x' => $x, 'y' => $y];
+        $count = count($outline);
+        $best = null;
+        $bestDistance = INF;
+        $chosen = null;
+
+        for ($edge = 0; $edge < $count; $edge++) {
+            $t = Geometry::edgeParameterOf($outline, $edge, $at, 32);
+            $distance = Geometry::distance(Geometry::pointOnEdge($outline, $edge, $t), $at);
+
+            if ($distance < $bestDistance) {
+                $bestDistance = $distance;
+                $best = $edge;
+            }
+
+            // «روی لبه» یعنی کمتر از یک میلی‌متر؛ همان دقتی که روی کاغذ معنا دارد
+            if ($distance <= 0.1 && $chosen === null && ($prefer === null || ($edges[$edge] ?? null) === $prefer)) {
+                $chosen = $edge;
+            }
+        }
+
+        return $this->notch($x, $y, (int) ($chosen ?? $best ?? 0), $label, $pair);
     }
 
     /** مچ‌بند: نواری که دور مچ بسته می‌شود (دولا با خط تای وسط). */

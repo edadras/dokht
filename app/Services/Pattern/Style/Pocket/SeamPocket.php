@@ -45,7 +45,7 @@ class SeamPocket extends BasePocket
         return $this->indexesWithTag($pieces, 'side', static::BODY_PARTS);
     }
 
-    public function supports(array $pieces, array $context): true|string
+    protected function supportsPocket(array $pieces, array $context): true|string
     {
         if (count($this->sides($pieces)) < 2) {
             return 'جیب درزی به درز پهلوی جلو و پشت نیاز دارد؛ این لباس درز پهلوی کامل ندارد.';

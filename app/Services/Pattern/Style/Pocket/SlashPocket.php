@@ -48,7 +48,7 @@ class SlashPocket extends BasePocket
         ];
     }
 
-    public function supports(array $pieces, array $context): true|string
+    protected function supportsPocket(array $pieces, array $context): true|string
     {
         if ($this->corner($pieces, $context) === null) {
             return 'جیب مورب به گوشه‌ای بین خط کمر و درز پهلو نیاز دارد؛ این لباس چنین گوشه‌ای ندارد.';

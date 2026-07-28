@@ -92,6 +92,8 @@ class ClassicShirtGenerator extends BaseGenerator
             'meta' => ['button_stand' => $stand],
         ]);
 
+        $front = $this->trimWidthMarkers($front);
+
         // تنه پشت زیر خط یوک بریده می‌شود
         $back = $this->shirtBack($g, $yokeDepth, $bottom, $fitted);
         $yoke = $this->yokePiece($g, $yokeDepth);
@@ -117,6 +119,69 @@ class ClassicShirtGenerator extends BaseGenerator
         );
 
         return $this->finish($pieces);
+    }
+
+    /**
+     * خط‌های نشانه افقی را روی درز پهلوی خود قطعه می‌بُرد.
+     *
+     * تنه پیراهن راست بریده می‌شود: درز پهلو از زیر بغل تا دم روی همان یک‌چهارم
+     * سینه می‌ماند و به باسن باز نمی‌شود. پس خط باسن که به اندازه یک‌چهارم دور
+     * باسن بدن کشیده شده بود، از لبه قطعه بیرون می‌زد و اندازه‌ای را نشان می‌داد
+     * که روی پارچه نیست. اینجا هر خط نشانه افقی تا جایی کوتاه می‌شود که پهنای
+     * واقعی قطعه در همان بلندی است.
+     *
+     * @param  array<string, mixed>  $piece
+     * @return array<string, mixed>
+     */
+    protected function trimWidthMarkers(array $piece): array
+    {
+        $points = Geometry::flatten($piece['outline'] ?? []);
+        $count = count($points);
+
+        if ($count < 3) {
+            return $piece;
+        }
+
+        $piece['markers'] = array_map(function (array $marker) use ($points, $count) {
+            if (! isset($marker['from']['y'], $marker['to']['y'])) {
+                return $marker;
+            }
+
+            $y = (float) $marker['from']['y'];
+
+            if (abs($y - ((float) $marker['to']['y'])) > 0.01) {
+                return $marker; // خط عمودی (مرکز جلو) بریدنی نیست
+            }
+
+            $xs = [];
+
+            for ($i = 0; $i < $count; $i++) {
+                $a = $points[$i];
+                $b = $points[($i + 1) % $count];
+                $rise = $b['y'] - $a['y'];
+
+                if (abs($rise) < 1e-9) {
+                    continue;
+                }
+
+                $t = ($y - $a['y']) / $rise;
+
+                if ($t >= 0.0 && $t <= 1.0) {
+                    $xs[] = $a['x'] + (($b['x'] - $a['x']) * $t);
+                }
+            }
+
+            if ($xs === []) {
+                return $marker;
+            }
+
+            $marker['from']['x'] = round(max((float) $marker['from']['x'], min($xs)), 2);
+            $marker['to']['x'] = round(min((float) $marker['to']['x'], max($xs)), 2);
+
+            return $marker;
+        }, $piece['markers'] ?? []);
+
+        return $piece;
     }
 
     /** تنه پشت پیراهن: از خط یوک تا لبه پایین. */

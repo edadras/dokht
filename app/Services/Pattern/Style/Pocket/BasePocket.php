@@ -58,6 +58,20 @@ abstract class BasePocket extends DetailStyle
             return 'برای این جیب یک قطعه تنه (جلو یا پشت) لازم است؛ این لباس چنین قطعه‌ای ندارد.';
         }
 
+        // هر جیب یک جای مشخص روی میزبان دارد و قطعه‌هایش کد ثابت دارند؛ اجرای
+        // دوباره جیب دوم نمی‌سازد، بلکه همان جیب را روی خودش می‌گذارد و در جیب
+        // فیلتابی و زیپ‌دار بریدگی دوم را هم روی همان جا ثبت می‌کند.
+        if ($this->alreadyApplied($pieces)) {
+            return 'این لباس از پیش «'.$this->label().'» دارد و همین جیب دوباره روی همان جا نمی‌نشیند؛ '
+                .'برای جیب دیگر یک سبک جیب دیگر انتخاب کنید یا با «جابه‌جایی افقی و عمودی» جای همین جیب را عوض کنید.';
+        }
+
+        return $this->supportsPocket($pieces, $context);
+    }
+
+    /** بررسی ویژه هر جیب؛ پیش‌فرض پذیرش. */
+    protected function supportsPocket(array $pieces, array $context): true|string
+    {
         return true;
     }
 

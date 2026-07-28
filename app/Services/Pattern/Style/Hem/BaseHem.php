@@ -19,13 +19,34 @@ abstract class BaseHem extends DetailStyle
         return 'hem';
     }
 
-    /** پارامتر مشترک: پهنای لبه‌ای که تو برگردانده می‌شود. */
-    protected function allowanceParam(float $default = 3.0): array
+    /**
+     * پارامتر مشترک: پهنای لبه‌ای که تو برگردانده می‌شود.
+     *
+     * کمینه و گام هم پارامتر است، چون لبه گرد و لبه نوک‌دار «لبه باریک» می‌خواهند
+     * و پیش‌فرضشان (۱٫۲ و ۰٫۸ سانتی‌متر) روی شبکه درشتِ نیم‌سانتی نمی‌نشیند. هر
+     * پیش‌فرضی که این‌جا داده می‌شود باید دقیقاً روی کمینه + n×گام بیفتد، وگرنه
+     * فرم با مقداری باز می‌شود که خودش نمی‌پذیرد و دکمه «بساز» بی‌صدا کار نمی‌کند.
+     */
+    protected function allowanceParam(float $default = 3.0, float $min = 0.5, float $max = 10.0, float $step = 0.5): array
     {
         return [
-            'label' => 'پهنای تو گذاشتن لبه', 'min' => 0.5, 'max' => 10, 'step' => 0.5, 'default' => $default,
+            'label' => 'پهنای تو گذاشتن لبه', 'min' => $min, 'max' => $max, 'step' => $step,
+            'default' => $this->onGrid($default, $min, $max, $step),
             'unit' => 'سانتی‌متر', 'hint' => 'همین اندازه پارچه بیشتر لازم است.',
         ];
+    }
+
+    /** نزدیک‌ترین مقدار روی شبکه «کمینه + n×گام» که از بازه بیرون نزند. */
+    protected function onGrid(float $value, float $min, float $max, float $step): float
+    {
+        if ($step <= 0) {
+            return round(max($min, min($max, $value)), 4);
+        }
+
+        $steps = round((max($min, min($max, $value)) - $min) / $step);
+        $steps = max(0.0, min(floor(($max - $min) / $step), $steps));
+
+        return round($min + ($steps * $step), 4);
     }
 
     public function supports(array $pieces, array $context): true|string

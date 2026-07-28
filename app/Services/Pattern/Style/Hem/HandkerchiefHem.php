@@ -37,7 +37,8 @@ class HandkerchiefHem extends BaseHem
             'depth' => [
                 'label' => 'بلندی نوک', 'min' => 3, 'max' => 30, 'step' => 0.5, 'default' => 12, 'unit' => 'سانتی‌متر',
             ],
-            'allowance' => $this->allowanceParam(0.8),
+            // نوک دستمالی لبه خیلی باریک می‌خواهد؛ شبکه دومیلی‌متری تا ۴ سانتی‌متر
+            'allowance' => $this->allowanceParam(0.8, 0.2, 4.0, 0.2),
         ];
     }
 

@@ -40,7 +40,7 @@ class KangarooPocket extends BasePocket
         ];
     }
 
-    public function supports(array $pieces, array $context): true|string
+    protected function supportsPocket(array $pieces, array $context): true|string
     {
         $index = $this->firstIndexOfParts($pieces, ['front_bodice']);
 

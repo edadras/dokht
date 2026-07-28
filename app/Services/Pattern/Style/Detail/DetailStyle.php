@@ -138,6 +138,41 @@ abstract class DetailStyle implements StyleModifier
     }
 
     /**
+     * آیا همین سبک پیش‌تر روی این مجموعه اجرا شده است؟
+     *
+     * هر قطعه‌ای که با piece() ساخته می‌شود نشانه meta.detail را با کلید سبک
+     * می‌گیرد، پس دیدن آن نشانه یعنی این سبک قطعه‌اش را از پیش گذاشته است.
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     */
+    protected function alreadyApplied(array $pieces): bool
+    {
+        foreach ($pieces as $piece) {
+            if (($piece['meta']['detail'] ?? null) === static::key()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * آیا قطعه‌ای با این «قسمت» در مجموعه هست؟ (مچ، جیب، پاتلت …)
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     */
+    protected function hasPart(array $pieces, string $part): bool
+    {
+        foreach ($pieces as $piece) {
+            if ($this->partOf($piece) === $part) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * شماره قطعه‌هایی که «قسمت» آن‌ها در فهرست خواسته‌شده است.
      *
      * @return array<int, int>

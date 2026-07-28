@@ -114,12 +114,10 @@ class BlazerGenerator extends BaseGenerator
         );
 
         if ($this->flag($params, 'lining', true)) {
-            $pieces[] = $this->bodicePiece($g, [
+            $pieces[] = $this->bodicePiece($g, array_merge($this->liningShape($g, 'front', $bottom - 2), [
                 'side' => 'front',
-                'shape' => 'dress',
                 'bottom_y' => $bottom - 2,
                 'bottom_tag' => 'hem',
-                'hem_flare' => 2,
                 'on_fold' => false,
                 'cut' => 2,
                 'mirror' => true,
@@ -128,14 +126,12 @@ class BlazerGenerator extends BaseGenerator
                 'name' => 'آستر جلو',
                 'part' => 'lining',
                 'meta' => ['note' => 'آستر جلو تا خط سجاف بریده می‌شود.'],
-            ]);
+            ]));
 
-            $pieces[] = $this->bodicePiece($g, [
+            $pieces[] = $this->bodicePiece($g, array_merge($this->liningShape($g, 'back', $bottom - 2), [
                 'side' => 'back',
-                'shape' => 'dress',
                 'bottom_y' => $bottom - 2,
                 'bottom_tag' => 'hem',
-                'hem_flare' => 2,
                 'on_fold' => false,
                 'cut' => 2,
                 'mirror' => true,
@@ -143,10 +139,36 @@ class BlazerGenerator extends BaseGenerator
                 'code' => 'lining-back',
                 'name' => 'آستر پشت',
                 'part' => 'lining',
-            ]);
+            ]));
         }
 
         return $this->finish($pieces);
+    }
+
+    /**
+     * فرم درز پهلوی آستر: آستر دو سانتی‌متر کوتاه‌تر از پوسته بریده می‌شود و همین
+     * دم کوتاه‌تر گاهی بالاتر از خط باسن می‌افتد.
+     *
+     * درفت «dress» درز پهلو را از کمر به نقطه باسن می‌برد و از آنجا به دم؛ اگر دم
+     * بالای خط باسن باشد، مسیر تا زیر لبه دم پایین می‌رود و دوباره برمی‌گردد، یعنی
+     * قطعه خودش را قطع می‌کند و بریده نمی‌شود. در این حالت درز پهلو نقطه باسن
+     * ندارد و باید مستقیم به دم برسد (درفت «flare»)، ولی پهنای دم همان پهنای
+     * پوسته روی خط باسن می‌ماند تا آستر از پوسته تنگ‌تر نشود.
+     *
+     * @return array<string, mixed>
+     */
+    protected function liningShape(array $g, string $side, float $bottomY): array
+    {
+        $waistY = $side === 'front' ? $g['front_waist_y'] : $g['back_waist_y'];
+        $hipY = $waistY + $g['hip_drop'];
+
+        if ($bottomY > $hipY + 0.5) {
+            return ['shape' => 'dress', 'hem_flare' => 2.0];
+        }
+
+        $hipX = max($g['quarter_bust'], $g['quarter_hip']);
+
+        return ['shape' => 'flare', 'hem_flare' => round($hipX - $g['quarter_bust'] + 2.0, 2)];
     }
 
     /**
@@ -186,6 +208,8 @@ class BlazerGenerator extends BaseGenerator
             $upperCap + (($length - $upperCap) * 0.5),
         );
 
+        $upperEdges = ['armhole', 'armhole', 'armhole', 'armhole', 'side', 'hem', 'side'];
+
         $upper = $this->piece([
             'code' => 'upper-sleeve',
             'name' => 'آستین رو',
@@ -193,16 +217,18 @@ class BlazerGenerator extends BaseGenerator
             'mirror' => true,
             'outline' => $upperOutline,
             'grainline' => $this->grainline($upperWidth * 0.5, $upperCap * 0.4, $length - 4),
+            // نوک آستین روی منحنی سرآستین است و نشانه آستین زیر روی درز جلو،
+            // همان‌جا که دو تکه آستین به هم می‌رسند؛ شماره لبه از جای نقطه درمی‌آید
             'notches' => [
-                $this->notch($upperWidth * 0.5, 0, 2, 'نوک آستین (سرشانه)', 'sleeve_top'),
-                $this->notch(0, $upperCap, 4, 'نشانه آستین زیر', 'under_sleeve'),
+                $this->notchAt($upperOutline, $upperEdges, $upperWidth * 0.5, 0, 'نوک آستین (سرشانه)', 'sleeve_top', 'armhole'),
+                $this->notchAt($upperOutline, $upperEdges, 0, $upperCap, 'نشانه آستین زیر', 'under_sleeve', 'side'),
             ],
             'markers' => [
                 $this->marker('bicep', 'خط بازو', 0, $upperCap, $upperWidth),
             ],
             'meta' => [
                 'part' => 'sleeve',
-                'edges' => ['armhole', 'armhole', 'armhole', 'armhole', 'side', 'hem', 'side'],
+                'edges' => $upperEdges,
                 'fold_edges' => [],
                 'cap_height' => round($upperCap, 2),
                 'cap_length' => Geometry::edgesLength($upperOutline, [0, 1, 2, 3]),
@@ -217,6 +243,8 @@ class BlazerGenerator extends BaseGenerator
             Geometry::point($underWidth - 1 - $underHem, $length),
         ];
 
+        $underEdges = ['armhole', 'side', 'hem', 'side'];
+
         $under = $this->piece([
             'code' => 'under-sleeve',
             'name' => 'آستین زیر',
@@ -224,12 +252,13 @@ class BlazerGenerator extends BaseGenerator
             'mirror' => true,
             'outline' => $underOutline,
             'grainline' => $this->grainline($underWidth * 0.5, $underCap + 2, $length - 4),
+            // جفتِ نشانه آستین رو: سر درز جلوی آستین زیر
             'notches' => [
-                $this->notch(0, $underCap, 4, 'نشانه آستین رو', 'under_sleeve'),
+                $this->notchAt($underOutline, $underEdges, 0, $underCap, 'نشانه آستین رو', 'under_sleeve', 'side'),
             ],
             'meta' => [
                 'part' => 'sleeve',
-                'edges' => ['armhole', 'side', 'hem', 'side'],
+                'edges' => $underEdges,
                 'fold_edges' => [],
                 'cap_height' => round($underCap, 2),
                 'two_piece' => 'under',

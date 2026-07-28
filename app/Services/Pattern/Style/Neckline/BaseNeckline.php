@@ -200,6 +200,7 @@ abstract class BaseNeckline implements StyleModifier
     public function apply(array $pieces, array $context): array
     {
         $p = $this->params($context);
+        $pieces = $this->withoutNecklineFinish($pieces);
         $before = $this->necklineLengths($pieces);
         $notes = [];
         $extra = [];
@@ -223,6 +224,18 @@ abstract class BaseNeckline implements StyleModifier
                 ? $this->frontPath($anchors, $p, $partnerAngle)
                 : $this->backPath($anchors, $p, $partnerAngle);
 
+            $shaped = $this->shape($piece, $anchors, $path, $p);
+
+            // قطعه‌ای که مسیرش روی خودش افتاده باشد بریدنی نیست؛ در آن حالت قطعه
+            // پیشین دست‌نخورده می‌ماند و کاربر با یادداشت خبردار می‌شود.
+            if (! $this->soundPiece($shaped)) {
+                $notes[] = 'خط یقه تازه روی «'.($piece['name'] ?? $piece['code'] ?? '')
+                    .'» درنیامد و مسیر قطعه روی خودش می‌افتاد، پس این قطعه دست‌نخورده ماند؛ '
+                    .'گودی یا گشادی یقه را کمتر بگیرید یا از خط یقه بلوک دوباره شروع کنید.';
+
+                continue;
+            }
+
             if ($side === $this->leadSide()) {
                 $partnerAngle = $path['alpha'] ?? null;
             }
@@ -230,7 +243,6 @@ abstract class BaseNeckline implements StyleModifier
             $angles[$side] = $path['alpha'] ?? null;
             $noShoulder = $noShoulder || ! empty($path['consume_shoulder']);
 
-            $shaped = $this->shape($piece, $anchors, $path, $p);
             $drops[$side] = round($shaped['meta']['neckline_drop'] ?? 0, 2);
             $pieces[$index] = $shaped;
 
@@ -252,16 +264,44 @@ abstract class BaseNeckline implements StyleModifier
         $finish = $p['finish'] ?? 'none';
 
         if ($finish === 'facing') {
-            foreach ($order as $index) {
-                $facing = $this->facingPiece($pieces[$index], (float) ($p['finish_width'] ?? 5));
+            $requested = (float) ($p['finish_width'] ?? 5);
+            $made = [];
+            $narrowed = [];
+            $dropped = [];
 
-                if ($facing !== null) {
-                    $extra[] = $facing;
+            foreach ($order as $index) {
+                $facing = $this->facingPiece($pieces[$index], $requested);
+
+                if ($facing === null) {
+                    $dropped[] = (string) ($pieces[$index]['name'] ?? $pieces[$index]['code'] ?? '');
+
+                    continue;
+                }
+
+                $extra[] = $facing;
+                $made[] = (string) ($pieces[$index]['name'] ?? $pieces[$index]['code'] ?? '');
+                $actual = (float) ($facing['meta']['width'] ?? $requested);
+
+                if ($actual < $requested - 0.05) {
+                    $narrowed[] = ($pieces[$index]['name'] ?? '').' ('.Format::cm($actual).')';
                 }
             }
 
-            $notes[] = 'سجاف خط یقه به پهنای '.Format::cm((float) $p['finish_width'])
-                .' ساخته شد؛ سجاف از خط یقه به داخل قطعه فاصله دارد و کپی خط یقه نیست.';
+            if ($made !== []) {
+                $notes[] = 'سجاف خط یقه به پهنای '.Format::cm($requested).' ساخته شد ('.implode('، ', $made)
+                    .')؛ سجاف از خط یقه به داخل قطعه فاصله دارد و کپی خط یقه نیست.';
+            }
+
+            if ($narrowed !== []) {
+                $notes[] = 'پهنای سجاف در '.implode('، ', $narrowed).' کم شد، چون خط یقه در آن‌جا تنگ‌تر از '
+                    .'پهنای خواسته‌شده می‌پیچد و لبه داخلی سجاف روی خودش تا می‌خورد.';
+            }
+
+            if ($dropped !== []) {
+                $notes[] = 'برای '.implode('، ', $dropped).' سجاف ساخته نشد: خط یقه در این شکل چنان تنگ '
+                    .'می‌پیچد که هیچ نوار موازی سالمی رویش نمی‌نشیند. این لبه را با نوار مورب تمام کنید '
+                    .'(گزینه «نوار مورب» در همین سبک) یا خط یقه را گشادتر بگیرید.';
+            }
         } elseif ($finish === 'binding') {
             $extra[] = $this->bindingPiece($after['half'], (float) ($p['finish_width'] ?? 3));
             $notes[] = 'نوار مورب خط یقه ساخته شد؛ نوار ۳٪ کوتاه‌تر از خط یقه بریده می‌شود تا لبه جمع بنشیند.';
@@ -300,6 +340,47 @@ abstract class BaseNeckline implements StyleModifier
                 ],
             ],
         ];
+    }
+
+    /**
+     * قطعه‌های تمام‌کردنِ خط یقه از اجرای پیشین برداشته می‌شوند تا جایگزین شوند.
+     *
+     * بریدن دوباره خط یقه کار درستی است: کاربر در استودیو گودی یا گشادی یقه را
+     * عوض می‌کند و انتظار دارد سجاف هم با یقه تازه جور شود، نه اینکه سجاف دوم
+     * کنار سجاف کهنه بیفتد. سجاف و برگردانی که مال سبک‌های «یقه» است (و نشانه
+     * neckline_style ندارد) دست نمی‌خورد.
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     * @return array<int, array<string, mixed>>
+     */
+    protected function withoutNecklineFinish(array $pieces): array
+    {
+        return array_values(array_filter($pieces, function (array $piece) {
+            $meta = $piece['meta'] ?? [];
+
+            return ! (isset($meta['neckline_style'])
+                && in_array($meta['part'] ?? '', ['facing', 'binding'], true));
+        }));
+    }
+
+    /** قطعه‌ای که بریده می‌شود: مسیر بسته، بدون گره و با مساحت واقعی. */
+    protected function soundPiece(array $piece): bool
+    {
+        $outline = array_values($piece['outline'] ?? []);
+
+        if (count($outline) < 3) {
+            return false;
+        }
+
+        foreach ($outline as $point) {
+            foreach (['x', 'y', 'cx', 'cy'] as $axis) {
+                if (isset($point[$axis]) && ! is_finite((float) $point[$axis])) {
+                    return false;
+                }
+            }
+        }
+
+        return ! Geometry::selfIntersects($outline) && Geometry::area($outline) >= 1.0;
     }
 
     /** ترتیب پردازش: طرف تعیین‌کننده اول. */
@@ -540,9 +621,18 @@ abstract class BaseNeckline implements StyleModifier
      |  سجاف و نوار
      * ------------------------------------------------------------------- */
 
+    /** باریک‌ترین سجافی که هنوز ارزش بریدن دارد. */
+    protected const MIN_FACING_WIDTH = 1.5;
+
     /**
      * سجاف خط یقه: قطعه‌ای واقعی که لبه بیرونی‌اش خط یقه و لبه داخلی‌اش به اندازه
      * پهنای سجاف از آن فاصله دارد.
+     *
+     * سجاف یک نوار موازی است، پس پهنایش نمی‌تواند از شعاع پیچش خط یقه بیشتر باشد؛
+     * هرجا خط یقه تنگ‌تر بپیچد لبه درونی روی خودش تا می‌خورد و قطعه بریدنی نیست.
+     * این‌جا اول با پهنای خواسته‌شده درفت می‌شود و اگر قطعه سالم درنیامد، پهنا
+     * پله‌پله کم می‌شود تا به آن‌چه منحنی برمی‌دارد برسد. اگر حتی باریک‌ترین سجاف
+     * هم سالم درنیاید null برمی‌گردد و اجراکننده به‌جای قطعه شکسته یادداشت می‌دهد.
      *
      * @return array<string, mixed>|null
      */
@@ -550,15 +640,65 @@ abstract class BaseNeckline implements StyleModifier
     {
         $edges = $this->edgesWithTag($piece, 'neck');
 
-        if ($edges === [] || $width < 1.0) {
+        if ($edges === [] || $width < static::MIN_FACING_WIDTH) {
             return null;
         }
 
-        $outline = array_values($piece['outline']);
+        $path = $this->necklineSamples($piece, $edges);
+
+        if (count($path) < 3) {
+            return null;
+        }
+
+        foreach ($this->facingWidths($width) as $try) {
+            $facing = $this->draftFacing($piece, $path, $try);
+
+            if ($facing !== null) {
+                return $facing;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * پهناهایی که برای سجاف امتحان می‌شوند: خواسته‌شده، بعد باریک‌تر.
+     *
+     * @return array<int, float>
+     */
+    protected function facingWidths(float $width): array
+    {
+        $widths = [];
+
+        foreach ([1.0, 0.8, 0.65, 0.5, 0.4, 0.3] as $ratio) {
+            $try = round($width * $ratio, 1);
+
+            if ($try >= static::MIN_FACING_WIDTH && ! in_array($try, $widths, true)) {
+                $widths[] = $try;
+            }
+        }
+
+        return $widths;
+    }
+
+    /**
+     * نمونه‌برداری از خط یقه یک قطعه به صورت خط شکسته.
+     *
+     * @param  array<int, int>  $edges
+     * @return array<int, array{x: float, y: float}>
+     */
+    protected function necklineSamples(array $piece, array $edges): array
+    {
+        $outline = array_values($piece['outline'] ?? []);
+        $count = count($outline);
         $path = [];
 
+        if ($count < 3) {
+            return [];
+        }
+
         foreach ($edges as $edge) {
-            $steps = Geometry::isCurve($outline[($edge + 1) % count($outline)]) ? 6 : 2;
+            $steps = Geometry::isCurve($outline[($edge + 1) % $count]) ? 6 : 2;
 
             for ($s = 0; $s <= $steps; $s++) {
                 $on = Geometry::pointOnEdge($outline, $edge, $s / $steps);
@@ -569,13 +709,24 @@ abstract class BaseNeckline implements StyleModifier
             }
         }
 
-        if (count($path) < 3) {
+        return $path;
+    }
+
+    /**
+     * درفت سجاف با یک پهنای مشخص؛ null یعنی با این پهنا قطعه سالم درنمی‌آید.
+     *
+     * @param  array<int, array{x: float, y: float}>  $path
+     * @return array<string, mixed>|null
+     */
+    protected function draftFacing(array $piece, array $path, float $width): ?array
+    {
+        $outline = array_values($piece['outline']);
+        $inner = $this->insetPath($path, $width, $outline);
+
+        if (count($inner) < 2) {
             return null;
         }
 
-        $centerX = Geometry::bounds($outline)[0];
-        $hole = ['x' => $centerX, 'y' => $path[count($path) - 1]['y'] - 1.0];
-        $inner = $this->offsetPath($path, $width, $hole);
         $shoulder = $this->edgeWithTag($piece, 'shoulder');
 
         $points = [];
@@ -615,7 +766,11 @@ abstract class BaseNeckline implements StyleModifier
 
         $tags[] = 'default'; // لبه بسته‌شدن روی خط مرکز
 
-        if (count($points) < 4) {
+        if (count($points) < 4 || count($tags) !== count($points)) {
+            return null;
+        }
+
+        if (Geometry::selfIntersects($points) || Geometry::area($points) < 1.0) {
             return null;
         }
 
@@ -636,6 +791,11 @@ abstract class BaseNeckline implements StyleModifier
                 'neckline_style' => static::key(),
             ],
         ]);
+
+        // گردکردن مختصات می‌تواند دوباره گره بزند؛ قطعه گره‌خورده اصلاً برنمی‌گردد
+        if (Geometry::selfIntersects(array_values($facing['outline'])) || Geometry::area($facing['outline']) < 1.0) {
+            return null;
+        }
 
         $bounds = Geometry::bounds($facing['outline']);
         $facing['grainline'] = $this->grainline(

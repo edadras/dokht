@@ -21,8 +21,22 @@ abstract class BaseClosure extends DetailStyle
 
     public function supports(array $pieces, array $context): true|string
     {
-        if ($this->frontIndexes($pieces) === []) {
+        $fronts = $this->frontIndexes($pieces);
+
+        if ($fronts === []) {
             return 'این بست روی تنه جلو بسته می‌شود؛ این لباس تنه جلو ندارد.';
+        }
+
+        // بست، اضافه جلو را به تنه می‌دهد و ردیف دکمه یا زیپ را روی خط مرکز
+        // می‌نشاند؛ اجرای دوباره اضافه جلوی دوم و ردیف دکمه دوم می‌سازد. یک لباس
+        // یک بست جلو دارد، پس بار دوم رد می‌شود.
+        foreach ($fronts as $index) {
+            $already = $pieces[$index]['meta']['closure'] ?? null;
+
+            if ($already !== null) {
+                return 'تنه جلوی این لباس از پیش بست دارد و بیش از یک بست جلو معنا ندارد؛ '
+                    .'برای گذاشتن «'.$this->label().'» اول بست کنونی را از فهرست سبک‌ها بردارید.';
+            }
         }
 
         return true;

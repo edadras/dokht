@@ -34,7 +34,7 @@ class CoinPocket extends BasePocket
         ], $this->placementParams(withHost: false));
     }
 
-    public function supports(array $pieces, array $context): true|string
+    protected function supportsPocket(array $pieces, array $context): true|string
     {
         if ($this->indexesWithTag($pieces, 'waist', static::FRONT_PARTS) === []) {
             return 'جیب ساعتی زیر خط کمر می‌نشیند؛ این لباس قطعه جلوی کمردار ندارد.';

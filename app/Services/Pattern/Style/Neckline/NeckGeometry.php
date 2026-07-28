@@ -959,6 +959,153 @@ trait NeckGeometry
     }
 
     /**
+     * کمترین فاصله یک نقطه تا یک مسیر باز.
+     *
+     * @param  array<int, array{x: float, y: float}>  $path
+     */
+    protected function distanceToPath(array $path, array $point): float
+    {
+        $path = array_values($path);
+        $count = count($path);
+
+        if ($count === 0) {
+            return INF;
+        }
+
+        $best = Geometry::distance($path[0], $point);
+
+        for ($i = 1; $i < $count; $i++) {
+            $a = $path[$i - 1];
+            $b = $path[$i];
+            $segment = $this->vec($a, $b);
+            $lengthSquared = ($segment['x'] * $segment['x']) + ($segment['y'] * $segment['y']);
+
+            $t = $lengthSquared < 1e-12
+                ? 0.0
+                : max(0.0, min(1.0, $this->dot($this->vec($a, $point), $segment) / $lengthSquared));
+
+            $best = min($best, Geometry::distance($this->add($a, $segment, $t), $point));
+        }
+
+        return $best;
+    }
+
+    /**
+     * مسیر موازیِ «به داخل قطعه»، برای لبه درونی سجاف.
+     *
+     * سجاف یک نوار موازی خط یقه است، پس لبه درونی‌اش باید همه‌جا به همان اندازه
+     * از خط یقه فاصله داشته باشد. سه چیز می‌تواند این نوار را روی خودش تا کند و
+     * هر سه این‌جا گرفته می‌شود:
+     *
+     *   ۱. جهت جابه‌جایی. با نقطه مرجع نمی‌شود جهت را فهمید: روی خط یقه‌ای که کمابیش
+     *      افقی است (یقه قایقی) بردار مرجع تقریباً بر عمودِ مسیر عمود می‌شود و علامت
+     *      نقطه‌به‌نقطه می‌پرد. این‌جا علامت یک بار و با رأی‌گیری از خود قطعه انتخاب
+     *      می‌شود، پس همه نقطه‌ها به یک سمت می‌روند.
+     *   ۲. گوشه‌ها. در گوشه، دو لبه موازی باید در نیم‌ساز به هم برسند (فاق)، وگرنه
+     *      دو سرِ گوشه از هم رد می‌شوند؛ گوشه برگشتی (نوک) اصلاً موازی ندارد و
+     *      نقطه‌اش انداخته می‌شود.
+     *   ۳. شعاع پیچش. جایی که خط یقه تنگ‌تر از پهنای سجاف می‌پیچد، لبه درونی از آن
+     *      طرفِ خط یقه سر درمی‌آورد. چنین نقطه‌ای با دو محک شناخته می‌شود: باید
+     *      درون قطعه بماند و نباید به هیچ جای دیگری از خط یقه نزدیک‌تر از پهنا شود.
+     *
+     * @param  array<int, array{x: float, y: float}>  $path  مسیر خط یقه (خط شکسته)
+     * @param  array<int, array<string, mixed>>  $host  مسیر قطعه‌ای که سجاف رویش می‌نشیند
+     * @return array<int, array{x: float, y: float}>
+     */
+    protected function insetPath(array $path, float $width, array $host): array
+    {
+        $path = array_values($path);
+        $count = count($path);
+
+        if ($count < 2 || $width <= 0.01) {
+            return [];
+        }
+
+        $sign = $this->insideSign($path, $width, $host);
+
+        if ($sign === 0.0) {
+            return [];
+        }
+
+        $out = [];
+
+        for ($i = 0; $i < $count; $i++) {
+            $before = $i > 0 ? $this->segmentNormal($path[$i - 1], $path[$i], $sign) : null;
+            $after = $i < $count - 1 ? $this->segmentNormal($path[$i], $path[$i + 1], $sign) : null;
+            $a = $before ?? $after;
+            $b = $after ?? $before;
+            $sum = ['x' => $a['x'] + $b['x'], 'y' => $a['y'] + $b['y']];
+
+            if ($this->length($sum) < 0.2) {
+                continue; // نوک برگشتی: موازی ندارد
+            }
+
+            $miter = $this->unit($sum);
+            $candidate = $this->add($path[$i], $miter, $width / max(0.35, $this->dot($miter, $a)));
+
+            if (! Geometry::containsPoint($host, $candidate)) {
+                continue; // از قطعه بیرون زده است
+            }
+
+            if ($this->distanceToPath($path, $candidate) < $width * 0.75) {
+                continue; // خط یقه این‌جا تنگ‌تر از پهنای سجاف می‌پیچد
+            }
+
+            if ($out !== []) {
+                $forward = $this->unit($this->vec($path[max(0, $i - 1)], $path[min($count - 1, $i + 1)]));
+
+                if ($this->dot($forward, $this->vec($out[count($out) - 1], $candidate)) <= 0.02) {
+                    continue; // رو به عقب برمی‌گردد و مسیر را گره می‌زند
+                }
+            }
+
+            $out[] = $candidate;
+        }
+
+        return $out;
+    }
+
+    /** عمود یک پاره‌خط، با علامت داده‌شده. */
+    protected function segmentNormal(array $from, array $to, float $sign): array
+    {
+        $tangent = $this->unit($this->vec($from, $to));
+
+        return ['x' => -$tangent['y'] * $sign, 'y' => $tangent['x'] * $sign];
+    }
+
+    /**
+     * کدام سوی مسیر «داخل قطعه» است: ۱ یا ۱-، و صفر اگر هیچ‌کدام.
+     *
+     * رأی‌گیری می‌کند تا یک نقطه بدقلق (سرِ مسیر روی خط مرکز یا گوشه) نتواند جهت
+     * کل سجاف را برگرداند.
+     *
+     * @param  array<int, array{x: float, y: float}>  $path
+     */
+    protected function insideSign(array $path, float $width, array $host): float
+    {
+        $probe = max(0.15, min(0.6, $width * 0.4));
+        $votes = ['1' => 0, '-1' => 0];
+        $count = count($path);
+
+        for ($i = 0; $i < $count; $i++) {
+            $tangent = $this->unit($this->vec($path[max(0, $i - 1)], $path[min($count - 1, $i + 1)]));
+            $normal = ['x' => -$tangent['y'], 'y' => $tangent['x']];
+
+            foreach ([1.0, -1.0] as $sign) {
+                if (Geometry::containsPoint($host, $this->add($path[$i], $normal, $probe * $sign))) {
+                    $votes[$sign > 0 ? '1' : '-1']++;
+                }
+            }
+        }
+
+        if ($votes['1'] === $votes['-1']) {
+            return 0.0;
+        }
+
+        return $votes['1'] > $votes['-1'] ? 1.0 : -1.0;
+    }
+
+    /**
      * مسیر موازی با فاصله ثابت از یک مسیر (برای سجاف).
      *
      * جهت جابه‌جایی از «مرکز حفره یقه» دور می‌شود تا سجاف به سمت داخل قطعه بیفتد.

@@ -36,7 +36,8 @@ class CurvedHem extends BaseHem
             'curve' => [
                 'label' => 'گودی منحنی', 'min' => 0, 'max' => 8, 'step' => 0.5, 'default' => 2.5, 'unit' => 'سانتی‌متر',
             ],
-            'allowance' => $this->allowanceParam(1.2),
+            // لبه گرد را باریک تو می‌گذارند؛ شبکه دومیلی‌متری تا ۴ سانتی‌متر، نه نیم‌سانتی تا ۱۰
+            'allowance' => $this->allowanceParam(1.2, 0.2, 4.0, 0.2),
         ];
     }
 

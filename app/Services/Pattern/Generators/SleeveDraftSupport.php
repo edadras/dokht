@@ -296,15 +296,20 @@ trait SleeveDraftSupport
 
         $edges[] = 'hem';
 
-        // درز جلو آستین لبه بسته‌شدن است؛ اطلاعات منحنی‌اش روی نقطه اول می‌نشیند
+        // درز جلو آستین لبه بسته‌شدن است؛ اطلاعات منحنی‌اش روی نقطه اول می‌نشیند.
+        //
+        // این درز برخلاف درز پشت از پایین به بالا پیموده می‌شود، پس همان علامت
+        // مثبتِ درز پشت هم اینجا «بیرون آستین» را می‌دهد؛ علامت منفی قوس را به
+        // درون قطعه می‌انداخت و در آستین‌های خیلی گشاد (پروانه‌ای و بالونی) نقطه
+        // کنترل زیر منحنی دم می‌رفت و مسیر قطعه خودش را قطع می‌کرد.
         if ($frontKnee !== null) {
-            $lower = $this->seamControl($frontHem, $frontKnee, 0.4, 0.5, -1);
+            $lower = $this->seamControl($frontHem, $frontKnee, 0.4, 0.5, +1);
             $outline[] = Geometry::curve($frontKnee['x'], $frontKnee['y'], $lower['x'], $lower['y']);
             $edges[] = 'side';
-            $upper = $this->seamControl($frontKnee, $frontTop, $bulge, 1 - $bulgeAt, -1);
+            $upper = $this->seamControl($frontKnee, $frontTop, $bulge, 1 - $bulgeAt, +1);
             $outline[0] = Geometry::curve(0, $capHeight, $upper['x'], $upper['y']);
         } else {
-            $frontControl = $this->seamControl($frontHem, $frontTop, $bulge, 1 - $bulgeAt, -1);
+            $frontControl = $this->seamControl($frontHem, $frontTop, $bulge, 1 - $bulgeAt, +1);
             $outline[0] = Geometry::curve(0, $capHeight, $frontControl['x'], $frontControl['y']);
         }
 
@@ -378,7 +383,7 @@ trait SleeveDraftSupport
         $ease = round($capLength - $armhole, 2);
 
         $notches = $spec['notches'] ?? $this->capNotches($outline, $frame, $spec);
-        $markers = $this->sleeveMarkers($frame, $spec);
+        $markers = $this->sleeveMarkers($frame, $spec, $outline);
         $darts = [];
         $meta = [
             'part' => $spec['part'] ?? 'sleeve',
@@ -440,7 +445,7 @@ trait SleeveDraftSupport
             'cut_quantity' => (int) ($spec['cut'] ?? 2),
             'mirror' => (bool) ($spec['mirror'] ?? true),
             'outline' => $outline,
-            'grainline' => $this->grainline($center, $capHeight * 0.35, $length - 2),
+            'grainline' => $this->sleeveGrainline($outline, $center, $capHeight * 0.35, $length - 2),
             'darts' => $darts,
             'notches' => $notches,
             'markers' => $markers,
@@ -482,11 +487,46 @@ trait SleeveDraftSupport
     }
 
     /**
+     * راستای پارچه‌ای که از کادر خود قطعه بیرون نمی‌زند.
+     *
+     * قاب آستین (frame) اندازه‌های آستین یک‌تکه کامل را دارد؛ ولی قطعه‌ای که ساخته
+     * می‌شود گاهی تکه‌ای از همان است — نوار میانی آستین دوتکه یا سرآستینِ بریده‌شده
+     * آستین حلقه‌ای. پس دو سر خط باید روی کادر واقعی همین مسیر بسته شود، وگرنه
+     * راستای پارچه روی کاغذی می‌افتد که بریده نمی‌شود.
+     *
+     * @param  array<int, array<string, mixed>>  $outline
+     * @return array<string, mixed>
+     */
+    protected function sleeveGrainline(array $outline, float $x, float $fromY, float $toY): array
+    {
+        [$minX, $minY, $maxX, $maxY] = Geometry::bounds($outline);
+        $span = max(0.0, $maxY - $minY);
+        $margin = $span * 0.05;
+
+        // اگر مرکز آستین کامل روی این قطعه نباشد، وسط خودِ قطعه ملاک است
+        $grainX = ($x > $minX + 0.2 && $x < $maxX - 0.2) ? $x : (($minX + $maxX) / 2);
+
+        $top = min(max($fromY, $minY + $margin), $maxY - $margin);
+        $bottom = max(min($toY, $maxY - $margin), $minY + $margin);
+
+        if ($bottom - $top < 1.0) {
+            $top = $minY + ($span * 0.15);
+            $bottom = $maxY - $margin;
+        }
+
+        return $this->grainline($grainX, $top, $bottom);
+    }
+
+    /**
      * خط بازو، خط میانی و خط آرنج.
      *
+     * هر خط نشانه روی پهنای واقعی همین قطعه در همان بلندی کشیده می‌شود؛ آستین
+     * دوتکه نواری از آستین کامل است و پهنای قاب برای آن بزرگ‌تر از خود قطعه است.
+     *
+     * @param  array<int, array<string, mixed>>  $outline
      * @return array<int, array<string, mixed>>
      */
-    protected function sleeveMarkers(array $frame, array $spec = []): array
+    protected function sleeveMarkers(array $frame, array $spec = [], array $outline = []): array
     {
         $width = (float) $frame['width'];
         $capHeight = (float) $frame['cap_height'];
@@ -498,13 +538,23 @@ trait SleeveDraftSupport
             return array_values($spec['markers'] ?? []);
         }
 
+        [$minX, $minY, $maxX, $maxY] = $outline === [] ? [0.0, 0.0, $width, $length] : Geometry::bounds($outline);
+        $bicep = $this->spanAtY($outline, $capHeight) ?? [0.0, $width];
+        $centerX = ($center > $minX && $center < $maxX) ? $center : (($minX + $maxX) / 2);
+
         $markers = [
-            $this->marker('bicep', 'خط بازو', 0, $capHeight, $width),
-            $this->marker('sleeve_center', 'خط میانی آستین', $center, 0, $center, $length),
+            $this->marker('bicep', 'خط بازو', $bicep[0], $capHeight, $bicep[1]),
+            $this->marker('sleeve_center', 'خط میانی آستین', $centerX, max($minY, 0.0), $centerX, min($maxY, $length)),
         ];
 
         if ($elbowY < $length - 1.0 && $elbowY > $capHeight + 0.5) {
-            $markers[] = $this->marker('elbow', 'خط آرنج', $center - ($width * 0.42), $elbowY, $center + ($width * 0.42), $elbowY);
+            $span = $this->spanAtY($outline, $elbowY) ?? [$minX, $maxX];
+            $left = max($span[0], $centerX - ($width * 0.42));
+            $right = min($span[1], $centerX + ($width * 0.42));
+
+            if ($right - $left > 0.5) {
+                $markers[] = $this->marker('elbow', 'خط آرنج', $left, $elbowY, $right, $elbowY);
+            }
         }
 
         foreach ($spec['markers'] ?? [] as $marker) {
@@ -512,6 +562,46 @@ trait SleeveDraftSupport
         }
 
         return $markers;
+    }
+
+    /**
+     * چپ‌ترین و راست‌ترین جای قطعه روی یک بلندی مشخص.
+     *
+     * @param  array<int, array<string, mixed>>  $outline
+     * @return array{0: float, 1: float}|null
+     */
+    protected function spanAtY(array $outline, float $y): ?array
+    {
+        if ($outline === []) {
+            return null;
+        }
+
+        $points = Geometry::flatten($outline);
+        $count = count($points);
+        $xs = [];
+
+        for ($i = 0; $i < $count; $i++) {
+            $a = $points[$i];
+            $b = $points[($i + 1) % $count];
+            $rise = $b['y'] - $a['y'];
+
+            if (abs($rise) < 1e-9) {
+                if (abs($a['y'] - $y) < 1e-6) {
+                    $xs[] = $a['x'];
+                    $xs[] = $b['x'];
+                }
+
+                continue;
+            }
+
+            $t = ($y - $a['y']) / $rise;
+
+            if ($t >= 0.0 && $t <= 1.0) {
+                $xs[] = $a['x'] + (($b['x'] - $a['x']) * $t);
+            }
+        }
+
+        return $xs === [] ? null : [min($xs), max($xs)];
     }
 
     /**

@@ -1596,7 +1596,10 @@ class PatternComposer
         $share = 0;
 
         foreach ($pieces as $piece) {
-            if ($this->edgeWithTag($piece, 'waist') !== null) {
+            // فقط قطعه‌های بیرونی در دور کمر شمرده می‌شوند، پس سهم اصلاح هم باید
+            // از همان‌ها گرفته شود؛ وگرنه نیمی از اصلاح روی آستر می‌نشیند و دور
+            // کمرِ اندازه‌گیری‌شده کوچک نمی‌شود.
+            if ($this->cuts($piece) && $this->edgeWithTag($piece, 'waist') !== null) {
                 $share += $this->repeats($piece);
             }
         }

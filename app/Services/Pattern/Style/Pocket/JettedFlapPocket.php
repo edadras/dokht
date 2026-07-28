@@ -39,7 +39,7 @@ class JettedFlapPocket extends BasePocket
         ], $this->placementParams());
     }
 
-    public function supports(array $pieces, array $context): true|string
+    protected function supportsPocket(array $pieces, array $context): true|string
     {
         if ($this->firstIndexOfParts($pieces, ['front_bodice']) === null) {
             return 'جیب دست‌گرمی روی تنه جلو بریده می‌شود؛ این لباس بالاتنه جلو ندارد.';
