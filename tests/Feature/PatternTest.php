@@ -3,12 +3,16 @@
 namespace Tests\Feature;
 
 use App\Models\Customer;
+use App\Models\GarmentType;
 use App\Models\MeasurementSet;
 use App\Models\Pattern;
 use App\Models\PatternTemplate;
 use App\Models\Workshop;
+use App\Services\Pattern\GeneratorRegistry;
 use App\Services\Pattern\PatternBuilder;
 use App\Support\Measurements;
+use Database\Seeders\GarmentTypeSeeder;
+use Database\Seeders\PatternTemplateSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -301,15 +305,15 @@ class PatternTest extends TestCase
 
     public function test_seeders_build_the_catalogue_and_the_template_library(): void
     {
-        $this->seed(\Database\Seeders\GarmentTypeSeeder::class);
-        $this->seed(\Database\Seeders\PatternTemplateSeeder::class);
+        $this->seed(GarmentTypeSeeder::class);
+        $this->seed(PatternTemplateSeeder::class);
 
-        $garments = \App\Models\GarmentType::all();
+        $garments = GarmentType::all();
         $this->assertGreaterThanOrEqual(18, $garments->count());
 
         foreach ($garments as $garment) {
             $this->assertNotEmpty($garment->parts);
-            $this->assertSame([], array_diff($garment->parts, array_keys(\App\Models\GarmentType::PART_LABELS)));
+            $this->assertSame([], array_diff($garment->parts, array_keys(GarmentType::PART_LABELS)));
             $this->assertArrayHasKey('ideal', $garment->fabric_preferences['drape']);
             $this->assertArrayHasKey('min', $garment->fabric_preferences['weight_gsm']);
             $this->assertArrayHasKey('max', $garment->fabric_preferences['transparency']);
@@ -321,7 +325,7 @@ class PatternTest extends TestCase
 
         foreach ($templates as $template) {
             $this->assertNull($template->workshop_id);
-            $this->assertTrue(\App\Services\Pattern\GeneratorRegistry::has($template->generator));
+            $this->assertTrue(GeneratorRegistry::has($template->generator));
             $this->assertNotEmpty($template->default_params);
             $this->assertNotEmpty($template->params_schema);
             $this->assertStringContainsString('<svg', (string) $template->preview_svg);
@@ -329,10 +333,10 @@ class PatternTest extends TestCase
         }
 
         // سیدرها باید بدون ساختن رکورد تکراری دوباره اجرا شوند
-        $this->seed(\Database\Seeders\GarmentTypeSeeder::class);
-        $this->seed(\Database\Seeders\PatternTemplateSeeder::class);
+        $this->seed(GarmentTypeSeeder::class);
+        $this->seed(PatternTemplateSeeder::class);
 
-        $this->assertSame($garments->count(), \App\Models\GarmentType::count());
+        $this->assertSame($garments->count(), GarmentType::count());
         $this->assertSame(10, PatternTemplate::count());
     }
 

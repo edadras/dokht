@@ -181,5 +181,4 @@ trait BuildsSleeve
 
         return round($height, 2);
     }
-
 }

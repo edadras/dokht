@@ -24,7 +24,7 @@ class GradingService
      * سایزبندی به چند سایز.
      *
      * @param  array<int, string>  $sizes
-     * @return array<string, array<int, array<string, mixed>>>  سایز ⇒ قطعه‌های سایزبندی‌شده
+     * @return array<string, array<int, array<string, mixed>>> سایز ⇒ قطعه‌های سایزبندی‌شده
      */
     public function grade(Pattern $pattern, array $sizes): array
     {

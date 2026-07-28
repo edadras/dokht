@@ -112,5 +112,4 @@ trait DraftsSkirt
             'meta' => $meta,
         ]);
     }
-
 }

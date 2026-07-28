@@ -369,7 +369,7 @@ class Geometry
                 continue;
             }
 
-            $piece[$key] = array_map(function ($item) use ($movePoint, $dx, $dy) {
+            $piece[$key] = array_map(function ($item) use ($movePoint) {
                 if (! is_array($item)) {
                     return $item;
                 }
