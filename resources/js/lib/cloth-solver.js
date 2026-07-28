@@ -193,7 +193,7 @@ export class Collider {
 }
 
 /* سهم هر تکرار از کشش «چسبندگی به اندام» */
-const FOLLOW_RATE = 0.12;
+const FOLLOW_RATE = 0.2;
 
 /* بافرهای موقتِ سطح ماژول؛ داخل حلقه‌ی داغ هیچ شیئی ساخته نمی‌شود */
 const local = [0, 0, 0];

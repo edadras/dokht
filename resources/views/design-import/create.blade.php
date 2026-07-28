@@ -144,14 +144,14 @@
                 {{-- رونمای سیلوئت: کاربر باید ببیند چه چیزی اندازه گرفته شده --}}
                 <x-card title="چه چیزی اندازه گرفته شد" icon="grid" class="lg:col-span-2"
                     subtitle="خط‌های سبز جایی است که پهنا خوانده شده؛ کادر خاکستری کل شکل است.">
-                    <div class="relative overflow-hidden rounded-xl border border-stone-200 bg-stone-50">
+                    {{-- عکس و رونما هر دو در یک کادر با نسبت یکسان جا می‌شوند، پس دقیقاً روی هم می‌افتند --}}
+                    <div class="relative h-96 overflow-hidden rounded-xl border border-stone-200 bg-stone-50">
                         @if ($proposal['image_url'])
                             <img src="{{ $proposal['image_url'] }}" alt="عکس واردشده"
-                                class="block max-h-96 w-full object-contain opacity-70">
-                            <div class="absolute inset-0">{!! $proposal['overlay_svg'] !!}</div>
-                        @else
-                            <div class="h-96 p-2">{!! $proposal['overlay_svg'] !!}</div>
+                                class="absolute inset-0 h-full w-full object-contain opacity-70">
                         @endif
+
+                        <div class="absolute inset-0 p-2">{!! $proposal['overlay_svg'] !!}</div>
                     </div>
 
                     <p class="mt-3 text-xs leading-6 text-stone-500">

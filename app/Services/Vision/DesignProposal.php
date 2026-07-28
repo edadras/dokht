@@ -120,8 +120,6 @@ class DesignProposal
             ];
         }, $classification['candidates']);
 
-        // گزینه نخست همان تشخیص اصلی است و اطمینان کاملش از دسته‌بند می‌آید
-        $candidates[0]['confidence'] = $classification['confidence'];
         $primary = $candidates[0];
 
         return [

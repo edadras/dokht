@@ -19,7 +19,7 @@ final class SilhouetteFeatures
     /**
      * @param  array<int, float>  $profile  پهنای هر پله نسبت به پهن‌ترین سطر (۰ تا ۱)
      * @param  array<int, float>  $gaps  سهم فاصله خالی وسط هر سطر (نشانه دو پاچه)
-     * @param  array<int, string>  $notes  هشدارهای کیفیت ورودی
+     * @param  array<int, array{level: string, text: string}>  $notes  یادداشت‌های روند کار
      */
     public function __construct(
         public readonly int $boxWidth,
@@ -54,14 +54,14 @@ final class SilhouetteFeatures
     /**
      * اندازه‌گیری همه ویژگی‌ها از روی نقاب.
      *
-     * @param  array<int, string>  $notes
+     * @param  array<int, array{level: string, text: string}>  $notes
      */
     public static function extract(Silhouette $mask, array $notes = []): self
     {
         $bounds = $mask->bounds();
 
         if ($bounds === null) {
-            return self::empty(array_merge($notes, ['هیچ شکلی پیدا نشد.']));
+            return self::empty(array_merge($notes, [['level' => 'warning', 'text' => 'هیچ شکلی پیدا نشد.']]));
         }
 
         $height = max(1, $bounds['height']);

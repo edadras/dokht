@@ -208,7 +208,7 @@ class GarmentImageAnalyzerTest extends TestCase
 
         [$mask, $notes] = $this->analyzer()->silhouette($path);
 
-        $this->assertStringContainsString('شفاف', implode(' ', $notes));
+        $this->assertStringContainsString('شفاف', implode(' ', array_column($notes, 'text')));
         $this->assertGreaterThan(0.1, $mask->coverage());
     }
 

@@ -78,7 +78,7 @@ class DesignImportController extends Controller
             $proposal = $this->images->analyze(Storage::disk('public')->path($path), [
                 'sensitivity' => (float) ($request->input('sensitivity') ?: 1.0),
                 'workshop_id' => auth()->user()->workshop_id,
-                'image_url' => Storage::disk('public')->url($path),
+                'image_url' => $this->publicUrl($path),
                 'image_path' => $path,
             ]);
         } catch (Throwable $exception) {
@@ -181,6 +181,21 @@ class DesignImportController extends Controller
             ->route('patterns.show', $pattern)
             ->with('status', 'الگو از روی '.$source.' ساخته شد: '.$pattern->pieces->count()
                 .' قطعه آماده است. اندازه‌ها و جزئیات را بازبینی کنید.');
+    }
+
+    /**
+     * نشانی عکس ذخیره‌شده.
+     *
+     * روی دیسک محلی نشانی را نسبت به ریشه سایت می‌دهیم؛ اگر APP_URL با میزبان
+     * واقعی یکی نباشد (که در محیط توسعه پیش می‌آید) عکس باز هم دیده می‌شود.
+     */
+    protected function publicUrl(string $path): string
+    {
+        $url = Storage::disk('public')->url($path);
+
+        return config('filesystems.disks.public.driver') === 'local'
+            ? (parse_url($url, PHP_URL_PATH) ?: $url)
+            : $url;
     }
 
     /** یادداشت منشأ الگو، تا بعداً معلوم باشد این الگو از کجا شروع شده است. */

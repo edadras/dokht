@@ -217,6 +217,13 @@ class GarmentClassifier
         $family = self::CATALOGUE[$best]['family'];
         $evidence = $this->evidence($features, $family);
 
+        // یادداشت‌های «این‌طور اندازه گرفتم» هم بخشی از دلیل‌اند
+        foreach ($features->notes as $index => $note) {
+            if (($note['level'] ?? 'info') === 'info') {
+                $evidence[] = ['key' => 'note-'.$index, 'text' => $note['text']];
+            }
+        }
+
         $candidates = [];
 
         foreach (array_slice($ranked, 0, 4) as $code) {
@@ -224,7 +231,9 @@ class GarmentClassifier
                 'code' => $code,
                 'family' => self::CATALOGUE[$code]['family'],
                 'score' => round($scores[$code], 3),
-                'confidence' => round(min(0.95, $scores[$code] * (0.28 + 0.72 * $distinctiveness) * $quality), 3),
+                // اطمینان گزینه‌ها نسبت به گزینه برتر مقیاس می‌شود تا هیچ‌وقت گزینه
+                // پایین‌تر عددی بزرگ‌تر از گزینه برتر نشان ندهد.
+                'confidence' => round($confidence * $scores[$code] / max(1e-6, $scores[$best]), 3),
                 'reason' => $this->candidateReason($features, $code, $scores[$code]),
             ];
         }
@@ -554,7 +563,13 @@ class GarmentClassifier
      */
     protected function warnings(SilhouetteFeatures $features, string $best, float $confidence, float $margin): array
     {
-        $warnings = $features->notes;
+        $warnings = [];
+
+        foreach ($features->notes as $note) {
+            if (($note['level'] ?? 'info') === 'warning') {
+                $warnings[] = $note['text'];
+            }
+        }
 
         if ($confidence < 0.45) {
             $warnings[] = 'اطمینان این تشخیص پایین است؛ بهتر است نوع لباس را خودتان از فهرست انتخاب کنید.';

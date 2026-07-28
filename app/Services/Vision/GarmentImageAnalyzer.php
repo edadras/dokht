@@ -75,10 +75,10 @@ class GarmentImageAnalyzer
 
             if ($transparent > 0.08 * $width * $height) {
                 $bits = array_map(fn ($value) => $value < 60 ? 1 : 0, $alpha);
-                $notes[] = 'عکس زمینه شفاف داشت، پس خود کانال شفافیت به‌عنوان مرز لباس استفاده شد.';
+                $notes[] = $this->note('عکس زمینه شفاف داشت، پس خود کانال شفافیت به‌عنوان مرز لباس استفاده شد.');
             } else {
                 [$bits, $note] = $this->separateFromBackground($red, $green, $blue, $luma, $width, $height, $sensitivity);
-                $notes[] = $note;
+                $notes[] = $this->note($note);
             }
 
             $mask = new Silhouette($width, $height, $bits);
@@ -87,20 +87,31 @@ class GarmentImageAnalyzer
             if ($foreground < 0.03 || $foreground > 0.88) {
                 [$bits, $note] = $this->separateByBrightness($luma, $width, $height, $sensitivity);
                 $mask = new Silhouette($width, $height, $bits);
-                $notes[] = 'جداسازی بر پایه رنگ زمینه نتیجه بی‌معنی داد ('
-                    .Jalali::digits(number_format($foreground * 100, 0)).'٪ از قاب)، پس '.$note;
+                $notes[] = $this->note('جداسازی بر پایه رنگ زمینه نتیجه بی‌معنی داد ('
+                    .Jalali::digits(number_format($foreground * 100, 0)).'٪ از قاب)، پس '.$note, 'warning');
             }
 
             $mask = $mask->opened()->closed()->largestComponent()->fillHoles();
 
             if ($mask->area() === 0) {
-                $notes[] = 'هیچ شکل به‌هم‌پیوسته‌ای در عکس پیدا نشد؛ عکس را روی زمینه ساده و یک‌دست دوباره بگیرید.';
+                $notes[] = $this->note('هیچ شکل به‌هم‌پیوسته‌ای در عکس پیدا نشد؛ عکس را روی زمینه ساده و یک‌دست دوباره بگیرید.', 'warning');
             }
 
             return [$mask, $notes];
         } finally {
             imagedestroy($image);
         }
+    }
+
+    /**
+     * یک یادداشت درباره روند کار: info یعنی «این‌طور اندازه گرفتم» و warning یعنی
+     * «به این نتیجه کمتر اعتماد کن».
+     *
+     * @return array{level: string, text: string}
+     */
+    protected function note(string $text, string $level = 'info'): array
+    {
+        return ['level' => $level, 'text' => $text];
     }
 
     /** بارگذاری و کوچک‌کردن عکس. */

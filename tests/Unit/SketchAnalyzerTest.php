@@ -57,7 +57,7 @@ class SketchAnalyzerTest extends TestCase
 
         $this->assertNotNull($bounds);
         $this->assertEqualsWithDelta(240 / 138, $bounds['height'] / $bounds['width'], 0.1);
-        $this->assertStringContainsString('نقطه‌های قلم', implode(' ', $notes));
+        $this->assertStringContainsString('نقطه‌های قلم', implode(' ', array_column($notes, 'text')));
 
         // شکل نباید به لبه قاب چسبیده باشد؛ حاشیه برای عملیات ریخت‌شناسی لازم است
         $this->assertSame([], $mask->touchedEdges());
@@ -124,7 +124,7 @@ class SketchAnalyzerTest extends TestCase
 
         [$mask, $notes] = $this->analyzer()->silhouette($strokes);
 
-        $this->assertStringContainsString('بزرگ‌ترین شکل', implode(' ', $notes));
+        $this->assertStringContainsString('بزرگ‌ترین شکل', implode(' ', array_column($notes, 'text')));
         $this->assertGreaterThan(0, $mask->area());
     }
 

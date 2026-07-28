@@ -95,17 +95,18 @@ class SketchAnalyzer
 
         $mask = (new Silhouette($width, $height, $bits))->closed()->largestComponent()->fillHoles();
 
-        $notes = [
-            'شکل مستقیم از نقطه‌های قلم شما ساخته شد ('
+        $notes = [[
+            'level' => 'info',
+            'text' => 'شکل مستقیم از نقطه‌های قلم شما ساخته شد ('
                 .Jalali::digits(count($points)).' نقطه)، پس هیچ خطای جداسازی از زمینه در کار نیست.',
-        ];
+        ]];
 
         if (count($mapped) > 1) {
-            $notes[] = 'چند خط جدا کشیده بودید؛ فقط بزرگ‌ترین شکل بسته اندازه‌گیری شد.';
+            $notes[] = ['level' => 'info', 'text' => 'چند خط جدا کشیده بودید؛ فقط بزرگ‌ترین شکل بسته اندازه‌گیری شد.'];
         }
 
         if ($mask->area() < 40) {
-            $notes[] = 'طرح خیلی کوچک یا باز است؛ خط را ببندید تا شکل پر شود.';
+            $notes[] = ['level' => 'warning', 'text' => 'طرح خیلی کوچک یا باز است؛ خط را ببندید تا شکل پر شود.'];
         }
 
         return [$mask, $notes];
