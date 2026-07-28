@@ -192,6 +192,9 @@ export class Collider {
     }
 }
 
+/* سهم هر تکرار از کشش «چسبندگی به اندام» */
+const FOLLOW_RATE = 0.12;
+
 /* بافرهای موقتِ سطح ماژول؛ داخل حلقه‌ی داغ هیچ شیئی ساخته نمی‌شود */
 const local = [0, 0, 0];
 const world = [0, 0, 0];
@@ -210,9 +213,10 @@ export class ClothPatch {
      * @param {number} options.rows تعداد حلقه‌ها (از پایین به بالا)
      * @param {number} options.segments تعداد نقطه در هر حلقه (حلقه بسته است)
      * @param {Uint8Array} options.pinned ۱ یعنی این رأس به بدن دوخته است
+     * @param {Float32Array} [options.follow] چسبندگی هر رأس به اندام زیرش (۰ تا ۱)
      * @param {object} options.fabric خروجی fabricLaw()
      */
-    constructor({ positions, rows, segments, pinned, fabric }) {
+    constructor({ positions, rows, segments, pinned, follow = null, fabric }) {
         const count = rows * segments;
 
         this.positions = positions;
@@ -236,6 +240,23 @@ export class ClothPatch {
 
         this.pins = new Uint32Array(pins);
         this.pinRest = new Float32Array(pins.length * 3);
+
+        /*
+         * «چسبندگی به اندام».
+         *
+         * آستین یک لوله است که دور بازو می‌چرخد و هیچ چیزی جز خود بازو نگهش
+         * نمی‌دارد. اگر فقط سرِ آستین دوخته باشد، با بالا رفتن دست پارچه از روی
+         * بازو سُر می‌خورد و مثل یک تکه پارچه‌ی آویزان کنار تن می‌ماند — چیزی که
+         * در هیچ لباس واقعی اتفاق نمی‌افتد چون درز حلقه و خود آستین پارچه را
+         * روی بازو نگه می‌دارند.
+         *
+         * راه‌حل: هر رأس با شدتی که خودش دارد به جای اصلی‌اش روی اندام کشیده
+         * می‌شود؛ نزدیک سرشانه محکم و نزدیک مچ خیلی ملایم. پارچه هنوز تاب
+         * می‌خورد و چین دارد، ولی از بازو پیاده نمی‌شود.
+         */
+        this.follow = follow;
+        this.followRest = follow ? new Float32Array(count * 3) : null;
+        this.matrix = new Float32Array(16);
 
         this.groups = this.buildConstraints();
         this.buildTethers();
@@ -429,9 +450,12 @@ export class ClothPatch {
         this.pinRest[at + 2] = z;
     }
 
-    /* گرفتن موقعیت محلی رأس‌های دوخته‌شده از روی وضعیت فعلی و ماتریس وارون */
+    /*
+     * گرفتن موقعیت محلی رأس‌ها از روی وضعیت فعلی و ماتریس وارونِ گروه بدن.
+     * هم رأس‌های دوخته‌شده و هم مرجع چسبندگی از همین‌جا پر می‌شوند.
+     */
     capturePins(inverse) {
-        const { pins, positions } = this;
+        const { pins, positions, follow, followRest, count } = this;
 
         for (let p = 0; p < pins.length; p++) {
             const at = pins[p] * 3;
@@ -439,11 +463,27 @@ export class ClothPatch {
             applyMatrix(inverse, positions[at], positions[at + 1], positions[at + 2], local);
             this.setPinRest(p, local[0], local[1], local[2]);
         }
+
+        if (! follow) {
+            return;
+        }
+
+        for (let i = 0; i < count; i++) {
+            const at = i * 3;
+
+            applyMatrix(inverse, positions[at], positions[at + 1], positions[at + 2], local);
+
+            followRest[at] = local[0];
+            followRest[at + 1] = local[1];
+            followRest[at + 2] = local[2];
+        }
     }
 
     /* بردن رأس‌های دوخته‌شده به جای تازه‌شان در فضای جهانی */
     applyPins(matrix) {
         const { pins, pinRest, positions, previous } = this;
+
+        this.matrix.set(matrix);
 
         for (let p = 0; p < pins.length; p++) {
             const at = pins[p] * 3;
@@ -504,6 +544,7 @@ export class ClothPatch {
     project() {
         const { positions, invMass, groups } = this;
 
+        this.projectFollow();
         this.projectTethers();
 
         for (let g = 0; g < groups.length; g++) {
@@ -567,6 +608,33 @@ export class ClothPatch {
                     positions[pb + 2] += cz * wb;
                 }
             }
+        }
+    }
+
+    /* کشش ملایم هر رأس به سمت جای اصلی‌اش روی اندام (فقط آستین‌ها) */
+    projectFollow() {
+        const { follow, followRest, positions, invMass, count, matrix } = this;
+
+        if (! follow) {
+            return;
+        }
+
+        for (let i = 0; i < count; i++) {
+            const strength = follow[i];
+
+            if (strength <= 0 || invMass[i] === 0) {
+                continue;
+            }
+
+            const at = i * 3;
+
+            applyMatrix(matrix, followRest[at], followRest[at + 1], followRest[at + 2], world);
+
+            const k = strength * FOLLOW_RATE;
+
+            positions[at] += (world[0] - positions[at]) * k;
+            positions[at + 1] += (world[1] - positions[at + 1]) * k;
+            positions[at + 2] += (world[2] - positions[at + 2]) * k;
         }
     }
 

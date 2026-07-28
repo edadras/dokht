@@ -173,7 +173,7 @@ class DesignImportTest extends TestCase
 
         $this->post(route('design-import.sketch'), [
             'strokes' => json_encode([[['x' => 1, 'y' => 2]]]),
-        ])->assertSessionHasErrors(['strokes'], null, 'sketch');
+        ])->assertSessionHasErrors(['strokes.0'], null, 'sketch');
     }
 
     public function test_sketch_refuses_a_broken_payload(): void
@@ -226,8 +226,10 @@ class DesignImportTest extends TestCase
         $this->actingAsWorkshopUser();
         $this->library();
 
-        $customer = Customer::factory()->create();
-        $set = MeasurementSet::factory()->for($customer)->create([
+        $customer = Customer::factory()->create(['workshop_id' => $this->workshop()->id]);
+        $set = MeasurementSet::factory()->create([
+            'workshop_id' => $this->workshop()->id,
+            'customer_id' => $customer->id,
             'is_default' => true,
             'values' => ['bust' => 104, 'waist' => 86, 'hip' => 110, 'shoulder_width' => 41],
         ]);

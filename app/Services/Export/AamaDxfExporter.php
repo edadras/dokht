@@ -60,7 +60,8 @@ use App\Services\Pattern\SeamAllowanceService;
  * ۴) نقطه مرجع سایزبندی (لایه ۵) را گوشه بالا-چپ کادر قطعه گرفته‌ایم، چون همان
  *    مبدأ هندسه هر قطعه در این سامانه است و سایزبندی نسبت به آن انجام می‌شود.
  * ۵) متن DXF نسخه R12 فقط اَسکی است؛ نام فارسی قطعه به شکل «کد لاتین» نوشته
- *    می‌شود و نام فارسی در یک یادداشت ۹۹۹ در سرآیند فایل می‌آید.
+ *    می‌شود و نام فارسی الگو در یادداشت ۹۹۹ سرآیند با گریز یونیکد استاندارد
+ *    DXF («\U+06AF») می‌آید تا کل فایل اَسکی محض بماند.
  *
  * واحد فایل میلی‌متر است ($INSUNITS = 4) و محور y در CAD به بالاست، پس y الگو
  * قرینه می‌شود. سایزهای سایزبندی‌شده هرکدام BLOCK جداگانه‌ای می‌گیرند.
@@ -618,7 +619,7 @@ class AamaDxfExporter
                 ? 'ASTM D6673 numbered layers with piece attributes (ATTDEF/ATTRIB)'
                 : 'AAMA / ASTM D6673 numbered layers, annotation as TEXT'),
             'Pattern: '.$this->asciiName($pattern).' (id '.(int) $pattern->id.')',
-            'Pattern name (UTF-8): '.(string) $pattern->name,
+            'Pattern name (DXF unicode escapes): '.$this->unicodeEscape((string) $pattern->name),
             'Sizes: '.$this->ascii($sizes),
             'Units: millimetre, $INSUNITS = 4, CAD y axis points up',
             'Layers: 1 boundary/cut, 2 turn points, 3 curve points, 4 notch, 5 grade reference, '
@@ -848,6 +849,28 @@ class AamaDxfExporter
         $name = $this->ascii((string) $pattern->name);
 
         return $name === '-' ? 'pattern-'.(int) $pattern->id : $name;
+    }
+
+    /**
+     * نام فارسی به شکل گریز یونیکد استاندارد DXF: «\U+06AF».
+     *
+     * کل فایل این‌گونه اَسکی محض می‌ماند (چیزی که DXF نسخه R12 می‌خواهد) و
+     * نام فارسی هم بدون از دست رفتن در فایل هست. اگر بایت‌های خام UTF-8 را
+     * می‌نوشتیم، بایت 0x85 که در «م» هست، در برخی خواننده‌ها «سر خط» شمرده
+     * می‌شود و ساختار زوجی فایل را می‌شکند.
+     */
+    protected function unicodeEscape(string $value): string
+    {
+        $shaper = new ArabicShaper;
+        $out = '';
+
+        foreach ($shaper->codepoints($value) as $codepoint) {
+            $out .= $codepoint >= 0x20 && $codepoint <= 0x7E
+                ? chr($codepoint)
+                : sprintf('\\U+%04X', $codepoint);
+        }
+
+        return $out;
     }
 
     /** متن DXF نسخه R12 فقط اَسکی است. */

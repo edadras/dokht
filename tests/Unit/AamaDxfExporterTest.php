@@ -29,7 +29,7 @@ class AamaDxfExporterTest extends TestCase
      */
     protected function pairs(string $dxf): array
     {
-        $lines = preg_split('/\R/', rtrim($dxf, "\n")) ?: [];
+        $lines = preg_split('/\r\n|\n|\r/', rtrim($dxf, "\n")) ?: [];
         $pairs = [];
 
         for ($i = 0; $i + 1 < count($lines); $i += 2) {
@@ -134,7 +134,7 @@ class AamaDxfExporterTest extends TestCase
         $this->assertStringEndsWith("EOF\n", $dxf);
 
         // ساختار «کد گروه بعد مقدار» یعنی شمار خط‌ها زوج است
-        $lines = preg_split('/\R/', trim($dxf)) ?: [];
+        $lines = preg_split('/\r\n|\n|\r/', trim($dxf)) ?: [];
         $this->assertSame(0, count($lines) % 2);
 
         $this->assertSame(4, $this->headerValue($dxf, '$INSUNITS'), 'واحد فایل باید میلی‌متر باشد.');
@@ -151,8 +151,11 @@ class AamaDxfExporterTest extends TestCase
         // یادداشت‌های ۹۹۹ پیش از نخستین SECTION می‌آیند
         $this->assertStringStartsWith("999\n", $aama);
         $this->assertStringContainsString('Dokht pattern studio', $aama);
-        $this->assertStringContainsString((string) $pattern->name, $aama);
         $this->assertStringContainsString('id '.$pattern->id, $aama);
+
+        // نام فارسی با گریز یونیکد استاندارد DXF می‌آید تا فایل اَسکی محض بماند
+        $this->assertStringContainsString('\U+0628\U+0627\U+0644\U+0627\U+062A\U+0646\U+0647', $aama);
+        $this->assertSame(0, preg_match('/[\x80-\xFF]/', $aama), 'فایل DXF باید اَسکی محض باشد.');
         $this->assertStringContainsString('Units: millimetre', $aama);
         $this->assertStringContainsString('AAMA', $aama);
         $this->assertStringContainsString('ASTM D6673', $astm);
@@ -360,7 +363,7 @@ class AamaDxfExporterTest extends TestCase
         $dxf = app(AamaDxfExporter::class)->astm($pattern->load('pieces'));
 
         $this->assertStringEndsWith("EOF\n", $dxf);
-        $lines = preg_split('/\R/', trim($dxf)) ?: [];
+        $lines = preg_split('/\r\n|\n|\r/', trim($dxf)) ?: [];
         $this->assertSame(0, count($lines) % 2);
         $this->assertCount(1, $this->ofType($dxf, 'BLOCK', 'BLOCKS'));
     }

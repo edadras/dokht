@@ -845,6 +845,11 @@ export default (config = {}) => ({
                     free: (1 - t) * 0.85,
                     // فقط بالاترین حلقه‌ی بدنه‌ی آستین به حلقه‌ی آستین دوخته است
                     pin: i === steps,
+                    /*
+                     * آستین باید روی بازو بماند: نزدیک سرشانه محکم می‌چسبد و هرچه
+                     * به مچ نزدیک‌تر می‌شویم آزادتر می‌شود تا بتواند تاب بخورد.
+                     */
+                    follow: 0.08 + 0.92 * t * t,
                 });
             }
 
@@ -867,6 +872,7 @@ export default (config = {}) => ({
                     bodyRz: 0,
                     free: 0,
                     pin: true,
+                    follow: 1,
                 });
             });
 
@@ -901,16 +907,20 @@ export default (config = {}) => ({
 
         // نقشه‌ی دوخت: کدام رأس روی بدن سوار است و کدام آزاد
         const pinned = new Uint8Array(rings.length * segments);
+        const sticky = rings.some((spec) => spec.follow);
+        const follow = sticky ? new Float32Array(rings.length * segments) : null;
 
         rings.forEach((spec, row) => {
-            if (! spec.pin) {
-                return;
+            if (spec.pin) {
+                pinned.fill(1, row * segments, (row + 1) * segments);
             }
 
-            pinned.fill(1, row * segments, (row + 1) * segments);
+            if (follow && spec.follow) {
+                follow.fill(spec.follow, row * segments, (row + 1) * segments);
+            }
         });
 
-        ctx.garmentPatches.push({ mesh, geometry, group, rows: rings.length, segments, pinned });
+        ctx.garmentPatches.push({ mesh, geometry, group, rows: rings.length, segments, pinned, follow });
 
         return mesh;
     },
@@ -988,6 +998,7 @@ export default (config = {}) => ({
                     rows: item.rows,
                     segments: item.segments,
                     pinned: item.pinned,
+                    follow: item.follow,
                     fabric: ctx.world.law,
                 }),
             );
@@ -1536,9 +1547,17 @@ export default (config = {}) => ({
         stats.drift = ctx.world.drift;
         stats.hot = ctx.cloth.map((item) => {
             const p = item.patch;
-            const i = p.motionIndex || 0;
-
-            return [Math.floor(i / p.segments), i % p.segments, Math.round(p.motion * 10000) / 10, Math.round(p.positions[i * 3] * 1000), Math.round(p.positions[i * 3 + 1] * 1000), Math.round(p.positions[i * 3 + 2] * 1000)];
+            let lo = 1e9, hi = -1e9, rlo = 1e9, rhi = -1e9;
+            for (let i = 0; i < p.count; i++) {
+                const y = p.positions[i * 3 + 1];
+                if (y < lo) lo = y;
+                if (y > hi) hi = y;
+            }
+            for (let r = 0; r < p.rows; r++) {
+                const y = p.positions[(r * p.segments) * 3 + 1];
+                if (y < rlo) rlo = y; if (y > rhi) rhi = y;
+            }
+            return [p.rows, p.segments, Math.round(lo * 1000), Math.round(hi * 1000), Math.round(rlo * 1000), Math.round(rhi * 1000)];
         });
     },
 

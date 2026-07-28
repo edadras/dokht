@@ -3,6 +3,8 @@
 namespace Tests\Unit;
 
 use App\Services\Vision\GarmentClassifier;
+use App\Services\Vision\GarmentImageAnalyzer;
+use App\Services\Vision\SilhouetteFeatures;
 use App\Services\Vision\SilhouetteOverlay;
 use App\Services\Vision\SketchAnalyzer;
 use InvalidArgumentException;
@@ -100,7 +102,7 @@ class SketchAnalyzerTest extends TestCase
         imagepng($image, $path);
         imagedestroy($image);
 
-        $photo = (new \App\Services\Vision\GarmentImageAnalyzer)->features($path);
+        $photo = (new GarmentImageAnalyzer)->features($path);
         @unlink($path);
 
         $this->assertEqualsWithDelta($photo->hemRatio, $sketch->hemRatio, 0.15);
@@ -137,7 +139,7 @@ class SketchAnalyzerTest extends TestCase
     public function test_overlay_svg_draws_the_outline_and_the_measured_lines(): void
     {
         [$mask, $notes] = $this->analyzer()->silhouette($this->aLineSkirt());
-        $features = \App\Services\Vision\SilhouetteFeatures::extract($mask, $notes);
+        $features = SilhouetteFeatures::extract($mask, $notes);
 
         $svg = (new SilhouetteOverlay)->render($mask, $features, upperIsShoulder: false);
 

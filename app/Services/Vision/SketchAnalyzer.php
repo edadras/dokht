@@ -2,6 +2,7 @@
 
 namespace App\Services\Vision;
 
+use App\Support\Jalali;
 use InvalidArgumentException;
 
 /**
@@ -96,7 +97,7 @@ class SketchAnalyzer
 
         $notes = [
             'شکل مستقیم از نقطه‌های قلم شما ساخته شد ('
-                .\App\Support\Jalali::digits(count($points)).' نقطه)، پس هیچ خطای جداسازی از زمینه در کار نیست.',
+                .Jalali::digits(count($points)).' نقطه)، پس هیچ خطای جداسازی از زمینه در کار نیست.',
         ];
 
         if (count($mapped) > 1) {

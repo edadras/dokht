@@ -314,7 +314,7 @@ final class SilhouetteFeatures
         for ($y = $bounds['min_y'] + (int) round($height * 0.25); $y <= $bounds['max_y']; $y++) {
             $runs = array_values(array_filter(
                 $mask->runs($y),
-                fn ($run) => $run[1] - $run[0] + 1 >= $minRun,
+                fn ($run) => $minRun <= $run[1] - $run[0] + 1,
             ));
 
             $checked++;
