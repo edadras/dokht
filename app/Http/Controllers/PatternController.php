@@ -17,6 +17,7 @@ use App\Support\Measurements;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -85,6 +86,14 @@ class PatternController extends Controller
             'base_size' => 'سایز',
             'name' => 'نام الگو',
         ]);
+
+        $data = array_merge([
+            'customer_id' => null,
+            'measurement_set_id' => null,
+            'base_size' => null,
+            'name' => null,
+            'notes' => null,
+        ], $data);
 
         $template = $this->availableTemplates()->findOrFail($data['pattern_template_id']);
         [$measurements, $measurementSetId, $size] = $this->resolveMeasurements($data);
@@ -234,10 +243,15 @@ class PatternController extends Controller
         ]);
     }
 
-    /** ذخیره هندسه از ویرایشگر (درخواست JSON). */
+    /**
+     * ذخیره هندسه از ویرایشگر (درخواست JSON).
+     *
+     * اعتبارسنجی دستی انجام می‌شود تا پاسخ خطا هم JSON باشد؛ سامانه به‌طور کلی
+     * خطاها را به شکل صفحه وب برمی‌گرداند و این مسیر با fetch صدا زده می‌شود.
+     */
     public function updateGeometry(Request $request, Pattern $pattern): JsonResponse
     {
-        $data = $request->validate([
+        $validator = Validator::make($request->all(), [
             'pieces' => ['required', 'array', 'min:1'],
             'pieces.*.id' => ['required', 'integer'],
             'pieces.*.outline' => ['required', 'array', 'min:3'],
@@ -253,6 +267,16 @@ class PatternController extends Controller
             'pieces.*.edge_allowances.*' => ['nullable', 'numeric', 'between:0,10'],
             'note' => ['nullable', 'string', 'max:160'],
         ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'مقادیر فرستاده‌شده درست نیست.',
+                'errors' => $validator->errors()->toArray(),
+            ], 422);
+        }
+
+        $data = $validator->validated();
 
         $pattern->load('pieces');
         $pieces = $pattern->pieces->keyBy('id');
@@ -361,8 +385,9 @@ class PatternController extends Controller
 
         if ($set !== null) {
             $measurements = $set->completed();
+            $size = ($data['base_size'] ?? null) ?: ($set->base_size ?: Measurements::guessSize($measurements));
 
-            return [$measurements, $set->id, (string) ($data['base_size'] ?: ($set->base_size ?: Measurements::guessSize($measurements)))];
+            return [$measurements, $set->id, (string) $size];
         }
 
         $size = (string) ($data['base_size'] ?? '40');

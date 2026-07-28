@@ -44,9 +44,11 @@ class AssistantController extends Controller
             'project_id' => ['nullable', 'integer'],
         ], [], ['question' => 'پرسش']);
 
-        $project = $data['project_id'] ? Project::query()->with(['fabric', 'garmentType', 'pattern', 'latestSimulation'])->find($data['project_id']) : null;
-        $fabric = $data['fabric_id'] ? Fabric::query()->with('fabricType')->find($data['fabric_id']) : null;
-        $garmentType = $data['garment_type_id'] ? GarmentType::find($data['garment_type_id']) : null;
+        $project = ($data['project_id'] ?? null)
+            ? Project::query()->with(['fabric.fabricType', 'garmentType', 'pattern', 'latestSimulation'])->find($data['project_id'])
+            : null;
+        $fabric = ($data['fabric_id'] ?? null) ? Fabric::query()->with('fabricType')->find($data['fabric_id']) : null;
+        $garmentType = ($data['garment_type_id'] ?? null) ? GarmentType::find($data['garment_type_id']) : null;
 
         $answer = $this->assistant->ask($data['question'], $fabric, $garmentType, $project);
 

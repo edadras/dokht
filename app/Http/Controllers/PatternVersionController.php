@@ -48,7 +48,7 @@ class PatternVersionController extends Controller
         ], [], ['note' => 'یادداشت']);
 
         $pattern->load('pieces');
-        $version = $this->versions->snapshot($pattern, $data['note'] ?: 'ثبت دستی نسخه', bump: true);
+        $version = $this->versions->snapshot($pattern, ($data['note'] ?? null) ?: 'ثبت دستی نسخه', bump: true);
 
         return back()->with('status', 'نسخه '.$version->version.' ثبت شد.');
     }

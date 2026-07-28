@@ -21,10 +21,15 @@ use Illuminate\View\View;
  */
 class PatternExportController extends Controller
 {
-    /** ناحیه چاپ‌شدنی یک برگ A4 با حاشیه ۱۲ میلی‌متری (سانتی‌متر). */
-    public const PAGE_WIDTH = 18.6;
+    /**
+     * ناحیه چاپ‌شدنی روی یک برگ A4 (سانتی‌متر).
+     *
+     * کمی کوچک‌تر از حاشیه ۱۲ میلی‌متری A4 گرفته شده تا حاشیه صفحه وب هم جا شود و
+     * مرورگر برای جاکردن تصویر مقیاس را تغییر ندهد؛ چاپ باید دقیقاً ۱:۱ بماند.
+     */
+    public const PAGE_WIDTH = 17.0;
 
-    public const PAGE_HEIGHT = 27.3;
+    public const PAGE_HEIGHT = 25.0;
 
     public function __construct(
         protected SvgRenderer $renderer,

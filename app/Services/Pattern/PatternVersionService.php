@@ -26,17 +26,25 @@ class PatternVersionService
         'darts', 'notches', 'drills', 'pleats', 'markers', 'edge_allowances', 'meta', 'sort',
     ];
 
-    /** ثبت نسخه؛ با $bump نسخه جاری الگو یک شماره جلو می‌رود. */
+    /**
+     * ثبت نسخه؛ با $bump نسخه جاری الگو یک شماره جلو می‌رود.
+     *
+     * عکس لحظه‌ای همیشه با شماره نسخه جاری ثبت می‌شود؛ اگر برای همین شماره از قبل
+     * رکوردی باشد (مثلاً عکس لحظه اول ساخت) همان به‌روز می‌شود، چون محتوایش همان
+     * وضعیت فعلی است.
+     */
     public function snapshot(Pattern $pattern, ?string $note = null, bool $bump = false): PatternVersion
     {
-        $version = max((int) $pattern->version, ((int) $pattern->versions()->max('version')) + 1);
+        $version = max(1, (int) $pattern->version);
 
-        $record = $pattern->versions()->create([
-            'version' => $version,
-            'snapshot' => $this->buildSnapshot($pattern, $version),
-            'note' => $note,
-            'created_by' => auth()->id(),
-        ]);
+        $record = $pattern->versions()->updateOrCreate(
+            ['version' => $version],
+            [
+                'snapshot' => $this->buildSnapshot($pattern, $version),
+                'note' => $note,
+                'created_by' => auth()->id(),
+            ],
+        );
 
         if ($bump) {
             $pattern->forceFill(['version' => $version + 1])->save();

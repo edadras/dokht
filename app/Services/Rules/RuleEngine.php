@@ -9,6 +9,7 @@ use App\Models\GarmentType;
 use App\Models\Pattern;
 use App\Models\Project;
 use App\Support\FabricProfile;
+use App\Support\Jalali;
 use App\Support\WorkshopContext;
 use Illuminate\Support\Collection;
 
@@ -423,15 +424,15 @@ class RuleEngine
             'set_ease' => sprintf(
                 'آزادی %s را %s سانتی‌متر %s کنید.',
                 $easeKeys[$action['key'] ?? ''] ?? ($action['key'] ?? ''),
-                \App\Support\Jalali::digits(abs((float) $value)),
+                Jalali::digits(abs((float) $value)),
                 ((float) $value) < 0 ? 'کم' : 'زیاد',
             ),
             'seam_allowance' => sprintf(
                 'جای دوخت %s را %s سانتی‌متر بگیرید.',
                 $edge[$action['edge'] ?? 'all'] ?? 'همه درزها',
-                \App\Support\Jalali::digits((float) $value),
+                Jalali::digits((float) $value),
             ),
-            'hem_allowance' => 'لب برگردان را '.\App\Support\Jalali::digits((float) $value).' سانتی‌متر بگیرید.',
+            'hem_allowance' => 'لب برگردان را '.Jalali::digits((float) $value).' سانتی‌متر بگیرید.',
             'seam_finish' => 'درزها را با روش «'.($finishes[$value] ?? $value).'» تمیز کنید.',
             'needle' => 'سوزن پیشنهادی: '.$value,
             'stitch' => 'کوک پیشنهادی: '.$value,
@@ -442,7 +443,7 @@ class RuleEngine
             'no_darts' => 'برای این پارچه پنس لازم نیست.',
             'avoid_bias' => 'این پارچه را اریب نبرید.',
             'unsuitable' => 'این پارچه برای این مدل مناسب نیست.',
-            'extra_fabric' => \App\Support\Jalali::digits((float) $value).'٪ پارچه بیشتر بخرید.',
+            'extra_fabric' => Jalali::digits((float) $value).'٪ پارچه بیشتر بخرید.',
             default => null,
         };
     }

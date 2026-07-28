@@ -158,6 +158,11 @@ class DesignRuleController extends Controller
             'conditions.*.value' => ['nullable'],
             'actions' => ['required', 'array', 'min:1'],
             'actions.*.type' => ['required', Rule::in(array_keys(RuleEngine::ACTION_TYPES))],
+            // تنها همین چهار کلید بار کنش را می‌سازند؛ بقیه ورودی‌ها کنار گذاشته می‌شوند
+            'actions.*.text' => ['nullable', 'string', 'max:500'],
+            'actions.*.key' => ['nullable', 'string', 'max:40'],
+            'actions.*.value' => ['nullable', 'string', 'max:200'],
+            'actions.*.edge' => ['nullable', 'string', 'max:40'],
         ], [
             'conditions.required' => 'حداقل یک شرط لازم است.',
             'actions.required' => 'حداقل یک کنش لازم است.',
