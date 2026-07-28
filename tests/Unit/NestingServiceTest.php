@@ -412,10 +412,13 @@ class NestingServiceTest extends TestCase
 
         $byWidth = collect($rows)->keyBy('width_cm');
 
-        // عرض ۹۰ تاشده تنها ۴۵ سانتی‌متر جای مفید دارد و قطعه ۵۰ سانتی در آن جا نمی‌شود
-        $this->assertFalse($byWidth[90.0]['fits']);
+        // عرض ۹۰ تاشده تنها ۴۵ سانتی‌متر جای مفید دارد و قطعه ۵۰ سانتی در آن نیم‌عرض
+        // جا نمی‌شود؛ در این حالت چیدمان تای پارچه را باز می‌کند و تک‌لا می‌چیند، پس
+        // همه قطعه‌ها بریده می‌شوند ولی مصرف پارچه از عرض پهن‌تر کمتر نمی‌شود.
+        $this->assertTrue($byWidth[90.0]['fits']);
         $this->assertTrue($byWidth[140.0]['fits']);
         $this->assertGreaterThan(0, $byWidth[140.0]['required_meters']);
+        $this->assertGreaterThanOrEqual($byWidth[140.0]['required_meters'], $byWidth[90.0]['required_meters']);
     }
 
     public function test_a_pattern_without_pieces_warns_instead_of_failing(): void

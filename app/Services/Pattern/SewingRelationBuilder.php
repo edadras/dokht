@@ -150,13 +150,22 @@ class SewingRelationBuilder
                 $waistEdges = static::edgesWithTag($target, 'waist');
                 $bandEdges = static::edgesWithTag($waistband, 'waist');
 
-                if ($waistEdges !== [] && $bandEdges !== []) {
+                // خط کمر بعضی دامن‌ها (کلوش، ترک، دستمالی) یک کمان شکسته است و از
+                // چند لبه ساخته می‌شود؛ اگر فقط لبه اول به کمربند وصل شود، بقیه
+                // خط کمر بی‌دوخت می‌ماند و نمای سه‌بعدی هم لباس را باز نشان می‌دهد.
+                $side = $target['side'] === 'back' ? 'پشت' : 'جلو';
+
+                foreach ($waistEdges as $index => $waistEdge) {
+                    if ($bandEdges === []) {
+                        break;
+                    }
+
                     $relations[] = static::relation(
                         $waistband,
                         $bandEdges[0],
                         $target,
-                        $waistEdges[0],
-                        'کمربند به خط کمر '.($target['side'] === 'back' ? 'پشت' : 'جلو'),
+                        $waistEdge,
+                        'کمربند به خط کمر '.$side.(count($waistEdges) > 1 ? ' '.($index + 1) : ''),
                     );
                 }
             }

@@ -58,6 +58,29 @@ class NestingService
         $plan = $this->matchPlan($pattern, $instances, $resolved);
 
         $run = $this->pack($instances, $resolved, $usable, $plan);
+        $opened = false;
+
+        // پارچه تاشده فقط نیمی از عرض را می‌دهد. اگر قطعه‌ای در آن نیم جا نشود،
+        // چیدمانی که آن قطعه را نیاورده باشد اصلاً قابل بریدن نیست؛ خیاط در این
+        // حالت تای پارچه را باز می‌کند و تک‌لا می‌برد. پس همان کار را می‌کنیم و
+        // در هشدارها می‌نویسیم، به‌جای اینکه قطعه را بی‌صدا کنار بگذاریم.
+        if ($run['unplaced'] !== [] && ($resolved['folded'] ?? true)) {
+            $openResolved = array_merge($resolved, ['folded' => false]);
+            $openUsable = $this->usableWidth($openResolved);
+            $openInstances = $this->instances($pattern, $openResolved);
+            $openPlan = $this->matchPlan($pattern, $openInstances, $openResolved);
+            $openRun = $this->pack($openInstances, $openResolved, $openUsable, $openPlan);
+
+            if (count($openRun['unplaced']) < count($run['unplaced'])) {
+                $opened = true;
+                $resolved = $openResolved;
+                $usable = $openUsable;
+                $instances = $openInstances;
+                $plan = $openPlan;
+                $run = $openRun;
+            }
+        }
+
         $match = $this->matchReport($plan, $instances, $resolved, $usable, $run);
 
         $length = $run['required_length_cm'];
@@ -75,7 +98,7 @@ class NestingService
             'waste_percent' => round(max(0, 100 - $efficiency), 2),
             'efficiency' => $efficiency,
             'unplaced' => array_values(array_unique(array_column($run['unplaced'], 'code'))),
-            'warnings' => $this->warnings($pattern, $fabric, $resolved, $usable, $instances, $run, $match),
+            'warnings' => $this->warnings($pattern, $fabric, $resolved, $usable, $instances, $run, $match, $opened),
             'options' => $resolved,
             'pattern_match' => $match,
         ];
@@ -1086,11 +1109,16 @@ class NestingService
         array $instances,
         array $run,
         array $match = [],
+        bool $opened = false,
     ): array {
         $warnings = [];
 
         if ($instances === []) {
             return ['این الگو هیچ قطعه‌ای ندارد؛ اول قطعه‌های الگو را بسازید.'];
+        }
+
+        if ($opened) {
+            $warnings[] = 'قطعه‌های این الگو در نیم‌عرضِ پارچه تاشده جا نمی‌شدند، پس چیدمان روی پارچه باز (تک‌لا) حساب شد؛ مصرف پارچه بیشتر می‌شود ولی همه قطعه‌ها بریده می‌شوند.';
         }
 
         $widest = collect($instances)->sortByDesc('w')->first();
