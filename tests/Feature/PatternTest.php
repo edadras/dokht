@@ -320,8 +320,9 @@ class PatternTest extends TestCase
             $this->assertNotEmpty($garment->required_measurements);
         }
 
+        // برای هر تولیدکننده‌ای که در فهرست باشد یک الگو ساخته می‌شود
         $templates = PatternTemplate::all();
-        $this->assertCount(10, $templates);
+        $this->assertCount(count(GeneratorRegistry::keys()), $templates);
 
         foreach ($templates as $template) {
             $this->assertNull($template->workshop_id);
@@ -337,7 +338,7 @@ class PatternTest extends TestCase
         $this->seed(PatternTemplateSeeder::class);
 
         $this->assertSame($garments->count(), GarmentType::count());
-        $this->assertSame(10, PatternTemplate::count());
+        $this->assertSame($templates->count(), PatternTemplate::count());
     }
 
     public function test_guests_are_redirected_to_login(): void

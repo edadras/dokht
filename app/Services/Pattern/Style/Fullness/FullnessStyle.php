@@ -116,6 +116,18 @@ abstract class FullnessStyle extends DetailStyle
         return round($total, 3);
     }
 
+    /** طول دوخته‌شده یک درز روی یک قطعه: طول خام منهای ساسون، پیلی و چین. */
+    protected function seamOn(array $piece, string $tag): float
+    {
+        $total = 0.0;
+
+        foreach ($this->edgesWithTag($piece, $tag) as $edge) {
+            $total += max(0.0, $this->edgeLength($piece, $edge) - $this->consumedOn($piece, $edge));
+        }
+
+        return round($total, 3);
+    }
+
     /** دور خام یک برچسب لبه در همه قطعه‌ها (پارچه، نه اندازه تمام‌شده). */
     protected function rawGirth(array $pieces, string $tag, array $only): float
     {

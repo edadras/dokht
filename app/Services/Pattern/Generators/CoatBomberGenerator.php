@@ -30,7 +30,6 @@ class CoatBomberGenerator extends BodiceGarmentBase
             $this->garmentLengthParam(20, 4, 45),
             $this->sleeveParam('set_in', 58, [
                 'set_in' => 'آستین معمولی',
-                'raglan' => 'آستین رگلان',
             ]),
             [
                 'shoulder_extra' => [

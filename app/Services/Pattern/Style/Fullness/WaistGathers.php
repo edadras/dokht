@@ -83,8 +83,9 @@ class WaistGathers extends FullnessStyle
 
         foreach ($hosts as $index) {
             $piece = $pieces[$index];
-            $edge = $this->edgeWithTag($piece, 'waist');
-            $finished = $this->seamLength($piece, $edge);
+            // اندازه تمام‌شده کل خط کمر این پنل، نه یک لبه‌اش؛ خط کمر ممکن است بعد
+            // از سبک‌های پیشین به چند لبه شکسته شده باشد
+            $finished = $this->seamOn($piece, 'waist');
             $repeats = $this->repeats($piece);
 
             // ۱) ساسون‌های کمر باز می‌شوند و پارچه‌شان به چین می‌رود
@@ -92,7 +93,7 @@ class WaistGathers extends FullnessStyle
                 $intake = 0.0;
 
                 foreach ($piece['darts'] ?? [] as $dart) {
-                    if ((int) ($dart['edge'] ?? -1) === $edge && ($dart['type'] ?? '') === 'waist') {
+                    if (($dart['type'] ?? '') === 'waist') {
                         $intake += (float) ($dart['intake'] ?? 0);
                     }
                 }
@@ -100,7 +101,7 @@ class WaistGathers extends FullnessStyle
                 if ($intake > 0.05) {
                     $piece['darts'] = array_values(array_filter(
                         $piece['darts'],
-                        fn ($dart) => ! ((int) ($dart['edge'] ?? -1) === $edge && ($dart['type'] ?? '') === 'waist'),
+                        fn ($dart) => ($dart['type'] ?? '') !== 'waist',
                     ));
                     $fromDarts += $repeats * $intake;
                 }

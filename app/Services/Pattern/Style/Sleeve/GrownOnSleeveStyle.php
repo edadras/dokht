@@ -307,10 +307,11 @@ abstract class GrownOnSleeveStyle extends SleeveBodiceStyle
         $outline[$a['side_edge'] + 1] = $sideRest;
         $piece['outline'] = $outline;
 
+        // از نوک سرشانه تا زیر بغل: به‌جای حلقه، بالای آستین و دم آستین می‌نشیند
         $piece = $this->replacePoints(
             $piece,
             $a['armhole_edge'],
-            2,
+            ($a['side_edge'] - $a['armhole_edge']) + 1,
             [
                 Geometry::point($a['tip']['x'], $a['tip']['y']),
                 Geometry::point($plan['sleeve_tip']['x'], $plan['sleeve_tip']['y']),
@@ -326,7 +327,7 @@ abstract class GrownOnSleeveStyle extends SleeveBodiceStyle
         $hemEdge = $topEdge + 1;
         $underEdge = $topEdge + 2;
 
-        $piece = $this->dropNotches($piece, ['armhole']);
+        $piece = $this->dropArmholeNotches($piece);
         $mid = Geometry::pointOnEdge($piece['outline'], $underEdge, 0.5);
         $piece['notches'][] = $this->notch($mid['x'], $mid['y'], $underEdge, 'وسط درز زیر آستین '.$label, 'underarm_seam');
 

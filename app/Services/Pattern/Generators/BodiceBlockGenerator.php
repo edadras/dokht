@@ -2,12 +2,20 @@
 
 namespace App\Services\Pattern\Generators;
 
-use App\Services\Pattern\Generators\Concerns\DraftsBodice;
-
-/** بالاتنه پایه: جلو و پشت با ساسون سینه و کمر، یقه، حلقه آستین و سرشانه. */
-class BodiceBlockGenerator extends BaseGenerator
+/**
+ * بالاتنه پایه (بلوک جذب).
+ *
+ * مادر همه مدل‌های بالاتنه: جلو و پشت با ساسون سینه و ساسون کمر، یقه، سرشانه و
+ * حلقه آستین. نقطه کمرِ درز پهلو در جلو و پشت یکی است و افت جلو روی لبه کمر
+ * دیده می‌شود، پس درز پهلوی جلو و پشت دقیقاً هم‌اندازه درمی‌آید و بدون
+ * راست‌سازی به هم دوخته می‌شود.
+ */
+class BodiceBlockGenerator extends BodiceBaseGenerator
 {
-    use DraftsBodice;
+    public static function key(): string
+    {
+        return 'bodice_block';
+    }
 
     public function label(): string
     {
@@ -16,53 +24,45 @@ class BodiceBlockGenerator extends BaseGenerator
 
     public function paramsSchema(): array
     {
-        return [
-            'shoulder_slope' => [
-                'label' => 'شیب سرشانه', 'min' => 2, 'max' => 8, 'step' => 0.5, 'default' => 4.5, 'unit' => 'سانتی‌متر',
-                'hint' => 'هرچه بیشتر باشد سرشانه افتاده‌تر می‌شود.',
+        return array_merge(
+            $this->baseSchema(),
+            [
+                'body_length' => [
+                    'label' => 'بلندی از خط کمر', 'min' => 0, 'max' => 30, 'step' => 1, 'default' => 0,
+                    'unit' => 'سانتی‌متر',
+                    'hint' => 'صفر یعنی بلوک دقیقاً روی خط کمر تمام می‌شود.',
+                ],
+                'bust_dart' => [
+                    'label' => 'ساسون سینه روی پهلو', 'type' => 'toggle', 'default' => true,
+                ],
             ],
-            'neck_width_extra' => [
-                'label' => 'اضافه عرض یقه', 'min' => -2, 'max' => 8, 'step' => 0.5, 'default' => 0, 'unit' => 'سانتی‌متر',
-            ],
-            'front_neck_depth_extra' => [
-                'label' => 'گودی بیشتر یقه جلو', 'min' => -2, 'max' => 20, 'step' => 0.5, 'default' => 0, 'unit' => 'سانتی‌متر',
-            ],
-            'back_neck_depth' => [
-                'label' => 'گودی یقه پشت', 'min' => 1, 'max' => 12, 'step' => 0.5, 'default' => 2, 'unit' => 'سانتی‌متر',
-            ],
-            'armhole_depth_extra' => [
-                'label' => 'گودی بیشتر حلقه آستین', 'min' => -2, 'max' => 8, 'step' => 0.5, 'default' => 0, 'unit' => 'سانتی‌متر',
-            ],
-            'bodice_length_extra' => [
-                'label' => 'بلندی بیشتر بالاتنه', 'min' => -6, 'max' => 20, 'step' => 0.5, 'default' => 0, 'unit' => 'سانتی‌متر',
-            ],
-            'waist_dart_share' => [
-                'label' => 'سهم ساسون از کاهش کمر', 'min' => 0, 'max' => 0.9, 'step' => 0.05, 'default' => 0.6,
-                'hint' => 'باقی کاهش کمر روی درز پهلو گرفته می‌شود.',
-            ],
-            'bust_dart' => [
-                'label' => 'ساسون سینه روی پهلو', 'type' => 'toggle', 'default' => true,
-            ],
-        ];
+        );
     }
 
     public function generate(array $measurements, array $ease, array $params): array
     {
-        $g = $this->bodiceMetrics($measurements, $ease, $params);
-        $bustDart = $this->flag($params, 'bust_dart', true);
+        $g = $this->blockMetrics($measurements, $ease, $params);
+        $length = (float) $this->param($params, 'body_length', 0);
+        $shape = $length > 0.5 ? 'fitted' : 'waist';
 
-        return $this->finish([
-            $this->bodicePiece($g, [
+        $shared = [
+            'shape' => $shape,
+            'length' => $length,
+            'bottom_tag' => $length > 0.5 ? 'hem' : 'waist',
+        ];
+
+        return $this->finishBlock([
+            $this->bodyPanel($g, array_merge($shared, [
                 'side' => 'front',
-                'shape' => 'waist',
-                'bust_dart' => $bustDart,
+                'bust_dart' => $this->flag($params, 'bust_dart', true),
                 'code' => 'bodice-front',
-            ]),
-            $this->bodicePiece($g, [
+                'name' => 'بالاتنه جلو',
+            ])),
+            $this->bodyPanel($g, array_merge($shared, [
                 'side' => 'back',
-                'shape' => 'waist',
                 'code' => 'bodice-back',
-            ]),
-        ]);
+                'name' => 'بالاتنه پشت',
+            ])),
+        ], $g);
     }
 }

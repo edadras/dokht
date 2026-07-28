@@ -25,15 +25,15 @@ class CoatRaincoatGenerator extends BodiceGarmentBase
     {
         return array_merge(
             $this->outerSchema(['armhole_depth_extra' => 6, 'neck_width_extra' => 3, 'front_neck_depth_extra' => 3, 'shoulder_slope' => 3.5]),
-            $this->fitParam('loose'),
+            $this->fitParam('regular'),
             $this->garmentLengthParam(66, 25, 120),
             $this->openingParam('zip', 0, [
                 'zip' => 'زیپ سرتاسری با لتِ رویی',
                 'button' => 'دکمه فشاری',
             ]),
-            $this->sleeveParam('raglan', 60, [
-                'raglan' => 'آستین رگلان (بدون درز حلقه)',
+            $this->sleeveParam('set_in', 60, [
                 'set_in' => 'آستین معمولی',
+                'two_piece' => 'آستین دوتکه خیاطی',
             ]),
             [
                 'hood' => [
@@ -45,7 +45,7 @@ class CoatRaincoatGenerator extends BodiceGarmentBase
                 ],
                 'hem_flare' => [
                     'label' => 'باز شدن لبه پایین در هر پهلو', 'min' => 0, 'max' => 25, 'step' => 1,
-                    'default' => 8, 'unit' => 'سانتی‌متر',
+                    'default' => 6, 'unit' => 'سانتی‌متر',
                 ],
                 'storm_flap' => [
                     'label' => 'لتِ روی زیپ', 'type' => 'toggle', 'default' => true,
@@ -58,7 +58,7 @@ class CoatRaincoatGenerator extends BodiceGarmentBase
     public function generate(array $measurements, array $ease, array $params): array
     {
         $g = $this->blockMetrics($measurements, $ease, $params);
-        $grow = $this->fitGrow($params, ['fitted' => 2.0, 'regular' => 3.5, 'loose' => 5.5]);
+        $grow = $this->fitGrow($params, ['fitted' => 1.0, 'regular' => 2.5, 'loose' => 4.0]);
         $length = (float) $this->param($params, 'length', 66);
 
         $pieces = $this->outerGarment($measurements, $ease, $params, $g, [

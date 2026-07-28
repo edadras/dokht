@@ -61,6 +61,12 @@ class GodetInsert extends FullnessStyle
             return $this->noPanelMessage();
         }
 
+        foreach ($pieces as $piece) {
+            if (($piece['meta']['part'] ?? '') === 'godet') {
+                return 'این لباس همین حالا گودت دارد؛ برای گودت بیشتر، تعداد همان سبک را بالا ببرید.';
+            }
+        }
+
         $height = $this->num($context, 'height', 30);
 
         foreach ($hosts as $index) {

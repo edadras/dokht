@@ -90,6 +90,7 @@ class BodicePeplumGenerator extends BodiceBaseGenerator
                     'name' => $isFront ? 'پپلوم جلو' : 'پپلوم پشت',
                     'girth_role' => 'trim',
                     'cut' => $isFront || ! $zip ? 1 : 2,
+                    'on_fold' => $isFront || ! $zip,
                 ])
                 : $this->lowerPanel($g, [
                     'side' => $side,

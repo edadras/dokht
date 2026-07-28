@@ -101,6 +101,16 @@ class SleeveStyleTest extends TestCase
         $this->fail("نشانه «{$pair}» روی قطعه «{$piece['code']}» نیست.");
     }
 
+    /** گودی حلقه: فاصله عمودی زیر بغل تا سرگردن، مستقل از جای مبدأ قطعه. */
+    protected function underarmDepth(array $piece): float
+    {
+        $tags = $piece['meta']['edges'];
+        $snp = (int) array_search('shoulder', $tags, true);
+        $underarm = (int) array_search('side', $tags, true);
+
+        return (float) $piece['outline'][$underarm]['y'] - (float) $piece['outline'][$snp]['y'];
+    }
+
     protected function assertSewable(array $piece, string $context = ''): void
     {
         $where = $context.' '.$piece['code'];
@@ -532,8 +542,8 @@ class SleeveStyleTest extends TestCase
                     $piece = $this->piece($result, $code);
 
                     // فاصله زیر بغل تا سرگردن، تا از جابه‌جایی مبدأ قطعه مستقل باشد
-                    $wasDeep = $original['outline'][3]['y'] - $original['outline'][1]['y'];
-                    $isDeep = $piece['outline'][3]['y'] - $piece['outline'][1]['y'];
+                    $wasDeep = $this->underarmDepth($original);
+                    $isDeep = $this->underarmDepth($piece);
 
                     $this->assertEqualsWithDelta(
                         $drop,

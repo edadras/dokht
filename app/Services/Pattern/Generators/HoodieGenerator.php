@@ -40,7 +40,6 @@ class HoodieGenerator extends BodiceGarmentBase
             ]),
             $this->sleeveParam('set_in', 58, [
                 'set_in' => 'آستین معمولی',
-                'raglan' => 'آستین رگلان',
             ]),
             [
                 'hood' => [

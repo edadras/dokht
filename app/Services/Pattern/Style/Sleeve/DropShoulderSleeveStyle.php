@@ -202,10 +202,11 @@ class DropShoulderSleeveStyle extends SleeveBodiceStyle
         $armhole = $this->curveTo($tip, $underarm, (float) $p['armhole_scoop'], $a['centroid']);
         $after = Geometry::edgeLength([Geometry::point($tip['x'], $tip['y']), $armhole], 0);
 
+        // نوک سرشانه و همه لبه‌های حلقه با یک حلقه تازه جایگزین می‌شوند
         $piece = $this->replacePoints(
             $piece,
-            $a['neck_edge'] + 2,
-            2,
+            $a['armhole_edge'],
+            ($a['side_edge'] - $a['armhole_edge']) + 1,
             [Geometry::point($tip['x'], $tip['y']), $armhole],
             ['armhole', 'side'],
         );
@@ -214,7 +215,7 @@ class DropShoulderSleeveStyle extends SleeveBodiceStyle
         $label = $side === 'front' ? 'جلو' : 'پشت';
         $armholeEdge = $a['armhole_edge'];
 
-        $piece = $this->dropNotches($piece, ['armhole', 'shoulder']);
+        $piece = $this->dropArmholeNotches($this->dropNotches($piece, ['shoulder']));
         $shoulderMid = Geometry::pointOnEdge($piece['outline'], $a['shoulder_edge'], 0.5);
 
         // نشانه دقیقاً در نیمه طول حلقه از زیر بغل، تا روی آستین هم همان‌جا بیفتد
@@ -345,31 +346,6 @@ class DropShoulderSleeveStyle extends SleeveBodiceStyle
         return Geometry::normalizePiece($piece);
     }
 
-    /**
-     * نقطه‌ای روی زنجیره‌ای از لبه‌ها، به فاصله کمانی معین از سر (یا ته) آن.
-     *
-     * @param  array<int, int>  $edges  به ترتیب راه رفتن
-     * @return array{x: float, y: float, t: float, edge: int, walked: float}
-     */
-    protected function alongChain(array $outline, array $edges, float $distance, bool $reverse = false): array
-    {
-        $walked = 0.0;
-        $last = $edges[count($edges) - 1];
-
-        foreach ($edges as $index) {
-            $length = Geometry::edgeLength($outline, $index);
-
-            if ($distance <= $walked + $length || $index === $last) {
-                $on = $this->alongEdge($outline, $index, max(0.0, $distance - $walked), $reverse);
-
-                return $on + ['edge' => $index, 'walked' => min($distance, $walked + $length)];
-            }
-
-            $walked += $length;
-        }
-
-        return ['x' => 0.0, 'y' => 0.0, 't' => 0.0, 'edge' => $edges[0] ?? 0, 'walked' => 0.0];
-    }
 
     /**
      * سرآستین با چهار کمان: دو کمان جلو (گودتر) و دو کمان پشت (پرتر).

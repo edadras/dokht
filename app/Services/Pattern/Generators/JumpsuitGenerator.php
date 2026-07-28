@@ -58,10 +58,11 @@ class JumpsuitGenerator extends BodiceGarmentBase
                 ],
                 'front_pleat' => [
                     'label' => 'پیلی جلوی شلوار', 'min' => 0, 'max' => 6, 'step' => 0.5,
-                    'default' => 2, 'unit' => 'سانتی‌متر',
+                    'default' => 0, 'unit' => 'سانتی‌متر',
+                    'hint' => 'پیلی، لبه کمر شلوار را پهن‌تر می‌کند؛ اگر بازش کنید باید ساسون بالاتنه را هم به همان اندازه بگیرید.',
                 ],
                 'back_darts' => [
-                    'label' => 'تعداد ساسون پشت شلوار', 'min' => 0, 'max' => 2, 'step' => 1, 'default' => 1,
+                    'label' => 'تعداد ساسون پشت شلوار', 'min' => 0, 'max' => 2, 'step' => 1, 'default' => 0,
                 ],
                 'waistband' => [
                     'label' => 'کمربند داخلی داشته باشد', 'type' => 'toggle', 'default' => false,
@@ -94,10 +95,13 @@ class JumpsuitGenerator extends BodiceGarmentBase
         $g = $this->blockMetrics($measurements, $ease, $params);
         $grow = $this->fitGrow($params, ['fitted' => 0.0, 'regular' => 1.5, 'loose' => 3.0]);
 
+        // کاهش کمر بالاتنه روی درز پهلو گرفته می‌شود تا لبه کمر بالاتنه دقیقاً
+        // هم‌اندازه لبه کمر شلوار بماند و این دو بدون کش آمدن به هم دوخته شوند
         $front = $this->bodyPanel($g, [
             'side' => 'front',
             'shape' => 'waist',
             'grow' => $grow,
+            'waist_dart' => false,
             'bust_dart' => true,
             'code' => 'jumpsuit-bodice-front',
             'name' => 'بالاتنه جلو',
@@ -107,6 +111,7 @@ class JumpsuitGenerator extends BodiceGarmentBase
             'side' => 'back',
             'shape' => 'waist',
             'grow' => $grow,
+            'waist_dart' => false,
             'on_fold' => false,
             'cut' => 2,
             'mirror' => true,
@@ -128,8 +133,15 @@ class JumpsuitGenerator extends BodiceGarmentBase
             ['prefix' => 'jumpsuit-'],
         ));
 
+        // همان آزادی که به بالاتنه داده شد به شلوار هم می‌رسد، وگرنه لبه کمر این دو
+        // هم‌اندازه درنمی‌آید
+        $legEase = array_merge($ease, [
+            'waist' => $this->ease($ease, 'waist', 4) + (4 * $grow),
+            'hip' => $this->ease($ease, 'hip', 6) + (4 * $grow),
+        ]);
+
         foreach (['front', 'back'] as $side) {
-            $leg = $this->legPanel($measurements, $ease, $params, [
+            $leg = $this->legPanel($measurements, $legEase, $params, [
                 'side' => $side,
                 'code' => 'jumpsuit-leg-'.$side,
                 'name' => $side === 'front' ? 'پای جلو' : 'پای پشت',

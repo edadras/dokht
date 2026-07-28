@@ -106,7 +106,6 @@ abstract class BodiceGarmentBase extends BodiceBaseGenerator
             'none' => 'بدون آستین',
             'set_in' => 'آستین معمولی (حلقه‌ای)',
             'two_piece' => 'آستین دوتکه خیاطی',
-            'raglan' => 'آستین رگلان',
         ];
 
         return [
@@ -268,6 +267,10 @@ abstract class BodiceGarmentBase extends BodiceBaseGenerator
     /**
      * قطعه‌های آستین بر پایه سبک انتخابی کاربر.
      *
+     * آستین رگلان اینجا نیست: رگلان علاوه بر خود آستین، تنه را هم از یقه تا زیر
+     * بغل می‌بُرد و آن کار در لایه سبک‌ها (sleeve_raglan) انجام می‌شود، نه در
+     * درفت پایه لباس.
+     *
      * @param  array<string, float>  $g
      * @param  array<string, mixed>  $o
      * @return array<int, array<string, mixed>>
@@ -285,9 +288,6 @@ abstract class BodiceGarmentBase extends BodiceBaseGenerator
             'two_piece' => $this->tailoredSleevePieces($m, $ease, $params, $armhole, array_merge([
                 'length_extra' => $length - $this->m($m, 'arm_length', 58),
             ], $o)),
-            'raglan' => $this->raglanSleevePieces($m, $ease, $params, $g, array_merge([
-                'length' => $length,
-            ], $o)),
             default => $this->sleevePieces($m, $ease, $params, array_merge([
                 'armhole_length' => $armhole,
                 'length' => $length,
@@ -296,8 +296,9 @@ abstract class BodiceGarmentBase extends BodiceBaseGenerator
         };
 
         foreach ($pieces as $index => $piece) {
-            $pieces[$index]['meta']['girth_role'] = $piece['meta']['girth_role'] ?? 'sleeve';
-            $pieces[$index]['meta']['sleeve_style'] = $style;
+            $piece['meta']['girth_role'] = $piece['meta']['girth_role'] ?? 'sleeve';
+            $piece['meta']['sleeve_style'] = $style;
+            $pieces[$index] = $this->alignMarks($piece);
         }
 
         return $pieces;
@@ -697,8 +698,9 @@ abstract class BodiceGarmentBase extends BodiceBaseGenerator
             return $piece;
         }
 
-        $point = Geometry::pointOnEdge($piece['outline'], $edge, 1.0);
-        $piece['notches'][] = $this->notch($point['x'], $point['y'] - $length, $edge, 'سر چاک پهلو', 'vent');
+        $bottom = Geometry::pointOnEdge($piece['outline'], $edge, 1.0);
+        $point = $this->pointOnEdgeAtY($piece['outline'], $edge, $bottom['y'] - $length);
+        $piece['notches'][] = $this->notch($point['x'], $point['y'], $edge, 'سر چاک پهلو', 'vent');
         $piece['meta']['vent'] = round($length, 2);
         $piece['meta']['notes'] = array_merge($piece['meta']['notes'] ?? [], [
             $label.' به بلندی '.$this->fa(round($length, 1)).' سانتی‌متر از لبه پایین باز می‌ماند.',

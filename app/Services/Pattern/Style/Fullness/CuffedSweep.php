@@ -64,6 +64,11 @@ class CuffedSweep extends FullnessStyle
 
         foreach ($hosts as $index) {
             $piece = $pieces[$index];
+
+            if (isset($piece['meta']['hem_turnup'])) {
+                return 'دم این لباس همین حالا برگردان دارد؛ برای پهن‌تر کردنش همان سبک را با عدد بزرگ‌تر بزنید.';
+            }
+
             $width = $this->hemLength($piece);
 
             if ($width < $depth + 4) {

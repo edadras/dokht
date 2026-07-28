@@ -225,11 +225,29 @@ trait BodiceCatalogSupport
 
         if ($dartIntake > 0.6) {
             $apexY = $front ? $g['bust_apex_y'] : $bustY + 4;
-            $darts[] = $shape === 'waist'
-                ? $this->dart('waist', 'ساسون کمر', $bottomEdge, $dartX, $centerBottomY - ($dip * 0.5), $dartIntake, $dartX, $apexY)
-                : $this->dart('waist', 'ساسون کمر', null, $dartX, $sideWaistY, $dartIntake, $dartX, $apexY, 'x', [
+
+            if ($shape === 'waist') {
+                // دو پای ساسون کمر روی خودِ لبه کمر می‌نشینند، حتی وقتی آن لبه منحنی است
+                $left = $this->pointOnEdgeAtX($outline, $bottomEdge, $dartX - ($dartIntake / 2));
+                $right = $this->pointOnEdgeAtX($outline, $bottomEdge, $dartX + ($dartIntake / 2));
+
+                $darts[] = $this->dart(
+                    'waist',
+                    'ساسون کمر',
+                    $bottomEdge,
+                    ($left['x'] + $right['x']) / 2,
+                    ($left['y'] + $right['y']) / 2,
+                    $dartIntake,
+                    $dartX,
+                    $apexY,
+                    'x',
+                    ['legs' => [Geometry::point($left['x'], $left['y']), Geometry::point($right['x'], $right['y'])]],
+                );
+            } else {
+                $darts[] = $this->dart('waist', 'ساسون کمر', null, $dartX, $sideWaistY, $dartIntake, $dartX, $apexY, 'x', [
                     'apex_lower' => Geometry::point($dartX, min($centerBottomY - 2, $hipY - 1)),
                 ]);
+            }
         }
 
         if ($bustDart > 0.8) {
@@ -261,11 +279,12 @@ trait BodiceCatalogSupport
         ];
 
         if ($length > 1.5) {
-            $markers[] = $this->marker('waist', 'خط کمر', 0, $centerWaistY, $cf + $qb - $sideIntake, $sideWaistY);
+            $markers[] = $this->marker('waist', 'خط کمر', $cf, $sideWaistY, $cf + $qb - $sideIntake, $sideWaistY);
         }
 
+        // پهنای خط باسن از خود مسیر خوانده می‌شود؛ در فرم راسته لبه پهلو از باسن بازتر است
         if ($sideBottomY > $hipY + 1) {
-            $markers[] = $this->marker('hip', 'خط باسن', $cf, $hipY, $cf + $qh);
+            $markers[] = $this->marker('hip', 'خط باسن', $cf, $hipY, $cf + max(0.0, $this->panelWidthAt(['outline' => $outline], $hipY) - $cf));
         }
 
         // نشانه‌های جفت‌شدن
@@ -533,6 +552,55 @@ trait BodiceCatalogSupport
     }
 
     /**
+     * هم‌تراز کردن نشانه‌ها و خط‌های نشانه با مسیر واقعی قطعه.
+     *
+     * سرآستین با «برازش ارتفاع کپ» ساخته می‌شود، پس تا لحظه آخر معلوم نیست
+     * نقطه زیر بغل کجا می‌افتد. اینجا هر نشانه به نزدیک‌ترین لبه واقعی چسبانده و
+     * هر خط نشانه داخل کادر قطعه بریده می‌شود تا روی کاغذ همان‌جایی بیفتد که
+     * ادعا می‌کند.
+     *
+     * @param  array<string, mixed>  $piece
+     * @return array<string, mixed>
+     */
+    protected function alignMarks(array $piece): array
+    {
+        $outline = array_values($piece['outline'] ?? []);
+
+        if (count($outline) < 3) {
+            return $piece;
+        }
+
+        foreach ($piece['notches'] ?? [] as $index => $notch) {
+            $near = Geometry::nearestEdge($outline, ['x' => (float) $notch['x'], 'y' => (float) $notch['y']]);
+            $piece['notches'][$index]['x'] = round($near['point']['x'], 2);
+            $piece['notches'][$index]['y'] = round($near['point']['y'], 2);
+            $piece['notches'][$index]['edge'] = (int) $near['edge'];
+        }
+
+        [$minX, $minY, $maxX, $maxY] = Geometry::bounds($outline);
+
+        foreach ($piece['markers'] ?? [] as $index => $marker) {
+            foreach (['from', 'to'] as $end) {
+                if (! isset($marker[$end]['x'], $marker[$end]['y'])) {
+                    continue;
+                }
+
+                $piece['markers'][$index][$end]['x'] = round(max($minX, min($maxX, (float) $marker[$end]['x'])), 2);
+                $piece['markers'][$index][$end]['y'] = round(max($minY, min($maxY, (float) $marker[$end]['y'])), 2);
+            }
+        }
+
+        if (isset($piece['grainline']['from']['x'], $piece['grainline']['to']['x'])) {
+            foreach (['from', 'to'] as $end) {
+                $piece['grainline'][$end]['x'] = round(max($minX, min($maxX, (float) $piece['grainline'][$end]['x'])), 2);
+                $piece['grainline'][$end]['y'] = round(max($minY, min($maxY, (float) $piece['grainline'][$end]['y'])), 2);
+            }
+        }
+
+        return $piece;
+    }
+
+    /**
      * نقطه‌ای روی یک لبه که ارتفاع داده‌شده را دارد.
      *
      * با نصف‌کردن پی‌درپی روی پارامتر لبه پیدا می‌شود، پس روی منحنی هم دقیق است.
@@ -553,6 +621,36 @@ trait BodiceCatalogSupport
             $at = Geometry::pointOnEdge($outline, $edge, $mid);
 
             if (($at['y'] < $y) === $descending) {
+                $low = $mid;
+            } else {
+                $high = $mid;
+            }
+        }
+
+        $point = Geometry::pointOnEdge($outline, $edge, ($low + $high) / 2);
+
+        return ['x' => (float) $point['x'], 'y' => (float) $point['y']];
+    }
+
+    /**
+     * نقطه‌ای روی یک لبه که مختصات افقی داده‌شده را دارد.
+     *
+     * @param  array<int, array<string, mixed>>  $outline
+     * @return array{x: float, y: float}
+     */
+    protected function pointOnEdgeAtX(array $outline, int $edge, float $x): array
+    {
+        $low = 0.0;
+        $high = 1.0;
+        $start = Geometry::pointOnEdge($outline, $edge, 0.0);
+        $end = Geometry::pointOnEdge($outline, $edge, 1.0);
+        $ascending = $end['x'] >= $start['x'];
+
+        for ($i = 0; $i < 40; $i++) {
+            $mid = ($low + $high) / 2;
+            $at = Geometry::pointOnEdge($outline, $edge, $mid);
+
+            if (($at['x'] < $x) === $ascending) {
                 $low = $mid;
             } else {
                 $high = $mid;

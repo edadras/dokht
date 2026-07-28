@@ -80,10 +80,6 @@
         <x-alert type="info" class="mb-6">این لباس از روی دستور یک الگوی ساخته‌شده باز شد؛ هر چیزی را عوض کنید و دوباره بسازید.</x-alert>
     @endif
 
-    @if (session('error'))
-        <x-alert type="error" class="mb-6">{{ session('error') }}</x-alert>
-    @endif
-
     <script type="application/json" id="studio-data">@json($studio, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)</script>
 
     {{-- novalidate: پیش‌فرض بعضی پارامترها روی «گام» عددی مرورگر نمی‌افتد (مثلاً ۱.۲ با گام ۰.۵)

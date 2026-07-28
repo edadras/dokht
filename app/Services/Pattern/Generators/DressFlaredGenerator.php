@@ -104,6 +104,7 @@ class DressFlaredGenerator extends BodiceGarmentBase
                     'code' => 'dress-flared-skirt-'.$side,
                     'name' => $isFront ? 'دامن کلوش جلو' : 'دامن کلوش پشت',
                     'cut' => $isFront || ! $zip ? 1 : 2,
+                    'on_fold' => $isFront || ! $zip,
                 ])
                 : $this->skirtPanel($g, [
                     'side' => $side,

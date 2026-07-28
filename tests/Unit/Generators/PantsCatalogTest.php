@@ -314,7 +314,7 @@ class PantsCatalogTest extends TestCase
             $this->assertLessThan($taperedHem - 1.5, $skinnyHem, "دم پای اسکینی در سایز {$size} تنگ‌تر نشده.");
 
             $skinnyKnee = (float) $skinnyLegs['front']['meta']['knee_width'] + (float) $skinnyLegs['back']['meta']['knee_width'];
-            $this->assertLessThan($skinnyKnee, $skinnyHem, "دم پای اسکینی باید از زانویش هم تنگ‌تر باشد.");
+            $this->assertLessThan($skinnyKnee, $skinnyHem, 'دم پای اسکینی باید از زانویش هم تنگ‌تر باشد.');
 
             // خط باسن یکی است: تنگی اسکینی از باسن گرفته نمی‌شود
             $this->assertEqualsWithDelta(

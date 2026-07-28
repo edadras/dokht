@@ -2171,6 +2171,14 @@ class PatternComposer
             return $piece;
         }
 
+        // مسیر از «رسیدن به نقطه دوم» شروع شده؛ یک خانه می‌چرخانیمش تا قطعه از همان
+        // نقطه‌ای شروع شود که پیش از برش شروع می‌شد (مثلاً سرِ خط یقه روی مرکز جلو).
+        // سبک‌هایی که لبه‌ها را از سر قطعه دنبال می‌کنند به همین ترتیب تکیه دارند.
+        if (getenv('ROTATE') !== '0') {
+            array_unshift($points, array_pop($points));
+            array_unshift($arrivals, array_pop($arrivals));
+        }
+
         // برچسب لبه i همان برچسب «رسیدن» به نقطه i+1 است
         $edges = [];
         $total = count($points);

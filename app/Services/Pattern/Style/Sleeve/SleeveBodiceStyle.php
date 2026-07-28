@@ -146,30 +146,43 @@ abstract class SleeveBodiceStyle implements StyleModifier
         $piece['outline'] = array_merge($head, $points, $tail);
         $piece['meta']['edges'] = array_merge($headTags, $tags, $tailTags);
 
-        $shift = count($points) - $count;
-
-        if ($shift !== 0) {
-            $piece = $this->shiftReferences($piece, $from + $count - 1, $shift, $total);
-        }
-
-        return $piece;
+        return $this->shiftReferences($piece, $from, $count, count($points), $total);
     }
 
     /**
      * شماره لبه‌ها را در نشانه‌ها، ساسون‌ها، پیلی‌ها و لبه‌های تا جابه‌جا می‌کند.
      *
+     * لبه‌های پس از ناحیه بریده‌شده به اندازه اختلاف تعداد جابه‌جا می‌شوند و لبه‌هایی
+     * که خودشان درون ناحیه بوده‌اند به آخرین لبه تازه می‌چسبند — چون در همه این
+     * سبک‌ها آخرین لبه بریده‌شده و آخرین لبه تازه هر دو «درز پهلو» هستند.
+     *
      * @return array<string, mixed>
      */
-    protected function shiftReferences(array $piece, int $after, int $shift, int $total): array
+    protected function shiftReferences(array $piece, int $from, int $count, int $added, int $total): array
     {
-        $map = function (?int $edge) use ($after, $shift, $total): ?int {
+        $last = $from + $count - 1;
+        $shift = $added - $count;
+
+        if ($shift === 0 && $count <= 1) {
+            return $piece;
+        }
+
+        $map = function (?int $edge) use ($from, $last, $added, $shift, $total): ?int {
             if ($edge === null) {
                 return null;
             }
 
             $edge = (($edge % $total) + $total) % $total;
 
-            return $edge > $after ? $edge + $shift : $edge;
+            if ($edge > $last) {
+                return $edge + $shift;
+            }
+
+            if ($edge === $last) {
+                return $from + $added - 1;
+            }
+
+            return $edge >= $from ? min($edge, $from + $added - 1) : $edge;
         };
 
         foreach (['notches', 'darts', 'pleats'] as $key) {
@@ -206,6 +219,18 @@ abstract class SleeveBodiceStyle implements StyleModifier
         $piece['notches'] = array_values(array_filter(
             $piece['notches'] ?? [],
             fn (array $notch) => ! in_array($notch['pair'] ?? '', $pairs, true),
+        ));
+
+        return $piece;
+    }
+
+    /** نشانه‌های حلقه آستین بلوک، با هر نامی که داشته باشند. */
+    protected function dropArmholeNotches(array $piece): array
+    {
+        $piece['notches'] = array_values(array_filter(
+            $piece['notches'] ?? [],
+            fn (array $notch) => ! str_starts_with((string) ($notch['pair'] ?? ''), 'armhole')
+                && ! str_starts_with((string) ($notch['pair'] ?? ''), 'underarm'),
         ));
 
         return $piece;
@@ -535,8 +560,22 @@ abstract class SleeveBodiceStyle implements StyleModifier
             }
         }
 
-        // نقطه‌های ۰ تا ۳ پس از لبه یقه باید بدون پیچیدن دور قطعه در دسترس باشند
-        if ($neck === null || $neck + 4 > $count || $count < 5) {
+        if ($neck === null || $count < 5) {
+            return null;
+        }
+
+        // حلقه آستین می‌تواند از چند لبه پشت سر هم ساخته شده باشد (بلوکی که گودی حلقه
+        // را با دو کمان می‌کشد)؛ همه آن‌ها با هم یک «درز حلقه» هستند
+        $armhole = [];
+
+        for ($index = $neck + 2; ($tags[$index] ?? null) === 'armhole'; $index++) {
+            $armhole[] = $index;
+        }
+
+        $side = $neck + 2 + count($armhole);
+
+        // نقطه‌های یقه تا زیر بغل باید بدون پیچیدن دور قطعه در دسترس باشند
+        if ($armhole === [] || $side + 1 > $count) {
             return null;
         }
 
@@ -544,16 +583,17 @@ abstract class SleeveBodiceStyle implements StyleModifier
             'side' => $this->isFront($piece) ? 'front' : 'back',
             'neck_edge' => $neck,
             'shoulder_edge' => $neck + 1,
-            'armhole_edge' => $neck + 2,
-            'side_edge' => $neck + 3,
+            'armhole_edges' => $armhole,
+            'armhole_edge' => $armhole[0],
+            'side_edge' => $side,
             'cf' => $this->at($outline, $neck),
             'snp' => $this->at($outline, $neck + 1),
             'tip' => $this->at($outline, $neck + 2),
-            'underarm' => $this->at($outline, $neck + 3),
+            'underarm' => $this->at($outline, $side),
             'neck_length' => round(Geometry::edgeLength($outline, $neck), 3),
             'shoulder_length' => round(Geometry::edgeLength($outline, $neck + 1), 3),
-            'armhole_length' => round(Geometry::edgeLength($outline, $neck + 2), 3),
-            'side_length' => round(Geometry::edgeLength($outline, $neck + 3), 3),
+            'armhole_length' => round(Geometry::edgesLength($outline, $armhole), 3),
+            'side_length' => round(Geometry::edgeLength($outline, $side), 3),
             'centroid' => Geometry::centroid($outline),
         ];
     }
@@ -731,6 +771,33 @@ abstract class SleeveBodiceStyle implements StyleModifier
         $point = Geometry::pointOnEdge($outline, $edge, $t);
 
         return ['x' => (float) $point['x'], 'y' => (float) $point['y'], 't' => $t];
+    }
+
+    /**
+     * نقطه‌ای روی زنجیره‌ای از لبه‌های پشت سر هم، به فاصله کمانی معین از سر (یا ته) درز.
+     *
+     * @param  array<int, int>  $edges  به ترتیب مسیر
+     * @return array{x: float, y: float, t: float, edge: int, walked: float}
+     */
+    protected function alongChain(array $outline, array $edges, float $distance, bool $fromEnd = false): array
+    {
+        $order = $fromEnd ? array_reverse(array_values($edges)) : array_values($edges);
+        $walked = 0.0;
+        $last = $order[count($order) - 1] ?? 0;
+
+        foreach ($order as $index) {
+            $length = Geometry::edgeLength($outline, $index);
+
+            if ($distance <= $walked + $length || $index === $last) {
+                $on = $this->alongEdge($outline, $index, max(0.0, $distance - $walked), $fromEnd);
+
+                return $on + ['edge' => $index, 'walked' => min($distance, $walked + $length)];
+            }
+
+            $walked += $length;
+        }
+
+        return ['x' => 0.0, 'y' => 0.0, 't' => 0.0, 'edge' => $order[0] ?? 0, 'walked' => 0.0];
     }
 
     /**

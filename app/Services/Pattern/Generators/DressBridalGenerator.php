@@ -104,7 +104,8 @@ class DressBridalGenerator extends BodiceGarmentBase
                 'shape' => 'flare',
                 'top_width' => $g['quarter_waist'],
                 'top_y' => $g['side_waist_y'],
-                'length' => $length + ($isFront ? 0.0 : $train),
+                'length' => $length,
+                'hem_drop' => $isFront ? 0.0 : $train,
                 'gather' => $gather,
                 'flare' => round($length * 0.55, 2),
                 'top_tag' => 'waist',
@@ -115,9 +116,10 @@ class DressBridalGenerator extends BodiceGarmentBase
                 'meta' => [
                     'gather_ratio' => $ratio,
                     'train' => $isFront ? 0.0 : round($train, 2),
-                    'notes' => [
+                    'notes' => array_values(array_filter([
                         'لبه کمر این پنل '.$this->fa($ratio).' برابر لبه کمر کرست است و با چین ریز روی آن جمع می‌شود.',
-                    ],
+                        $isFront || $train < 1 ? null : 'دنباله فقط روی خط مرکز پشت بلندتر است؛ درز پهلو با جلو هم‌اندازه می‌ماند.',
+                    ])),
                 ],
             ]);
         }

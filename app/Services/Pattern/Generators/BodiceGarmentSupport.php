@@ -6,7 +6,7 @@ use App\Services\Pattern\Generators\Concerns\BuildsSleeve;
 use App\Services\Pattern\Geometry;
 
 /**
- * قطعه‌های کمکی لباس کامل: آستین دوتکه و رگلان، آستین یک‌سره (کیمونو)، یقه،
+ * قطعه‌های کمکی لباس کامل: آستین دوتکه خیاطی، آستین یک‌سره (کیمونو)، یقه،
  * سجاف، کلاه، دامن، جیب و آستر.
  *
  * هر قطعه‌ای که دور بدن را می‌سازد نقش خودش را در meta.girth_role ثبت می‌کند:
@@ -96,62 +96,6 @@ trait BodiceGarmentSupport
         ]);
 
         return [$upper, $under];
-    }
-
-    /**
-     * آستین رگلان: سرشانه هم بخشی از آستین است.
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    protected function raglanSleevePieces(array $m, array $ease, array $params, array $g, array $o = []): array
-    {
-        $bicep = $this->m($m, 'bicep', 28.5) + $this->ease($ease, 'bicep', 6);
-        $length = (float) ($o['length'] ?? max(20.0, $this->m($m, 'arm_length', 58)));
-        $width = max($bicep * 0.85, $bicep);
-        $capHeight = max(8.0, $g['bust_y'] * 0.55);
-        $neckRise = (float) ($o['neck_rise'] ?? 8);
-        $hemWidth = (float) ($o['hem_width'] ?? max($width * 0.55, $this->m($m, 'wrist', 16.5) + 6));
-
-        $center = $width / 2;
-        $half = $hemWidth / 2;
-
-        // نیم‌آستین رگلان: از یقه به بالا، دو خط رگلان به پایین و دم آستین
-        $outline = [
-            Geometry::point($center - 2.2, 0),
-            Geometry::point($center + 2.2, 0),
-            Geometry::curve($width, $capHeight + $neckRise, $center + ($width * 0.32), $capHeight * 0.42),
-            Geometry::curve($center + $half, $length + $neckRise, $width - (($width - ($center + $half)) * 0.35), $capHeight + $neckRise + (($length - $capHeight) * 0.5)),
-            Geometry::point($center - $half, $length + $neckRise),
-            Geometry::curve(0, $capHeight + $neckRise, ($center - $half) * 0.65, $capHeight + $neckRise + (($length - $capHeight) * 0.5)),
-        ];
-
-        $sleeve = $this->piece([
-            'code' => ($o['prefix'] ?? '').'raglan-sleeve',
-            'name' => $o['name'] ?? 'آستین رگلان',
-            'cut_quantity' => 2,
-            'mirror' => true,
-            'outline' => $outline,
-            'grainline' => $this->grainline($center, $capHeight * 0.6, $length + $neckRise - 3),
-            'notches' => [
-                $this->notch($center, 0, 0, 'نشانه سرشانه', 'shoulder'),
-                $this->notch($width, $capHeight + $neckRise, 2, 'زیر بغل جلو', 'underarm'),
-                $this->notch(0, $capHeight + $neckRise, 5, 'زیر بغل پشت', 'underarm'),
-            ],
-            'markers' => [
-                $this->marker('bicep', 'خط بازو', 0, $capHeight + $neckRise, $width),
-            ],
-            'meta' => [
-                'part' => 'sleeve',
-                'edges' => ['neck', 'armhole', 'side', 'hem', 'side', 'default'],
-                'fold_edges' => [],
-                'raglan' => true,
-                'bicep_width' => round($width, 2),
-                'sleeve_length' => round($length, 2),
-                'girth_role' => 'sleeve',
-            ],
-        ]);
-
-        return [$sleeve];
     }
 
     /**

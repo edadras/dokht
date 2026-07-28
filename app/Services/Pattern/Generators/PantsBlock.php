@@ -553,6 +553,12 @@ trait PantsBlock
             ],
         ];
 
+        $notes = array_merge((array) ($mx['waist_notes'] ?? []), (array) ($o['notes'] ?? []));
+
+        if ($notes !== []) {
+            $piece['meta']['notes'] = $notes;
+        }
+
         if ($hasKnee) {
             $piece['notches'][] = $this->notch($kneeOut, $y($kneeY), $sideEdges[count($sideEdges) - 2], 'نشانه زانو روی درز پهلو', 'knee_out');
             $piece['notches'][] = $this->notch($kneeIn, $y($kneeY), $inseamEdges[0], 'نشانه زانو روی درز داخل پا', 'knee_in');

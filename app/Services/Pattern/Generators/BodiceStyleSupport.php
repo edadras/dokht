@@ -189,7 +189,8 @@ trait BodiceStyleSupport
         $newMeta['side_seam_length'] = round($newMeta['lengths']['side'] ?? 0.0, 2);
         unset($newMeta['side_edges'], $newMeta['armhole_edge'], $newMeta['seam_edges']);
 
-        return $this->piece([
+        // نشانه‌ها و خط‌های نشانه از قطعه اصلی به ارث رسیده‌اند؛ باید با مسیر تازه هم‌تراز شوند
+        return $this->alignMarks($this->piece([
             'code' => $o['code'] ?? (($piece['code'] ?? 'panel').($isTop ? '-top' : '-bottom')),
             'name' => $o['name'] ?? (($piece['name'] ?? 'پنل').($isTop ? ' بالا' : ' پایین')),
             'cut_quantity' => $cut,
@@ -202,7 +203,7 @@ trait BodiceStyleSupport
             'notches' => $notches,
             'markers' => $markers,
             'meta' => $newMeta,
-        ]);
+        ]));
     }
 
     /** اندیس لبه‌ای که روی خط مرکز (کم‌ترین x) ایستاده است؛ برای fold_edges. */
@@ -699,7 +700,7 @@ trait BodiceStyleSupport
             'fold_edges' => $onFold ? [count($outline) - 1] : [],
             'grainline' => $this->grainline($radius * 0.3, $radius * 0.75, $outer * 0.9),
             'markers' => [
-                $this->marker('waist', 'کمان کمر', 0, $radius, $radius, 0),
+                $this->marker('waist_radius', 'شعاع کمان کمر', 0, $radius, $radius * sin($sweep), $radius * cos($sweep)),
             ],
             'meta' => [
                 'part' => $front ? 'skirt_front' : 'skirt_back',

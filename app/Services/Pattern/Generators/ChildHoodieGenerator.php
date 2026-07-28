@@ -31,7 +31,6 @@ class ChildHoodieGenerator extends BodiceGarmentBase
             $this->garmentLengthParam(14, 2, 40),
             $this->sleeveParam('set_in', 40, [
                 'set_in' => 'آستین معمولی',
-                'raglan' => 'آستین رگلان',
             ]),
             [
                 'ease_extra' => [

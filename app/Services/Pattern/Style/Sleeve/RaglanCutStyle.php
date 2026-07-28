@@ -156,7 +156,7 @@ abstract class RaglanCutStyle extends SleeveBodiceStyle
 
         // ۲) رسیدن خط رگلان به حلقه آستین
         $keep = max(2.0, min($a['armhole_length'] - 1.5, $plan['armhole']));
-        $join = $this->alongEdge($outline, $a['armhole_edge'], $keep, true);
+        $join = $this->alongChain($outline, $a['armhole_edges'], $keep, true);
         $upperArc = $a['armhole_length'] - $keep;
 
         // ۳) زیر بغل تازه: به اندازه خواسته‌شده روی درز پهلو پایین‌تر
@@ -180,10 +180,11 @@ abstract class RaglanCutStyle extends SleeveBodiceStyle
         $outline[$a['side_edge'] + 1] = $sideRest;
         $piece['outline'] = $outline;
 
+        // از سرگردن تا زیر بغل (سرشانه و همه لبه‌های حلقه) با سه نقطه تازه جایگزین می‌شود
         $piece = $this->replacePoints(
             $piece,
             $a['neck_edge'] + 1,
-            3,
+            $a['side_edge'] - $a['neck_edge'],
             [$neckCut, $raglanEnd, $lowerEnd],
             ['armhole', 'armhole', 'side'],
         );
@@ -191,7 +192,7 @@ abstract class RaglanCutStyle extends SleeveBodiceStyle
         $side = $a['side'];
         $label = $side === 'front' ? 'جلو' : 'پشت';
 
-        $piece = $this->dropNotches($piece, ['shoulder', 'armhole']);
+        $piece = $this->dropArmholeNotches($this->dropNotches($piece, ['shoulder']));
         $raglanEdge = $a['neck_edge'] + 1;
         $lowerEdge = $a['neck_edge'] + 2;
         $raglanMid = Geometry::pointOnEdge($piece['outline'], $raglanEdge, 0.5);
@@ -680,11 +681,11 @@ abstract class RaglanCutStyle extends SleeveBodiceStyle
                 'hint' => 'حلقه را گودتر می‌کند؛ بیشتر یعنی راحت‌تر برای بالا بردن دست و کمی افتاده‌تر.',
             ],
             'raglan_curve' => [
-                'label' => 'خمیدگی خط رگلان', 'min' => 0, 'max' => 3, 'step' => 0.25, 'default' => 0.8,
+                'label' => 'خمیدگی خط رگلان', 'min' => 0, 'max' => 3, 'step' => 0.25, 'default' => 0.75,
                 'unit' => 'سانتی‌متر', 'hint' => 'شکم خط برش نسبت به خط راست؛ صفر یعنی خط کاملاً صاف.',
             ],
             'armhole_scoop' => [
-                'label' => 'گودی حلقه پایین', 'min' => 0, 'max' => 3, 'step' => 0.25, 'default' => 0.9,
+                'label' => 'گودی حلقه پایین', 'min' => 0, 'max' => 3, 'step' => 0.25, 'default' => 1,
                 'unit' => 'سانتی‌متر',
             ],
             'shoulder_shaping' => [

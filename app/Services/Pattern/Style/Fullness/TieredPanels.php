@@ -65,6 +65,12 @@ class TieredPanels extends FullnessStyle
             return $this->noPanelMessage();
         }
 
+        foreach ($pieces as $piece) {
+            if (($piece['meta']['part'] ?? '') === 'skirt_tier') {
+                return 'این لباس همین حالا طبقه‌بندی شده؛ برای طبقه بیشتر، تعداد همان سبک را بالا ببرید.';
+            }
+        }
+
         foreach ($hosts as $index) {
             $height = Geometry::height($pieces[$index]['outline']);
 
