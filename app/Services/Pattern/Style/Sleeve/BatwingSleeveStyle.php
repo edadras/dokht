@@ -33,7 +33,7 @@ class BatwingSleeveStyle extends GrownOnSleeveStyle
 
     public function paramsSchema(): array
     {
-        return $this->grownFields(20, 18, 10, 3);
+        return $this->grownFields(25, 18, 10, 3);
     }
 
     protected function shapeNote(array $p, array $plans): string

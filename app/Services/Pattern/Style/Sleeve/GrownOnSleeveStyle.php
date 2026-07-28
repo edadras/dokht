@@ -79,6 +79,9 @@ abstract class GrownOnSleeveStyle extends SleeveBodiceStyle
         if ($angle < $wanted - 0.5) {
             $notes[] = 'زاویه آستین از '.Format::number($wanted).' به '.Format::number($angle).' درجه کم شد؛ '
                 .'با زاویه خواسته‌شده دم آستین روی خود تنه می‌افتاد و الگو بریدنی نمی‌ماند.';
+        } elseif ($angle > $wanted + 0.5) {
+            $notes[] = 'زاویه آستین از '.Format::number($wanted).' به '.Format::number($angle).' درجه رسید تا '
+                .'از شیب سرشانه این بالاتنه تندتر بماند؛ کمتر از آن، آستین از خط سرشانه به بالا برمی‌گشت.';
         }
 
         // درز سرشانه–بالای آستین در جلو و پشت هم‌اندازه می‌شود، و نقطه زیر بغل هم در
