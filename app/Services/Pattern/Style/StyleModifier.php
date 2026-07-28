@@ -40,7 +40,7 @@ interface StyleModifier
      * مثلاً یقه شنل روی دامن معنا ندارد. پیام برگشتی در رابط کاربری نشان داده می‌شود.
      *
      * @param  array<int, array<string, mixed>>  $pieces
-     * @return true|string  درست، یا دلیل فارسی نپذیرفتن
+     * @return true|string درست، یا دلیل فارسی نپذیرفتن
      */
     public function supports(array $pieces, array $context): true|string;
 
