@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\GarmentType;
 use App\Models\Pattern;
+use App\Models\PatternPiece;
 use App\Models\PatternTemplate;
 use App\Services\Pattern\PatternBuilder;
+use App\Services\Pattern\SvgRenderer;
 use App\Support\Jalali;
 use App\Support\Measurements;
 use App\Support\WorkshopContext;
@@ -243,10 +245,16 @@ class PatternTemplateController extends Controller
             return 'ساخت پیش‌نمایش انجام نشد: '.Str::limit($exception->getMessage(), 120);
         }
 
-        $svg = $result['preview_svg'] ?? $result['svg'] ?? null;
+        // موتور الگو ممکن است فهرست قطعه‌ها را برگرداند یا آرایه‌ای شامل تصویر آماده
+        $svg = is_array($result) ? ($result['preview_svg'] ?? $result['svg'] ?? null) : null;
+        $pieces = match (true) {
+            ! is_array($result) => [],
+            array_is_list($result) => $result,
+            default => (array) ($result['pieces'] ?? []),
+        };
 
         if (! is_string($svg) || trim($svg) === '') {
-            $svg = $this->svgFromPieces((array) ($result['pieces'] ?? []));
+            $svg = $this->renderWithEngine($template, $pieces) ?? $this->svgFromPieces($pieces);
         }
 
         if ($svg === null) {
@@ -256,6 +264,35 @@ class PatternTemplateController extends Controller
         $template->update(['preview_svg' => $svg]);
 
         return 'پیش‌نمایش با سایز '.Jalali::digits(static::PREVIEW_SIZE).' ساخته شد.';
+    }
+
+    /**
+     * ترسیم با موتور تصویر پروژه.
+     *
+     * قطعه‌های ساخته‌شده به مدل‌های ذخیره‌نشده تبدیل می‌شوند تا بدون نوشتن در پایگاه
+     * داده بتوان بندانگشتی گرفت.
+     */
+    protected function renderWithEngine(PatternTemplate $template, array $pieces): ?string
+    {
+        if ($pieces === [] || ! class_exists(SvgRenderer::class)) {
+            return null;
+        }
+
+        try {
+            $pattern = new Pattern([
+                'name' => $template->name_fa,
+                'base_size' => static::PREVIEW_SIZE,
+                'seam_allowances' => [],
+            ]);
+
+            $pattern->setRelation('pieces', collect($pieces)->map(fn ($piece) => new PatternPiece((array) $piece)));
+
+            $svg = app(SvgRenderer::class)->thumbnail($pattern, 320);
+
+            return trim($svg) === '' ? null : $svg;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /** ترسیم ساده قطعه‌ها؛ تنها برای بندانگشتی کتابخانه. */

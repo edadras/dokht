@@ -7,6 +7,7 @@ use App\Models\Pattern;
 use App\Models\PatternTemplate;
 use App\Models\PatternVersion;
 use App\Models\Workshop;
+use App\Services\Pattern\SvgRenderer;
 use App\Support\WorkshopContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -58,15 +59,22 @@ class LibraryTest extends TestCase
 
         $foreign = $this->foreignPattern(['name' => 'پیراهن آستین‌بلند', 'is_published' => true]);
 
-        $this->get(route('library.index', ['tab' => 'published']))
+        $index = $this->get(route('library.index', ['tab' => 'published']))
             ->assertOk()
             ->assertSee('پیراهن آستین‌بلند')
             ->assertSee($foreign->workshop->name);
 
-        $this->get(route('library.show', $foreign->id))
+        $show = $this->get(route('library.show', $foreign->id))
             ->assertOk()
             ->assertSee('پیراهن آستین‌بلند')
-            ->assertSee('کپی به کارگاه من');
+            ->assertSee('کپی به کارگاه من')
+            ->assertSee('جلو');
+
+        // اگر موتور ترسیم در دسترس باشد، بندانگشتی هم رسم می‌شود
+        if (class_exists(SvgRenderer::class)) {
+            $index->assertSee('<svg', false);
+            $show->assertSee('<svg', false);
+        }
     }
 
     public function test_an_unpublished_pattern_of_another_workshop_is_not_visible(): void

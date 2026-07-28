@@ -128,7 +128,22 @@ class SvgRenderer
      */
     public function renderPattern(Pattern $pattern, array $options = []): string
     {
-        $pieces = $pattern->pieces;
+        return $this->renderPieces($pattern->pieces, array_merge([
+            'size' => $pattern->base_size,
+            'pattern_id' => $pattern->id,
+        ], $options));
+    }
+
+    /**
+     * چیدن مجموعه‌ای از قطعه‌ها در یک شبکه.
+     *
+     * قطعه‌ها می‌توانند ذخیره‌نشده باشند؛ برای ساخت پیش‌نمایش الگوهای پایه به کار می‌آید.
+     *
+     * @param  iterable<PatternPiece>  $pieces
+     */
+    public function renderPieces(iterable $pieces, array $options = []): string
+    {
+        $pieces = collect($pieces);
 
         if ($pieces->isEmpty()) {
             return $this->document('width="100" height="60"', '0 0 100 60',
@@ -190,7 +205,7 @@ class SvgRenderer
                         'seam_allowance' => $withSeam,
                         'labels' => $labels,
                         'interactive' => $interactive,
-                        'size' => $pattern->base_size,
+                        'size' => $options['size'] ?? null,
                     ])
                     .'</g>';
 
@@ -219,7 +234,7 @@ class SvgRenderer
             $sizeAttributes,
             '0 0 '.$this->n($totalWidth).' '.$this->n($totalHeight),
             $content,
-            $interactive ? ' data-pattern-id="'.$pattern->id.'"' : '',
+            $interactive && isset($options['pattern_id']) ? ' data-pattern-id="'.$options['pattern_id'].'"' : '',
         );
     }
 

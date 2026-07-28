@@ -9,6 +9,8 @@ use App\Models\Guide;
 use App\Models\Pattern;
 use App\Models\PatternTemplate;
 use App\Models\User;
+use App\Services\Pattern\GeneratorRegistry;
+use App\Services\Pattern\PatternBuilder;
 use App\Support\FabricProfile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -66,7 +68,7 @@ class AdminTest extends TestCase
         }
     }
 
-    public function test_asking_for_a_template_preview_never_breaks_the_form(): void
+    public function test_asking_for_a_preview_with_an_unknown_generator_never_breaks_the_form(): void
     {
         $this->actingAsAdmin();
 
@@ -74,11 +76,39 @@ class AdminTest extends TestCase
             'garment_type_id' => GarmentType::factory()->create()->id,
             'code' => 'preview-block',
             'name_fa' => 'الگوی پیش‌نمایش',
-            'generator' => 'bodice',
+            'generator' => 'generator-that-does-not-exist',
             'render_preview' => '1',
         ])->assertRedirect()->assertSessionHas('status');
 
-        $this->assertModelExists(PatternTemplate::where('code', 'preview-block')->firstOrFail());
+        $this->assertNull(PatternTemplate::where('code', 'preview-block')->firstOrFail()->preview_svg);
+    }
+
+    public function test_a_preview_is_rendered_and_stored_for_a_real_generator(): void
+    {
+        if (! class_exists(PatternBuilder::class) || ! class_exists(GeneratorRegistry::class)) {
+            $this->markTestSkipped('موتور ساخت الگو در دسترس نیست.');
+        }
+
+        $generator = GeneratorRegistry::keys()[0] ?? null;
+
+        if ($generator === null) {
+            $this->markTestSkipped('تولیدکننده‌ای ثبت نشده است.');
+        }
+
+        $this->actingAsAdmin();
+
+        $this->post(route('admin.templates.store'), [
+            'garment_type_id' => GarmentType::factory()->create()->id,
+            'code' => 'real-preview',
+            'name_fa' => 'الگوی واقعی',
+            'generator' => $generator,
+            'render_preview' => '1',
+        ])->assertRedirect();
+
+        $template = PatternTemplate::where('code', 'real-preview')->firstOrFail();
+
+        $this->assertNotNull($template->preview_svg);
+        $this->assertStringContainsString('<svg', $template->preview_svg);
     }
 
     public function test_every_admin_form_renders(): void

@@ -177,7 +177,9 @@ class BlazerGenerator extends BaseGenerator
             $upperCap + (($length - $upperCap) * 0.55),
         );
         $upperOutline[] = Geometry::point($upperWidth - 1.5 - $upperHem, $length);
-        $upperOutline[] = Geometry::curve(
+
+        // لبه بسته‌شدن (درز جلوی آستین) منحنی است، پس نقطه اول نقطه کنترل می‌گیرد
+        $upperOutline[0] = Geometry::curve(
             0,
             $upperCap,
             ($upperWidth - $upperHem) * 0.25,
@@ -209,11 +211,10 @@ class BlazerGenerator extends BaseGenerator
         ]);
 
         $underOutline = [
-            Geometry::point(0, $underCap),
+            Geometry::curve(0, $underCap, ($underWidth - $underHem) * 0.2, $underCap + (($length - $underCap) * 0.5)),
             Geometry::curve($underWidth, $underCap, $underWidth * 0.5, -$underCap * 0.9),
             Geometry::curve($underWidth - 1, $length, $underWidth + 1, $underCap + (($length - $underCap) * 0.55)),
             Geometry::point($underWidth - 1 - $underHem, $length),
-            Geometry::curve(0, $underCap, ($underWidth - $underHem) * 0.2, $underCap + (($length - $underCap) * 0.5)),
         ];
 
         $under = $this->piece([
@@ -228,7 +229,7 @@ class BlazerGenerator extends BaseGenerator
             ],
             'meta' => [
                 'part' => 'sleeve',
-                'edges' => ['armhole', 'side', 'hem', 'side', 'default'],
+                'edges' => ['armhole', 'side', 'hem', 'side'],
                 'fold_edges' => [],
                 'cap_height' => round($underCap, 2),
                 'two_piece' => 'under',

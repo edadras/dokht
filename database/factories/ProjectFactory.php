@@ -25,4 +25,18 @@ class ProjectFactory extends Factory
             'step' => 1,
         ];
     }
+
+    /** پروژه‌ای که در میانه‌ی کار است. */
+    public function atStep(int $step): static
+    {
+        return $this->state(fn () => [
+            'step' => max(1, min(count(Project::STEPS), $step)),
+            'status' => 'in_progress',
+        ]);
+    }
+
+    public function done(): static
+    {
+        return $this->state(fn () => ['status' => 'done', 'step' => count(Project::STEPS)]);
+    }
 }
