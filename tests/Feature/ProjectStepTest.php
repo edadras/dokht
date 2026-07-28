@@ -109,7 +109,7 @@ class ProjectStepTest extends TestCase
 
         $this->assertSame($garment->id, $project->garment_type_id);
         $this->assertSame('مانتو بهاره', $project->name);
-        $this->assertSame(['bust' => 8.0], $project->ease);
+        $this->assertEquals(['bust' => 8.0], $project->ease);
         $this->assertSame('in_progress', $project->status);
         $this->assertSame(2, $project->step);
     }
@@ -153,8 +153,8 @@ class ProjectStepTest extends TestCase
 
         $values = $project->measurementSet->values;
 
-        $this->assertSame(96.0, $values['bust']);
-        $this->assertSame(168.0, $values['height']);
+        $this->assertEquals(96.0, $values['bust']);
+        $this->assertEquals(168.0, $values['height']);
 
         // بقیه‌ی اندازه‌ها خودکار تخمین زده می‌شوند
         $this->assertArrayHasKey('bicep', $project->measurementSet->completed());
@@ -205,7 +205,7 @@ class ProjectStepTest extends TestCase
 
         $this->assertSame('46', $project->size);
         $this->assertNotNull($project->measurement_set_id);
-        $this->assertSame(104.0, (float) $project->measurementSet->values['bust']);
+        $this->assertEquals(104.0, (float) $project->measurementSet->values['bust']);
     }
 
     public function test_step_three_saves_the_fabric(): void
@@ -235,10 +235,10 @@ class ProjectStepTest extends TestCase
 
         $allowances = $project->pattern->fresh()->seam_allowances;
 
-        $this->assertSame(1.2, $allowances['default']);
-        $this->assertSame(3.5, $allowances['hem']);
+        $this->assertEquals(1.2, $allowances['default']);
+        $this->assertEquals(3.5, $allowances['hem']);
         $this->assertArrayNotHasKey('unknown_edge', $allowances);
-        $this->assertSame(1.2, $project->pattern->fresh()->seamAllowance());
+        $this->assertEquals(1.2, $project->pattern->fresh()->seamAllowance());
     }
 
     public function test_step_five_without_a_pattern_sends_the_user_back(): void
@@ -291,7 +291,7 @@ class ProjectStepTest extends TestCase
             'action_value' => 2,
         ])->assertRedirect(route('projects.step', [$project, 'fit']));
 
-        $this->assertSame(8.0, $project->pattern->fresh()->ease['bust']);
+        $this->assertEquals(8.0, $project->pattern->fresh()->ease['bust']);
         $this->assertSame(1, $project->simulations()->count());
         $this->assertNotNull($project->simulations()->first()->fit_score);
     }
