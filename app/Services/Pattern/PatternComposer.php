@@ -2120,7 +2120,15 @@ class PatternComposer
         $points = [];
         $arrivals = []; // برچسب لبه‌ای که به هر نقطه می‌رسد
 
+        // نقطه‌ای که روی نقطه پیشین می‌افتد (وقتی گوشه قطعه دقیقاً روی خط کمر است)
+        // دور ریخته می‌شود؛ وگرنه لبه‌ای به طول صفر می‌ماند و اندازه‌گیری کمر را صفر می‌کند.
         $push = function (array $point, string $tag) use (&$points, &$arrivals) {
+            $last = $points === [] ? null : $points[count($points) - 1];
+
+            if ($last !== null && Geometry::distance($last, $point) < 0.05) {
+                return;
+            }
+
             $points[] = $point;
             $arrivals[] = $tag;
         };
@@ -2174,10 +2182,8 @@ class PatternComposer
         // مسیر از «رسیدن به نقطه دوم» شروع شده؛ یک خانه می‌چرخانیمش تا قطعه از همان
         // نقطه‌ای شروع شود که پیش از برش شروع می‌شد (مثلاً سرِ خط یقه روی مرکز جلو).
         // سبک‌هایی که لبه‌ها را از سر قطعه دنبال می‌کنند به همین ترتیب تکیه دارند.
-        if (getenv('ROTATE') !== '0') {
-            array_unshift($points, array_pop($points));
-            array_unshift($arrivals, array_pop($arrivals));
-        }
+        array_unshift($points, array_pop($points));
+        array_unshift($arrivals, array_pop($arrivals));
 
         // برچسب لبه i همان برچسب «رسیدن» به نقطه i+1 است
         $edges = [];

@@ -346,7 +346,6 @@ class DropShoulderSleeveStyle extends SleeveBodiceStyle
         return Geometry::normalizePiece($piece);
     }
 
-
     /**
      * سرآستین با چهار کمان: دو کمان جلو (گودتر) و دو کمان پشت (پرتر).
      *
