@@ -124,10 +124,30 @@ trait DraftsBodice
             );
             $edges[] = 'side';
             $waistSideIndex = count($outline) - 1;
-            $outline[] = Geometry::curve($hipX, $sideHipY, $sideX + (($hipX - $sideX) * 0.35), $sideWaistY + ($g['hip_drop'] * 0.55));
-            $edges[] = 'side';
-            $outline[] = Geometry::point($hipX + $hemFlare, $bottomY);
-            $edges[] = 'side';
+
+            $waistPoint = Geometry::point($sideX, $sideWaistY);
+            $hipControl = Geometry::point($sideX + (($hipX - $sideX) * 0.35), $sideWaistY + ($g['hip_drop'] * 0.55));
+            $hipPoint = Geometry::point($hipX, $sideHipY);
+
+            if ($bottomY > $sideHipY + 0.5) {
+                $outline[] = Geometry::curve($hipX, $sideHipY, $hipControl['x'], $hipControl['y']);
+                $edges[] = 'side';
+                $outline[] = Geometry::point($hipX + $hemFlare, $bottomY);
+                $edges[] = 'side';
+            } else {
+                // دم بالای خط باسن افتاده (تنه کوتاه روی بدنی با فاصله کمر تا باسن
+                // زیاد). اگر مسیر همچنان تا نقطه باسن پایین برود و برگردد، قطعه
+                // خودش را قطع می‌کند. پس منحنی کمر تا باسن را دقیقاً روی بلندی دم
+                // می‌شکنیم: انحنا و پهنای درز پهلو در آن بلندی همان می‌ماند.
+                $cut = $this->splitCurveAtHeight($waistPoint, $hipControl, $hipPoint, $bottomY);
+                $outline[] = Geometry::curve(
+                    $cut['point']['x'] + $hemFlare,
+                    $bottomY,
+                    $cut['first']['x'],
+                    $cut['first']['y'],
+                );
+                $edges[] = 'side';
+            }
         } else { // waist
             $sideBottomY = $bottomY - $frontRise;
             $outline[] = Geometry::curve(
@@ -478,5 +498,32 @@ trait DraftsBodice
         }
 
         return ['x' => (float) $previous['x'], 'y' => (float) $previous['y']];
+    }
+
+    /**
+     * شکستن منحنی درجه‌دو در بلندی مشخص.
+     *
+     * منحنی درز پهلو در راستای y یکنواخت پایین می‌رود، پس جای برش را با جست‌وجوی
+     * دودویی روی نسبت t پیدا می‌کنیم و با دو کاستلژو می‌شکنیم تا انحنا عوض نشود.
+     *
+     * @return array{point: array{x: float, y: float}, first: array{x: float, y: float}, second: array{x: float, y: float}}
+     */
+    protected function splitCurveAtHeight(array $p0, array $control, array $p1, float $y): array
+    {
+        $low = 0.0;
+        $high = 1.0;
+
+        for ($i = 0; $i < 40; $i++) {
+            $mid = ($low + $high) / 2;
+            $point = Geometry::quadraticAt($p0, $control, $p1, $mid);
+
+            if ($point['y'] < $y) {
+                $low = $mid;
+            } else {
+                $high = $mid;
+            }
+        }
+
+        return Geometry::splitQuadratic($p0, $control, $p1, ($low + $high) / 2);
     }
 }

@@ -31,8 +31,22 @@ use Throwable;
  */
 class CatalogAuditTest extends TestCase
 {
-    /** سایزهایی که همه مدل‌ها در آن‌ها ساخته می‌شوند. */
-    protected const SIZES = ['34', '40', '48'];
+    /**
+     * بدن‌هایی که همه مدل‌ها روی آن‌ها ساخته می‌شوند.
+     *
+     * سه تای اول سایز جدولی است و بقیه اندازه سفارشی؛ چون سامانه برای هر مشتری با
+     * اندازه خودش الگو می‌سازد، نه با سایز آماده. بدن‌های سفارشی عمداً «سخت»
+     * انتخاب شده‌اند: تنه کوتاه، سرشانه باریک نسبت به سینه، و اختلاف زیاد سینه تا کمر.
+     */
+    protected const SIZES = ['34', '40', '48', 'کودک', 'سینه‌درشت', 'بلندقد', 'کوتاه و درشت'];
+
+    /** اندازه بدن‌های سفارشی آزمون (سانتی‌متر). */
+    protected const BESPOKE = [
+        'کودک' => ['height' => 116, 'bust' => 60, 'waist' => 56, 'hip' => 64, 'shoulder_width' => 27, 'arm_length' => 38],
+        'سینه‌درشت' => ['height' => 168, 'bust' => 118, 'waist' => 70, 'hip' => 100, 'shoulder_width' => 34, 'arm_length' => 59],
+        'بلندقد' => ['height' => 195, 'bust' => 84, 'waist' => 66, 'hip' => 90, 'shoulder_width' => 44, 'arm_length' => 72],
+        'کوتاه و درشت' => ['height' => 148, 'bust' => 124, 'waist' => 118, 'hip' => 126, 'shoulder_width' => 40, 'arm_length' => 50],
+    ];
 
     /** برچسب‌های مجاز لبه. */
     protected const EDGE_TAGS = ['neck', 'shoulder', 'armhole', 'side', 'hem', 'waist', 'default'];
@@ -98,7 +112,7 @@ class CatalogAuditTest extends TestCase
             return static::$catalogue[$size];
         }
 
-        $measurements = Measurements::fromSize($size);
+        $measurements = $this->body($size);
         $built = [];
 
         foreach (array_keys(GeneratorRegistry::all()) as $key) {
@@ -111,6 +125,32 @@ class CatalogAuditTest extends TestCase
         }
 
         return static::$catalogue[$size] = $built;
+    }
+
+    /**
+     * اندازه بدن یک ردیف آزمون: یا از جدول سایز، یا اندازه سفارشی تکمیل‌شده.
+     *
+     * @return array<string, float>
+     */
+    protected function body(string $size): array
+    {
+        return isset(static::BESPOKE[$size])
+            ? Measurements::complete(static::BESPOKE[$size])
+            : Measurements::fromSize($size);
+    }
+
+    /**
+     * ضریب کوچک‌شدن کف مساحت برای بدن‌های کوچک‌تر از بدن مرجع (سایز ۴۰).
+     *
+     * کف مساحت برای گرفتن قطعه «تخت‌شده» است، نه برای اندازه بدن؛ شلوارک یک کودک
+     * صد و شانزده سانتی طبیعتاً از شلوارک یک بزرگسال کوچک‌تر است. پس کف را با
+     * نسبت مساحت بدن کوچک می‌کنیم و برای بدن‌های بزرگ‌تر همان کف بزرگسال می‌ماند.
+     */
+    protected function areaScale(string $size): float
+    {
+        $body = $this->body($size);
+
+        return min(1.0, ($body['bust'] / 92) * ($body['height'] / 168));
     }
 
     /** آیا این بررسی برای این مدل کنار گذاشته شده است؟ */
@@ -231,7 +271,7 @@ class CatalogAuditTest extends TestCase
 
             $area = Geometry::area($outline);
             $part = (string) ($piece['meta']['part'] ?? '');
-            $floor = static::MIN_AREA[$part] ?? static::MIN_AREA_ANY;
+            $floor = round((static::MIN_AREA[$part] ?? static::MIN_AREA_ANY) * $this->areaScale($size), 1);
 
             if ($area < $floor) {
                 $problems[] = "{$where} مساحت {$area} سانتی‌متر مربع است؛ برای «{$part}» دست‌کم {$floor} انتظار می‌رود.";
@@ -608,7 +648,18 @@ class CatalogAuditTest extends TestCase
         $band = ['bust' => [-10.0, 30.0], 'waist' => [-6.0, 60.0], 'hip' => [-10.0, 30.0]];
 
         foreach (static::SIZES as $size) {
-            $body = Measurements::fromSize($size);
+            $body = $this->body($size);
+
+            // لباسی که از سینه به پایین راست بریده می‌شود (تی‌شرت گشاد، سویشرت،
+            // مانتو راست، بمبر) دور کمرش همان دور سینه‌اش است. پس روی بدنی که
+            // فاصله سینه تا کمرش زیاد است، آزادی کمر ناچار به همان اندازه بیشتر
+            // می‌شود؛ این ایراد درفت نیست، شکل بدن است. سقف بازه را با همان
+            // اختلاف بالا می‌بریم و کف بازه دست‌نخورده می‌ماند.
+            $drop = [
+                'bust' => 0.0,
+                'waist' => max(0.0, $body['bust'] - $body['waist']),
+                'hip' => max(0.0, $body['bust'] - $body['hip']),
+            ];
 
             foreach ($this->catalogue($size) as $key => $pieces) {
                 if ($pieces instanceof Throwable) {
@@ -623,6 +674,7 @@ class CatalogAuditTest extends TestCase
                     $checked++;
                     $ease = $girth - $body[$area];
                     [$low, $high] = $band[$area];
+                    $high += $drop[$area];
 
                     if ($ease < $low || $ease > $high) {
                         $problems[] = sprintf(

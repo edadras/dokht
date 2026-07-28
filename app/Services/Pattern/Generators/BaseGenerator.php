@@ -77,13 +77,23 @@ abstract class BaseGenerator implements PatternGenerator
         $quarterHip = max(10.0, ($hip + $hipEase) / 4);
 
         $armholeDepth = ($bust / 8) + 7 + (float) $this->param($params, 'armhole_depth_extra', 0);
+        // عرض یقه از دور گردن درمی‌آید و عرض سرشانه از اندازه سرشانه؛ اگر اندازه
+        // سفارشی سرشانه‌ای باریک‌تر از گردن بدهد، خط سرشانه طول منفی می‌گیرد و
+        // قطعه خودش را قطع می‌کند. دست‌کم سه سانتی‌متر سرشانه نگه می‌داریم.
         $neckWidth = ($neck / 5) + 0.5 + (float) $this->param($params, 'neck_width_extra', 0);
+        $neckWidth = min($neckWidth, max(3.0, $shoulderHalf - 3.0));
         $frontNeckDepth = $neckWidth + 1 + (float) $this->param($params, 'front_neck_depth_extra', 0);
         $backNeckDepth = (float) $this->param($params, 'back_neck_depth', 2);
 
         $lengthExtra = (float) $this->param($params, 'bodice_length_extra', 0);
         $backWaistY = $this->m($m, 'back_length', 41) + $lengthExtra;
         $frontWaistY = $this->m($m, 'front_length', 43) + $lengthExtra;
+
+        // گودی حلقه آستین از دور سینه درمی‌آید ولی روی بالاتنه جای عمودی می‌گیرد.
+        // در بدنی با تنه کوتاه و سینه بسیار درشت (اندازه سفارشی، نه سایز جدولی)
+        // این عدد از خط کمر پایین‌تر می‌افتد و مسیر قطعه خودش را قطع می‌کند.
+        // زیر بغل همیشه دست‌کم پنج سانتی‌متر بالای کمر می‌ماند.
+        $armholeDepth = min($armholeDepth, max(8.0, min($backWaistY, $frontWaistY) - 5.0));
 
         $intake = max(0.0, $quarterBust - $quarterWaist);
         $dartShare = min(0.9, max(0.0, (float) $this->param($params, 'waist_dart_share', 0.6)));

@@ -131,6 +131,38 @@ trait BodiceStyleSupport
         $outline[] = $to['point'];
         $edges[] = $cutTag;
 
+        return $this->dropTouchingPoints($outline, $edges);
+    }
+
+    /**
+     * حذف رأس‌هایی که عملاً روی رأس قبلی افتاده‌اند.
+     *
+     * خط برش گاهی درست کنار یکی از رأس‌های مسیر می‌افتد (مثلاً وقتی عمق یوک با
+     * انتهای منحنی حلقه آستین یکی می‌شود). آن‌وقت یک لبه با طول چند صدم میلی‌متر
+     * می‌ماند که نه چاپ می‌شود نه دوخته، ولی بررسی‌های هندسی را به هم می‌ریزد.
+     *
+     * @param  array<int, array{x: float, y: float}>  $outline
+     * @param  array<int, string>  $edges
+     * @return array{outline: array<int, array{x: float, y: float}>, edges: array<int, string>}
+     */
+    protected function dropTouchingPoints(array $outline, array $edges, float $epsilon = 0.02): array
+    {
+        $outline = array_values($outline);
+        $edges = array_values($edges);
+
+        for ($i = count($outline) - 1; $i > 0; $i--) {
+            if (count($outline) <= 3) {
+                break;
+            }
+
+            if (Geometry::distance($outline[$i], $outline[$i - 1]) >= $epsilon) {
+                continue;
+            }
+
+            array_splice($outline, $i, 1);
+            array_splice($edges, $i - 1, 1);
+        }
+
         return ['outline' => $outline, 'edges' => $edges];
     }
 

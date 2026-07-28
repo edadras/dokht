@@ -3,6 +3,7 @@
 namespace App\Services\Pattern\Generators;
 
 use App\Services\Pattern\Geometry;
+use App\Services\Pattern\Transform\PieceOps;
 
 /**
  * موتور مشترک درفت بلوک‌های بالاتنه کاتالوگ.
@@ -217,6 +218,27 @@ trait BodiceCatalogSupport
         $edges[] = 'default'; // خط مرکز جلو/پشت
         $closingEdge = count($outline) - 1;
 
+        // قانون ۲: ساسون سینه پهنای خودش را از درز پهلو می‌خورد. بالا خط کمرِ جلو
+        // به اندازه دهانه ساسون پایین آورده شده، ولی درز پهلو منحنی است و طولش به
+        // همان اندازه بلند نمی‌شود؛ روی بدنی با سینه بسیار درشت این اختلاف تا نیم
+        // سانتی‌متر می‌رسد. پس درز را دقیقاً به «درز پشت + دهانه ساسون» می‌رسانیم.
+        if ($bustDart > 0.01) {
+            [$plainSide] = $this->sideEdge([
+                'cf' => $cf, 'qb' => $qb, 'qh' => $qh,
+                'bust_y' => $bustY, 'waist_y' => $g['side_waist_y'], 'hip_y' => $g['side_waist_y'] + $g['hip_drop'],
+                'bottom_y' => $g['side_waist_y'] + $length,
+                'side_intake' => $sideIntake, 'shape' => $shape, 'flare' => $flare, 'hip_drop' => $g['hip_drop'],
+            ]);
+
+            $target = Geometry::perimeter(array_merge([Geometry::point($cf + $qb, $bustY)], $plainSide))
+                - Geometry::distance(
+                    ['x' => (float) end($plainSide)['x'], 'y' => (float) end($plainSide)['y']],
+                    ['x' => $cf + $qb, 'y' => $bustY],
+                );
+
+            $outline = $this->stretchSideSeamTo($outline, $edges, $sideEdgeIndexes, $target + $bustDart);
+        }
+
         $onFold = (bool) ($o['on_fold'] ?? ($ext <= 0));
 
         // ساسون‌ها
@@ -353,6 +375,37 @@ trait BodiceCatalogSupport
     }
 
     /**
+     * کشیدن درز پهلو تا طول خواسته‌شده، بدون شکستگی روی منحنی.
+     *
+     * سرِ زیر بغل ثابت می‌ماند و رأس‌های پایین‌تر روی امتداد خود درز پایین می‌روند.
+     *
+     * @param  array<int, array<string, mixed>>  $outline
+     * @param  array<int, string>  $edges
+     * @param  array<int, int>  $sideEdges
+     * @return array<int, array<string, mixed>>
+     */
+    protected function stretchSideSeamTo(array $outline, array $edges, array $sideEdges, float $target): array
+    {
+        $piece = ['outline' => array_values($outline), 'meta' => ['edges' => $edges]];
+
+        for ($round = 0; $round < 24; $round++) {
+            $current = 0.0;
+
+            foreach ($sideEdges as $edge) {
+                $current += Geometry::edgeLength($piece['outline'], $edge);
+            }
+
+            if (abs($target - $current) <= 0.01) {
+                break;
+            }
+
+            $piece = PieceOps::stretchSeam($piece, $sideEdges, $target - $current, 'start');
+        }
+
+        return array_values($piece['outline']);
+    }
+
+    /**
      * لبه درز پهلو بر پایه فرم لباس.
      *
      * @return array{0: array<int, array<string, mixed>>, 1: array<int, string>, 2: float}
@@ -394,6 +447,13 @@ trait BodiceCatalogSupport
         }
 
         if ($s['shape'] === 'flare') {
+            // لباس گشاد از کمر به بیرون باز می‌شود و روی باسن هیچ درزی ندارد؛ پس
+            // پهنای آن روی خط باسن باید دست‌کم به اندازه خود باسن باشد، وگرنه روی
+            // بدنی که اختلاف کمر تا باسنش زیاد است اصلاً پوشیده نمی‌شود.
+            if ($bottomY > $hipY + 0.2 && $hipX > $waistX) {
+                $flare = max($flare, ($hipX - $waistX) * (($bottomY - $waistY) / max(0.1, $hipY - $waistY)));
+            }
+
             $points[] = Geometry::point($waistX + $flare, $bottomY);
             $tags[] = 'side';
 
@@ -908,7 +968,10 @@ trait BodiceCatalogSupport
         $seamX = $front ? $g['bust_apex_x'] : ($qb * 0.46);
         $apexY = $front ? $g['bust_apex_y'] : $bustY + (($waistY - $bustY) * 0.28);
 
-        $topX = $origin === 'shoulder' ? ($neckW + $shoulderX) / 2 : $across;
+        // شروع درز پرنسسی روی سرشانه باید میان گودی یقه و نوک سرشانه بماند؛ اگر
+        // کاربر عرض یقه را دستی زیاد کند، این نقطه از نوک سرشانه بیرون می‌زند و
+        // خط سرشانه به عقب برمی‌گردد.
+        $topX = $origin === 'shoulder' ? min(($neckW + $shoulderX) / 2, $shoulderX - 0.3) : $across;
         $topY = $origin === 'shoulder' ? $shoulderY / 2 : $acrossY;
 
         $keys = [[$topY, $cf + $topX], [$apexY, $cf + $seamX], [$waistY, $cf + $seamX - 0.2]];
@@ -948,6 +1011,7 @@ trait BodiceCatalogSupport
         $centerLine = [];
         $sideLine = [];
         $pins = [];
+        $bustIndex = 0;
 
         foreach ($ys as $index => $y) {
             $nominal = $this->interpolateX($keys, $y);
@@ -960,9 +1024,17 @@ trait BodiceCatalogSupport
                     $pins[] = $index;
                 }
             }
+
+            if ($y <= $bustY + 0.02) {
+                $bustIndex = $index;
+            }
         }
 
-        [$centerLine, $sideLine] = $this->trueSeams($centerLine, $sideLine, $pins);
+        // بالای خط سینه دو لبه درز پرنسسی روی هم منطبق‌اند (فاصله‌شان صفر است)، پس
+        // هم‌اندازه‌کردن طول نباید آنجا شکم بدهد؛ اختلاف طول همیشه از ساسون زیر
+        // سینه می‌آید. اگر آنجا شکم داده شود، روی بدنی با سرشانه باریک و سینه
+        // درشت، درز از حلقه آستین بیرون می‌زند و قطعه خودش را قطع می‌کند.
+        [$centerLine, $sideLine] = $this->trueSeams($centerLine, $sideLine, $pins, $bustIndex);
         $seamLength = $this->polylineLength($centerLine);
         $seamKey = $o['seam_key'] ?? ($front ? 'princess_front' : 'princess_back');
 
@@ -1183,9 +1255,10 @@ trait BodiceCatalogSupport
      * نشود؛ فقط منحنی بین آن‌ها کمی پرتر می‌شود تا طول دو درز یکی شود.
      *
      * @param  array<int, int>  $pins  اندیس نقطه‌های قفل‌شده
+     * @param  int  $lockUntil  تا این اندیس هیچ شکمی داده نمی‌شود
      * @return array{0: array<int, array{x: float, y: float}>, 1: array<int, array{x: float, y: float}>}
      */
-    protected function trueSeams(array $a, array $b, array $pins): array
+    protected function trueSeams(array $a, array $b, array $pins, int $lockUntil = 0): array
     {
         $lengthA = $this->polylineLength($a);
         $lengthB = $this->polylineLength($b);
@@ -1195,8 +1268,8 @@ trait BodiceCatalogSupport
         }
 
         return $lengthA < $lengthB
-            ? [$this->bumpToLength($a, $pins, $lengthB, -1), $b]
-            : [$a, $this->bumpToLength($b, $pins, $lengthA, 1)];
+            ? [$this->bumpToLength($a, $pins, $lengthB, -1, $lockUntil), $b]
+            : [$a, $this->bumpToLength($b, $pins, $lengthA, 1, $lockUntil)];
     }
 
     /**
@@ -1205,7 +1278,7 @@ trait BodiceCatalogSupport
      * @param  array<int, int>  $pins
      * @return array<int, array{x: float, y: float}>
      */
-    protected function bumpToLength(array $line, array $pins, float $target, int $direction = 1): array
+    protected function bumpToLength(array $line, array $pins, float $target, int $direction = 1, int $lockUntil = 0): array
     {
         $count = count($line);
         $pins = array_values(array_unique(array_merge([0, $count - 1], $pins)));
@@ -1218,7 +1291,7 @@ trait BodiceCatalogSupport
             $to = $pins[$p + 1];
             $span = $to - $from;
 
-            if ($span < 2) {
+            if ($span < 2 || $from < $lockUntil) {
                 continue;
             }
 

@@ -33,7 +33,7 @@ trait BuildsSleeve
         $bicepEase = $this->ease($ease, 'bicep', 4);
         $width = max($bicep * 0.8, $bicep + $bicepEase);
 
-        $capHeight = $this->fitCapHeight($width, $armholeLength + $capEase);
+        [$width, $capHeight] = $this->fitCap($width, $armholeLength + $capEase);
 
         $hasCuff = $this->flag($params, 'cuff', false) && ! ($options['no_cuff'] ?? false);
         $cuffHeight = (float) $this->param($params, 'cuff_height', 6);
@@ -41,6 +41,12 @@ trait BuildsSleeve
             ? max(8.0, (float) $options['length'])
             : max(12.0, $armLength + (float) $this->param($params, 'length_extra', 0));
         $bodyLength = $hasCuff ? max(12.0, $length - $cuffHeight) : $length;
+
+        // بلندی آستین همیشه از بلندی سرآستین بیشتر بماند. اگر بلندی ثابتی خواسته
+        // شده باشد (مثلاً آستین کوتاه ۲۲ سانتی) و بدن آن‌قدر درشت باشد که کپ از
+        // همان ۲۲ بلندتر شود، دم آستین بالای زیربغل می‌افتد و مسیر قطعه خودش را
+        // قطع می‌کند. دست‌کم چهار سانتی‌متر زیر خط بازو نگه می‌داریم.
+        $bodyLength = max($bodyLength, $capHeight + 4.0);
 
         $hemEase = (float) $this->param($params, 'hem_ease', 6);
         $hemWidth = $bodyLength < 32
@@ -212,6 +218,34 @@ trait BuildsSleeve
             Geometry::curve($width * 0.75, $height * 0.36, $width * 0.66, $height * 0.02),
             Geometry::curve($width, $height, $width * 0.95, $height * 0.74),
         ];
+    }
+
+    /**
+     * پهنا و ارتفاع سرآستین را با هم تنظیم می‌کند تا طول سرآستین به هدف برسد.
+     *
+     * ارتفاع کپ سقف دارد (بیش از ۰٫۷ پهنا، آستین لوله‌ای و غیرقابل دوخت می‌شود)؛
+     * پس روی بدنی با حلقه آستین بزرگ نسبت به دور بازو، فقط با بلندکردن کپ نمی‌شود
+     * به طول حلقه رسید و باید خود آستین پهن‌تر شود. آستین پهن‌تر یعنی آزادی بیشتر
+     * روی بازو، که درست است؛ آستین کوتاه‌تر از حلقه اصلاً دوخته نمی‌شود.
+     *
+     * @return array{0: float, 1: float}  پهنا و ارتفاع
+     */
+    protected function fitCap(float $width, float $target): array
+    {
+        $height = $this->fitCapHeight($width, $target);
+
+        for ($i = 0; $i < 12; $i++) {
+            $length = Geometry::edgesLength($this->capOutline($width, $height), [0, 1, 2, 3]);
+
+            if ($length >= $target - 0.15) {
+                break;
+            }
+
+            $width += ($target - $length) * 0.5;
+            $height = $this->fitCapHeight($width, $target);
+        }
+
+        return [round($width, 2), $height];
     }
 
     /** ارتفاع کپ را تنظیم می‌کند تا طول سرآستین به اندازه هدف برسد. */

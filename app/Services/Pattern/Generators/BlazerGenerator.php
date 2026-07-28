@@ -114,7 +114,9 @@ class BlazerGenerator extends BaseGenerator
         );
 
         if ($this->flag($params, 'lining', true)) {
-            $pieces[] = $this->bodicePiece($g, array_merge($this->liningShape($g, 'front', $bottom - 2), [
+            $pieces[] = $this->bodicePiece($g, [
+                'shape' => 'dress',
+                'hem_flare' => 2.0,
                 'side' => 'front',
                 'bottom_y' => $bottom - 2,
                 'bottom_tag' => 'hem',
@@ -126,9 +128,11 @@ class BlazerGenerator extends BaseGenerator
                 'name' => 'آستر جلو',
                 'part' => 'lining',
                 'meta' => ['note' => 'آستر جلو تا خط سجاف بریده می‌شود.'],
-            ]));
+            ]);
 
-            $pieces[] = $this->bodicePiece($g, array_merge($this->liningShape($g, 'back', $bottom - 2), [
+            $pieces[] = $this->bodicePiece($g, [
+                'shape' => 'dress',
+                'hem_flare' => 2.0,
                 'side' => 'back',
                 'bottom_y' => $bottom - 2,
                 'bottom_tag' => 'hem',
@@ -139,36 +143,10 @@ class BlazerGenerator extends BaseGenerator
                 'code' => 'lining-back',
                 'name' => 'آستر پشت',
                 'part' => 'lining',
-            ]));
+            ]);
         }
 
         return $this->finish($pieces);
-    }
-
-    /**
-     * فرم درز پهلوی آستر: آستر دو سانتی‌متر کوتاه‌تر از پوسته بریده می‌شود و همین
-     * دم کوتاه‌تر گاهی بالاتر از خط باسن می‌افتد.
-     *
-     * درفت «dress» درز پهلو را از کمر به نقطه باسن می‌برد و از آنجا به دم؛ اگر دم
-     * بالای خط باسن باشد، مسیر تا زیر لبه دم پایین می‌رود و دوباره برمی‌گردد، یعنی
-     * قطعه خودش را قطع می‌کند و بریده نمی‌شود. در این حالت درز پهلو نقطه باسن
-     * ندارد و باید مستقیم به دم برسد (درفت «flare»)، ولی پهنای دم همان پهنای
-     * پوسته روی خط باسن می‌ماند تا آستر از پوسته تنگ‌تر نشود.
-     *
-     * @return array<string, mixed>
-     */
-    protected function liningShape(array $g, string $side, float $bottomY): array
-    {
-        $waistY = $side === 'front' ? $g['front_waist_y'] : $g['back_waist_y'];
-        $hipY = $waistY + $g['hip_drop'];
-
-        if ($bottomY > $hipY + 0.5) {
-            return ['shape' => 'dress', 'hem_flare' => 2.0];
-        }
-
-        $hipX = max($g['quarter_bust'], $g['quarter_hip']);
-
-        return ['shape' => 'flare', 'hem_flare' => round($hipX - $g['quarter_bust'] + 2.0, 2)];
     }
 
     /**
@@ -185,11 +163,14 @@ class BlazerGenerator extends BaseGenerator
 
         $upperWidth = $bicep * 0.72;
         $underWidth = $bicep * 0.36;
-        $upperCap = $this->fitCapHeight($upperWidth, ($armholeLength + $capEase) * 0.72);
+        [$upperWidth, $upperCap] = $this->fitCap($upperWidth, ($armholeLength + $capEase) * 0.72);
         $underCap = max(2.0, $upperCap * 0.3);
 
         $upperHem = $wrist * 0.62;
         $underHem = $wrist * 0.38;
+
+        // آستین هرگز کوتاه‌تر از سرآستین خودش نشود (بدن‌های بسیار درشت)
+        $length = max($length, $upperCap + 4.0);
 
         $upperOutline = $this->capOutline($upperWidth, $upperCap);
         $upperOutline[] = Geometry::curve(
