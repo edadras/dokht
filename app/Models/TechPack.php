@@ -28,4 +28,23 @@ class TechPack extends Model
     {
         return data_get($this->data, $key, $default);
     }
+
+    /** چیزهایی که برای کامل شدن کارت فنی کم است. */
+    public function missing(): array
+    {
+        return (array) $this->section('missing', []);
+    }
+
+    public function isComplete(): bool
+    {
+        return $this->missing() === [];
+    }
+
+    /** شماره نسخه بعدی کارت فنی یک پروژه. */
+    public static function nextVersion(Project $project): int
+    {
+        return (int) static::query()
+            ->where('project_id', $project->id)
+            ->max('version') + 1;
+    }
 }

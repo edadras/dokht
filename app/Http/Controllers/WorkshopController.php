@@ -105,17 +105,17 @@ class WorkshopController extends Controller
         }
 
         $settings['seam_allowances'] = $edges;
-        $settings['fabric_width'] = isset($data['fabric_width'])
+        $settings['fabric_width'] = isset($data['fabric_width']) && $data['fabric_width'] !== ''
             ? round((float) $data['fabric_width'], 1)
             : null;
-        $settings['order_prefix'] = $data['order_prefix'] ?: null;
+        $settings['order_prefix'] = ($data['order_prefix'] ?? null) ?: null;
 
         $attributes = [
             'name' => $data['name'],
             'phone' => $data['phone'] ?? null,
             'city' => $data['city'] ?? null,
             'address' => $data['address'] ?? null,
-            'currency' => $data['currency'] ?: 'IRT',
+            'currency' => ($data['currency'] ?? null) ?: 'IRT',
             'default_seam_allowance' => round((float) $data['default_seam_allowance'], 1),
             'default_hem_allowance' => round((float) $data['default_hem_allowance'], 1),
             'settings' => $settings,
@@ -270,6 +270,12 @@ class WorkshopController extends Controller
     protected function ownerCount(Workshop $workshop): int
     {
         return $workshop->users()->where('role', 'owner')->count();
+    }
+
+    /** رقم فارسی را به لاتین تبدیل می‌کند و مقدارهای غیرمتنی را دست‌نخورده برمی‌گرداند. */
+    protected function latin(mixed $value): mixed
+    {
+        return is_string($value) ? Jalali::latinDigits($value) : $value;
     }
 
     protected function deleteLogo(Workshop $workshop): void

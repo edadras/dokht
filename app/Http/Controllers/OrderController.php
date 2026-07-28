@@ -10,6 +10,7 @@ use App\Models\Order;
 use App\Models\Project;
 use App\Models\User;
 use App\Support\Jalali;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -268,7 +269,7 @@ class OrderController extends Controller
         return Customer::create(['name' => $name])->id;
     }
 
-    /** @param  class-string<\Illuminate\Database\Eloquent\Model>  $model */
+    /** @param  class-string<Model>  $model */
     protected function existingId(string $model, mixed $id): ?int
     {
         if (! filled($id)) {

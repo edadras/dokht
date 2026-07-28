@@ -1,0 +1,51 @@
+<?php
+
+namespace App\Services\Pattern\Generators;
+
+use App\Services\Pattern\Generators\Concerns\DraftsPants;
+
+/** شلوار راسته: پای جلو و پشت با منحنی فاق و کمربند. */
+class StraightPantsGenerator extends BaseGenerator
+{
+    use DraftsPants;
+
+    public function label(): string
+    {
+        return 'شلوار راسته';
+    }
+
+    public function paramsSchema(): array
+    {
+        return [
+            'rise_extra' => [
+                'label' => 'تغییر گودی فاق', 'min' => -5, 'max' => 10, 'step' => 0.5, 'default' => 0, 'unit' => 'سانتی‌متر',
+            ],
+            'length_extra' => [
+                'label' => 'تغییر قد پا', 'min' => -55, 'max' => 10, 'step' => 1, 'default' => 0, 'unit' => 'سانتی‌متر',
+            ],
+            'knee_ease' => [
+                'label' => 'آزادی دور زانو', 'min' => 0, 'max' => 35, 'step' => 1, 'default' => 7, 'unit' => 'سانتی‌متر',
+            ],
+            'hem_ease' => [
+                'label' => 'آزادی دور دم پا', 'min' => 0, 'max' => 45, 'step' => 1, 'default' => 11, 'unit' => 'سانتی‌متر',
+            ],
+            'front_pleat' => [
+                'label' => 'پیلی جلو', 'min' => 0, 'max' => 8, 'step' => 0.5, 'default' => 0, 'unit' => 'سانتی‌متر',
+            ],
+            'back_darts' => [
+                'label' => 'تعداد ساسون پشت', 'min' => 0, 'max' => 2, 'step' => 1, 'default' => 1,
+            ],
+            'waistband' => [
+                'label' => 'کمربند داشته باشد', 'type' => 'toggle', 'default' => true,
+            ],
+            'waistband_height' => [
+                'label' => 'بلندی کمربند', 'min' => 2, 'max' => 10, 'step' => 0.5, 'default' => 4, 'unit' => 'سانتی‌متر',
+            ],
+        ];
+    }
+
+    public function generate(array $measurements, array $ease, array $params): array
+    {
+        return $this->finish($this->pantsPieces($measurements, $ease, $params));
+    }
+}

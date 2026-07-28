@@ -216,6 +216,36 @@ abstract class BaseGenerator implements PatternGenerator
         ], fn ($value) => $value !== null);
     }
 
+    /** کمربند: نواری دولا به اندازه دور کمر (برای دامن و شلوار). */
+    protected function waistbandPiece(array $m, array $ease, array $params, array $o = []): array
+    {
+        $waist = $this->m($m, 'waist', 74) + $this->ease($ease, 'waist', 4);
+        $height = (float) $this->param($params, 'waistband_height', 4);
+        $half = ($waist / 2) + 3.5; // نیم کمربند + جای دکمه
+
+        return $this->piece([
+            'code' => $o['code'] ?? 'waistband',
+            'name' => $o['name'] ?? 'کمربند',
+            'cut_quantity' => 2,
+            'outline' => [
+                Geometry::point(0, 0),
+                Geometry::point($half, 0),
+                Geometry::point($half, $height * 2),
+                Geometry::point(0, $height * 2),
+            ],
+            'grainline' => $this->grainline($half * 0.5, 1, ($height * 2) - 1),
+            'markers' => [
+                $this->marker('fold', 'خط تای کمربند', 0, $height, $half),
+            ],
+            'meta' => [
+                'part' => 'waistband',
+                'edges' => ['waist', 'side', 'waist', 'side'],
+                'fold_edges' => [],
+                'interfacing' => true,
+            ],
+        ]);
+    }
+
     /**
      * شماره‌گذاری و مرتب‌سازی نهایی قطعه‌ها.
      *
