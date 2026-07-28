@@ -58,77 +58,11 @@
             <div class="lg:col-span-3">
                 <div class="overflow-hidden rounded-2xl border border-stone-200 bg-stone-50">
                     <svg x-ref="canvas" class="h-[36rem] w-full touch-none select-none"
-                        x-bind:viewBox="viewBox()" preserveAspectRatio="xMidYMid meet"
-                        x-on:pointerdown="startPan($event)" x-on:pointermove="onMove($event)"
+                        x-effect="$el.setAttribute('viewBox', viewBox())" preserveAspectRatio="xMidYMid meet"
+                        x-on:pointerdown="onPointerDown($event)" x-on:pointermove="onMove($event)"
                         x-on:pointerup="endDrag()" x-on:pointerleave="endDrag()" x-on:wheel.prevent="onWheel($event)">
-                        <template x-for="(piece, index) in pieces" x-bind:key="piece.id">
-                            <g x-bind:transform="`translate(${offsets[index]?.x || 0} ${offsets[index]?.y || 0})`"
-                                x-bind:data-piece-id="piece.id">
-                                {{-- خط برش --}}
-                                <path x-show="show.seam" x-bind:d="seamPath(piece)" fill="none" stroke="#a78bfa"
-                                    stroke-width="0.12" stroke-dasharray="1.2 0.8" />
-
-                                {{-- خط دوخت --}}
-                                <path x-bind:d="path(piece)" x-on:click="selectPiece(index)"
-                                    x-bind:fill="index === selected ? '#ede9fe' : '#ffffff'" fill-opacity="0.9"
-                                    x-bind:stroke="index === selected ? '#7c4ddb' : '#44403c'" stroke-width="0.2"
-                                    stroke-linejoin="round" class="cursor-pointer" />
-
-                                {{-- خطوط راهنما --}}
-                                <template x-for="marker in (show.markers ? (piece.markers || []) : [])">
-                                    <line x-bind:x1="marker.from?.x" x-bind:y1="marker.from?.y"
-                                        x-bind:x2="marker.to?.x" x-bind:y2="marker.to?.y" stroke="#a8a29e"
-                                        stroke-width="0.1" stroke-dasharray="1 1" />
-                                </template>
-
-                                {{-- ساسون‌ها --}}
-                                <template x-for="dart in (show.darts ? (piece.darts || []) : [])">
-                                    <g>
-                                        <line x-bind:x1="dart.legs?.[0]?.x" x-bind:y1="dart.legs?.[0]?.y"
-                                            x-bind:x2="dart.apex?.x" x-bind:y2="dart.apex?.y" stroke="#7c4ddb"
-                                            stroke-width="0.12" />
-                                        <line x-bind:x1="dart.legs?.[1]?.x" x-bind:y1="dart.legs?.[1]?.y"
-                                            x-bind:x2="dart.apex?.x" x-bind:y2="dart.apex?.y" stroke="#7c4ddb"
-                                            stroke-width="0.12" />
-                                    </g>
-                                </template>
-
-                                {{-- راستای پارچه --}}
-                                <line x-show="show.grainline && piece.grainline" x-bind:x1="piece.grainline?.from?.x"
-                                    x-bind:y1="piece.grainline?.from?.y" x-bind:x2="piece.grainline?.to?.x"
-                                    x-bind:y2="piece.grainline?.to?.y" stroke="#57534e" stroke-width="0.14" />
-
-                                {{-- نشانه‌های جفت‌شدن --}}
-                                <template x-for="notch in (show.notches ? (piece.notches || []) : [])">
-                                    <circle x-bind:cx="notch.x" x-bind:cy="notch.y" r="0.3" fill="none"
-                                        stroke="#d4573e" stroke-width="0.12" />
-                                </template>
-
-                                {{-- دستگیره نقطه‌ها --}}
-                                <template x-for="(point, pointIndex) in piece.outline" x-bind:key="pointIndex">
-                                    <g>
-                                        <line x-show="point.curve && index === selected" x-bind:x1="point.x"
-                                            x-bind:y1="point.y" x-bind:x2="point.cx" x-bind:y2="point.cy"
-                                            stroke="#0ea5e9" stroke-width="0.08" stroke-dasharray="0.6 0.4" />
-
-                                        <circle x-show="point.curve && index === selected" x-bind:cx="point.cx"
-                                            x-bind:cy="point.cy" r="0.34" fill="#0ea5e9"
-                                            class="cursor-move"
-                                            x-on:pointerdown="startDrag($event, index, pointIndex, 'control')" />
-
-                                        <circle x-bind:cx="point.x" x-bind:cy="point.y"
-                                            x-bind:r="index === selected ? 0.42 : 0.28"
-                                            x-bind:fill="index === selected && pointIndex === selectedPoint ? '#d4573e' : '#7c4ddb'"
-                                            class="cursor-move"
-                                            x-on:pointerdown="startDrag($event, index, pointIndex, 'point')" />
-                                    </g>
-                                </template>
-
-                                {{-- نام قطعه --}}
-                                <text x-bind:x="0" x-bind:y="-1" font-size="1.6" fill="#57534e"
-                                    x-text="piece.name"></text>
-                            </g>
-                        </template>
+                        {{-- نقشه در JS ساخته می‌شود؛ قالب‌های x-for داخل svg قابل استفاده نیستند --}}
+                        <g x-html="markup()"></g>
                     </svg>
                 </div>
 

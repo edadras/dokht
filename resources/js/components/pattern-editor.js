@@ -264,6 +264,128 @@ export default (config = {}) => ({
         return sum / 2;
     },
 
+    /* ----------------------------------------------------------- رسم نقشه */
+
+    /*
+     * نقشه به صورت رشته SVG ساخته می‌شود.
+     *
+     * دلیلش این است که <template x-for> داخل <svg> کار نمی‌کند (عنصر template در
+     * فضای‌نام SVG محتوای قابل کلون ندارد)، پس همه قطعه‌ها اینجا رسم و با x-html
+     * داخل بوم گذاشته می‌شوند. تعامل‌ها هم با data-role و واگذاری رویداد انجام می‌شود.
+     */
+    markup() {
+        return this.pieces.map((piece, index) => this.pieceMarkup(piece, index)).join('');
+    },
+
+    pieceMarkup(piece, index) {
+        const offset = this.offsets[index] || { x: 0, y: 0 };
+        const active = index === this.selected;
+        const parts = [];
+
+        if (this.show.seam) {
+            parts.push(`<path d="${this.seamPath(piece)}" fill="none" stroke="#a78bfa" stroke-width="0.12" stroke-dasharray="1.2 0.8" />`);
+        }
+
+        parts.push(
+            `<path d="${this.path(piece)}" data-role="outline" data-piece="${index}" class="cursor-pointer"`
+            + ` fill="${active ? '#ede9fe' : '#ffffff'}" fill-opacity="0.9"`
+            + ` stroke="${active ? '#7c4ddb' : '#44403c'}" stroke-width="0.2" stroke-linejoin="round" />`,
+        );
+
+        if (this.show.markers) {
+            (piece.markers || []).forEach((marker) => {
+                if (! marker?.from || ! marker?.to) {
+                    return;
+                }
+
+                parts.push(`<line x1="${this.n(marker.from.x)}" y1="${this.n(marker.from.y)}" x2="${this.n(marker.to.x)}" y2="${this.n(marker.to.y)}" stroke="#a8a29e" stroke-width="0.1" stroke-dasharray="1 1" />`);
+            });
+        }
+
+        if (this.show.darts) {
+            (piece.darts || []).forEach((dart) => {
+                const apex = dart?.apex;
+                const legs = dart?.legs || [];
+
+                if (! apex) {
+                    return;
+                }
+
+                legs.slice(0, 2).forEach((leg) => {
+                    if (! leg) {
+                        return;
+                    }
+
+                    parts.push(`<line x1="${this.n(leg.x)}" y1="${this.n(leg.y)}" x2="${this.n(apex.x)}" y2="${this.n(apex.y)}" stroke="#7c4ddb" stroke-width="0.12" />`);
+                });
+            });
+        }
+
+        if (this.show.grainline && piece.grainline?.from && piece.grainline?.to) {
+            const g = piece.grainline;
+            parts.push(`<line x1="${this.n(g.from.x)}" y1="${this.n(g.from.y)}" x2="${this.n(g.to.x)}" y2="${this.n(g.to.y)}" stroke="#57534e" stroke-width="0.14" marker-end="" />`);
+        }
+
+        if (this.show.notches) {
+            (piece.notches || []).forEach((notch) => {
+                if (notch?.x === undefined || notch?.y === undefined) {
+                    return;
+                }
+
+                parts.push(`<circle cx="${this.n(notch.x)}" cy="${this.n(notch.y)}" r="0.3" fill="none" stroke="#d4573e" stroke-width="0.12" />`);
+            });
+        }
+
+        (piece.outline || []).forEach((point, pointIndex) => {
+            if (active && point.curve) {
+                parts.push(`<line x1="${this.n(point.x)}" y1="${this.n(point.y)}" x2="${this.n(point.cx)}" y2="${this.n(point.cy)}" stroke="#0ea5e9" stroke-width="0.08" stroke-dasharray="0.6 0.4" />`);
+                parts.push(`<circle cx="${this.n(point.cx)}" cy="${this.n(point.cy)}" r="0.34" fill="#0ea5e9" class="cursor-move" data-role="control" data-piece="${index}" data-point="${pointIndex}" />`);
+            }
+
+            const selectedHandle = active && pointIndex === this.selectedPoint;
+
+            parts.push(
+                `<circle cx="${this.n(point.x)}" cy="${this.n(point.y)}" r="${active ? 0.42 : 0.28}"`
+                + ` fill="${selectedHandle ? '#d4573e' : '#7c4ddb'}" class="cursor-move"`
+                + ` data-role="point" data-piece="${index}" data-point="${pointIndex}" />`,
+            );
+        });
+
+        parts.push(`<text x="0" y="-1" font-size="1.6" fill="#57534e">${this.escape(piece.name || '')}</text>`);
+
+        return `<g transform="translate(${this.n(offset.x)} ${this.n(offset.y)})" data-piece-id="${piece.id ?? ''}">${parts.join('')}</g>`;
+    },
+
+    escape(value) {
+        return String(value).replace(/[&<>"]/g, (char) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
+        }[char]));
+    },
+
+    /* روی بوم فقط یک شنونده هست؛ نقش هر عنصر از data-role خوانده می‌شود */
+    onPointerDown(event) {
+        const handle = event.target?.closest?.('[data-role]');
+
+        if (handle) {
+            const pieceIndex = Number(handle.dataset.piece);
+            const role = handle.dataset.role;
+
+            if (role === 'point' || role === 'control') {
+                this.startDrag(event, pieceIndex, Number(handle.dataset.point), role);
+
+                return;
+            }
+
+            if (role === 'outline') {
+                this.selectPiece(pieceIndex);
+
+                return;
+            }
+        }
+
+        this.startPan(event);
+    },
+
     /* --------------------------------------------------------------- انتخاب */
 
     get piece() {

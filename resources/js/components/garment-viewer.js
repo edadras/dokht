@@ -18,6 +18,23 @@ const RAD = Math.PI / 180;
  */
 let THREE = null;
 
+/*
+ * اشیای three بیرون از حالت واکنشی آلپاین نگه داشته می‌شوند.
+ *
+ * اگر یک شیء three از داخل دادهٔ آلپاین خوانده شود، در یک Proxy واکنشی پیچیده
+ * می‌شود و three روی ویژگی‌های فقط‌خواندنی مثل modelViewMatrix خطا می‌دهد و صحنه
+ * سیاه می‌ماند. WeakMap زیر همین مسیر را دور می‌زند.
+ */
+const contexts = new WeakMap();
+
+const contextFor = (element) => {
+    if (! contexts.has(element)) {
+        contexts.set(element, {});
+    }
+
+    return contexts.get(element);
+};
+
 const loadThree = async () => {
     THREE ??= await import('three');
 
@@ -79,15 +96,6 @@ export default (config = {}) => ({
         this.teardown();
     },
 
-    /* ظرف نگه‌داری اشیای three؛ روی خود المان می‌نشیند تا آلپاین آن را رهگیری نکند */
-    get ctx() {
-        if (!this.$el._garmentViewer) {
-            this.$el._garmentViewer = {};
-        }
-
-        return this.$el._garmentViewer;
-    },
-
     get zones() {
         return this.payload.zones || [];
     },
@@ -114,7 +122,7 @@ export default (config = {}) => ({
             return;
         }
 
-        const ctx = this.ctx;
+        const ctx = contextFor(this.$el);
         const width = stage.clientWidth || 480;
         const height = stage.clientHeight || 360;
 
@@ -150,7 +158,7 @@ export default (config = {}) => ({
 
     /* نور: یک نور اصلی نرم، یک نور پرکننده و کمی نور محیط */
     addLights() {
-        const ctx = this.ctx;
+        const ctx = contextFor(this.$el);
 
         ctx.scene.add(new THREE.HemisphereLight('#fdf6ee', '#3f3a35', 0.85));
 
@@ -178,7 +186,7 @@ export default (config = {}) => ({
      * پس با تغییر دور سینه یا باسن، شکل مانکن به‌چشم عوض می‌شود.
      */
     buildModel() {
-        const ctx = this.ctx;
+        const ctx = contextFor(this.$el);
         const avatar = this.payload.avatar || {};
         const H = (avatar.height || 165) / 100;
 
@@ -352,7 +360,7 @@ export default (config = {}) => ({
      * لباس
      * ------------------------------------------------------------------ */
     buildGarment() {
-        const ctx = this.ctx;
+        const ctx = contextFor(this.$el);
         const garment = this.payload.garment || {};
         const fabric = this.payload.fabric || {};
         const physics = fabric.physics || {};
@@ -521,7 +529,7 @@ export default (config = {}) => ({
      * رنگ‌آمیزی نواحی تناسب روی لباس
      * ------------------------------------------------------------------ */
     paintZones(geometry, kind) {
-        const level = this.ctx.level;
+        const level = contextFor(this.$el).level;
         const map = {};
 
         this.zones.forEach((zone) => {
@@ -579,7 +587,7 @@ export default (config = {}) => ({
     },
 
     applyZoneMaterial() {
-        const ctx = this.ctx;
+        const ctx = contextFor(this.$el);
 
         (ctx.garmentMeshes || []).forEach((mesh) => {
             mesh.material = this.showZones ? ctx.zoneMaterial : ctx.fabricMaterial;
@@ -600,7 +608,7 @@ export default (config = {}) => ({
     },
 
     applyPose(pose) {
-        const ctx = this.ctx;
+        const ctx = contextFor(this.$el);
 
         if (!ctx.root) {
             return;
@@ -627,7 +635,7 @@ export default (config = {}) => ({
     setView(view) {
         const angles = { front: 0, side: 90, back: 180 };
 
-        this.ctx.orbit.yaw = (angles[view] ?? 0) * RAD;
+        contextFor(this.$el).orbit.yaw = (angles[view] ?? 0) * RAD;
         this.updateCamera();
     },
 
@@ -636,7 +644,7 @@ export default (config = {}) => ({
     },
 
     updateCamera() {
-        const ctx = this.ctx;
+        const ctx = contextFor(this.$el);
 
         if (!ctx.camera) {
             return;
@@ -653,7 +661,7 @@ export default (config = {}) => ({
 
     /* چرخش با ماوس و لمس، و بزرگ‌نمایی با غلتک — دست‌نویس و کوتاه */
     bindPointer() {
-        const ctx = this.ctx;
+        const ctx = contextFor(this.$el);
         const canvas = ctx.renderer.domElement;
         let dragging = false;
         let lastX = 0;
@@ -704,7 +712,7 @@ export default (config = {}) => ({
     },
 
     observeResize() {
-        const ctx = this.ctx;
+        const ctx = contextFor(this.$el);
         const stage = this.$refs.stage;
 
         const resize = () => {
@@ -726,7 +734,7 @@ export default (config = {}) => ({
     },
 
     loop() {
-        const ctx = this.ctx;
+        const ctx = contextFor(this.$el);
 
         const frame = () => {
             if (!ctx.renderer) {
@@ -749,7 +757,7 @@ export default (config = {}) => ({
      * پاک‌سازی: هندسه‌ها و جنس‌ها آزاد و شنونده‌ها برداشته می‌شوند
      * ------------------------------------------------------------------ */
     teardown() {
-        const ctx = this.$el._garmentViewer;
+        const ctx = contexts.get(this.$el);
 
         if (!ctx) {
             return;
@@ -768,7 +776,7 @@ export default (config = {}) => ({
         ctx.renderer?.dispose();
         ctx.renderer?.domElement?.remove();
 
-        delete this.$el._garmentViewer;
+        contexts.delete(this.$el);
     },
 
     /* نقطه‌های کلیدی را به یک خط نرم تبدیل می‌کند (ورودی چرخانه‌ها) */
