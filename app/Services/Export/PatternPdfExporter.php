@@ -520,7 +520,7 @@ class PatternPdfExporter
             $pdf->circle($px($dart['apex']['x']), $py($dart['apex']['y']), max(0.8, PdfWriter::cm(0.12 * $scale)), 'f');
         }
 
-        $this->drawNotches($pdf, $piece, $px, $py, $scale);
+        $this->drawNotches($pdf, $piece, $px, $py);
         $this->drawDrills($pdf, $piece, $px, $py, $scale);
         $this->drawGrainline($pdf, $piece, $px, $py, $scale);
         $this->drawFold($pdf, $piece, $px, $py, $detail);
@@ -575,8 +575,12 @@ class PatternPdfExporter
         return true;
     }
 
-    /** علامت‌های جفت‌شدن به شکل هفتِ کوچک رو به داخل قطعه. */
-    protected function drawNotches(PdfWriter $pdf, PatternPiece $piece, callable $px, callable $py, float $scale): void
+    /**
+     * علامت‌های جفت‌شدن به شکل هفتِ کوچک رو به داخل قطعه.
+     *
+     * اندازه به سانتی‌متر داده می‌شود، پس در نمای کلی هم به همان نسبت کوچک می‌شود.
+     */
+    protected function drawNotches(PdfWriter $pdf, PatternPiece $piece, callable $px, callable $py): void
     {
         $notches = $piece->notches ?? [];
 

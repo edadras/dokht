@@ -173,7 +173,7 @@ class LayoutRenderer
 
         for ($y = $step; $y < $length - 0.01; $y += $step) {
             $parts[] = sprintf(
-                '<line x1="0" y1="%s" x2="%s" y2="%s" stroke="%s" stroke-width="0.12" opacity="0.45" />',
+                '<line x1="0" y1="%s" x2="%s" y2="%s" stroke="%s" stroke-width="0.18" opacity="0.55" />',
                 $this->num($y),
                 $this->num($usable),
                 $this->num($y),
@@ -191,7 +191,7 @@ class LayoutRenderer
 
                 for ($x = $stepX; $x < $usable - 0.01; $x += $stepX) {
                     $parts[] = sprintf(
-                        '<line x1="%s" y1="0" x2="%s" y2="%s" stroke="%s" stroke-width="0.12" opacity="0.45" />',
+                        '<line x1="%s" y1="0" x2="%s" y2="%s" stroke="%s" stroke-width="0.18" opacity="0.55" />',
                         $this->num($x),
                         $this->num($x),
                         $this->num($length),
