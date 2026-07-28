@@ -233,18 +233,24 @@ trait BodiceCatalogSupport
         }
 
         if ($bustDart > 0.8) {
+            // دو پای ساسون سینه باید دقیقاً روی منحنی درز پهلو بنشینند، وگرنه
+            // هنگام بستن ساسون، درز پهلو کج می‌شود
             $legY = $bustY + (($sideWaistY - $bustY) * 0.42);
-            $legX = $cf + $qb - ($sideIntake * 0.25);
+            $edge = $sideEdgeIndexes[0];
+            $upper = $this->pointOnEdgeAtY($outline, $edge, $legY - ($bustDart / 2));
+            $lower = $this->pointOnEdgeAtY($outline, $edge, $legY + ($bustDart / 2));
+
             $darts[] = $this->dart(
                 'bust',
                 'ساسون سینه روی پهلو',
-                $sideEdgeIndexes[0],
-                $legX,
-                $legY,
+                $edge,
+                ($upper['x'] + $lower['x']) / 2,
+                ($upper['y'] + $lower['y']) / 2,
                 $bustDart,
                 $cf + $g['bust_apex_x'],
                 $g['bust_apex_y'],
                 'y',
+                ['legs' => [Geometry::point($upper['x'], $upper['y']), Geometry::point($lower['x'], $lower['y'])]],
             );
         }
 
@@ -524,6 +530,38 @@ trait BodiceCatalogSupport
         }
 
         return $girth;
+    }
+
+    /**
+     * نقطه‌ای روی یک لبه که ارتفاع داده‌شده را دارد.
+     *
+     * با نصف‌کردن پی‌درپی روی پارامتر لبه پیدا می‌شود، پس روی منحنی هم دقیق است.
+     *
+     * @param  array<int, array<string, mixed>>  $outline
+     * @return array{x: float, y: float}
+     */
+    protected function pointOnEdgeAtY(array $outline, int $edge, float $y): array
+    {
+        $low = 0.0;
+        $high = 1.0;
+        $start = Geometry::pointOnEdge($outline, $edge, 0.0);
+        $end = Geometry::pointOnEdge($outline, $edge, 1.0);
+        $descending = $end['y'] >= $start['y'];
+
+        for ($i = 0; $i < 40; $i++) {
+            $mid = ($low + $high) / 2;
+            $at = Geometry::pointOnEdge($outline, $edge, $mid);
+
+            if (($at['y'] < $y) === $descending) {
+                $low = $mid;
+            } else {
+                $high = $mid;
+            }
+        }
+
+        $point = Geometry::pointOnEdge($outline, $edge, ($low + $high) / 2);
+
+        return ['x' => (float) $point['x'], 'y' => (float) $point['y']];
     }
 
     /**
@@ -898,7 +936,13 @@ trait BodiceCatalogSupport
             'fold_edges' => $onFold ? [$closing] : [],
             'grainline' => $this->grainline($cf + ($seamX * 0.45), max(1.5, $bustY * 0.4), $centerBottomY - 2),
             'notches' => [
-                $this->notch($seamNotch['x'], $seamNotch['y'], $centerSeamEdges[0], 'نشانه درز پرنسسی', $seamKey),
+                $this->notch(
+                    $seamNotch['x'],
+                    $seamNotch['y'],
+                    (int) (Geometry::nearestEdge($outline, $seamNotch)['edge'] ?? $centerSeamEdges[0]),
+                    'نشانه درز پرنسسی',
+                    $seamKey,
+                ),
             ],
             'markers' => [
                 $this->marker('bust', 'خط سینه', $cf, $bustY, $this->interpolateAt($centerLine, $bustY)),
@@ -970,7 +1014,13 @@ trait BodiceCatalogSupport
             'on_fold' => false,
             'grainline' => $this->grainline(($cf + $topX + $qb) / 2, $acrossY + 2, $sideBottomY - 2),
             'notches' => [
-                $this->notch($sideNotch['x'], $sideNotch['y'], $sideSeamEdges[count($sideSeamEdges) - 1], 'نشانه درز پرنسسی', $seamKey),
+                $this->notch(
+                    $sideNotch['x'],
+                    $sideNotch['y'],
+                    (int) (Geometry::nearestEdge($outline, $sideNotch)['edge'] ?? $sideSeamEdges[0]),
+                    'نشانه درز پرنسسی',
+                    $seamKey,
+                ),
             ],
             'markers' => [
                 $this->marker('bust', 'خط سینه', $this->interpolateAt($sideLine, $bustY), $bustY, $cf + $qb),

@@ -430,8 +430,11 @@ trait BodiceStyleSupport
         $bottomSideY = $waistY + $length;
         $bottomCenterY = $g['front_waist_y'] + $length;
 
-        $sideIntake = max(0.0, $qb - $qw - $gather);
+        // درز پهلوی جلو دقیقاً مثل پشت روی خط کمر می‌نشیند، وگرنه دو درز هم‌اندازه
+        // درنمی‌آیند؛ پارچه اضافه چین از پایین آمدن نوک جلو می‌آید نه از پهلو
+        $sideIntake = max(0.0, $qb - $qw);
         $waistSideX = $qb - $sideIntake;
+        $bottomCenterY += $gather * 0.6;
 
         $outline = [
             Geometry::curve(
@@ -470,7 +473,7 @@ trait BodiceStyleSupport
             'on_fold' => false,
             'grainline' => $this->grainline($qb * 0.45, max(2.0, $bustY * 0.4), $bottomSideY - 2),
             'pleats' => $pleats,
-            'girth_deduct' => ['waist' => $gather],
+
             'notches' => [
                 $this->notch($qb, $bustY, 3, 'زیر بغل', 'underarm'),
             ],
@@ -484,6 +487,9 @@ trait BodiceStyleSupport
                 'shape' => 'wrap',
                 'wrap_overlap' => round($overlap, 2),
                 'fullness' => ['waist' => round($gather, 2)],
+                'notes' => [
+                    'لبه کمر جلو از فاصله مستقیم دو سرش بلندتر است؛ این اضافه با چین ریز روی خط کمر جمع می‌شود.',
+                ],
                 'bust_y' => round($bustY, 2),
                 'waist_y' => round($waistY, 2),
             ],

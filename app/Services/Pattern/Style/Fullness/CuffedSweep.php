@@ -94,7 +94,10 @@ class CuffedSweep extends FullnessStyle
                 continue;
             }
 
-            $piece = PieceOps::extend($piece, 'hem', $extra, ['edges' => $edges]);
+            $piece = PieceOps::extend($piece, 'hem', $extra, [
+                'edges' => $edges,
+                'direction' => $this->hemOutward($piece),
+            ]);
 
             $height = Geometry::height($piece['outline']);
             $piece['markers'][] = $this->marker('fold', 'خط تای برگردان', 0, $height - $depth, 4, $height - $depth);
@@ -126,5 +129,32 @@ class CuffedSweep extends FullnessStyle
             'depth' => round($depth, 2),
             'extension' => $extra,
         ]);
+    }
+
+    /**
+     * بردار عمود بر دم، رو به بیرون قطعه.
+     *
+     * وقتی دم بعد از برش و باز کردن چند لبه شده، عمودِ خودکارِ PieceOps گیج
+     * می‌شود؛ اینجا از خط بین دو سرِ دم حسابش می‌کنیم و اگر آن هم به‌دردنخور بود،
+     * رو به پایین می‌گیریم.
+     *
+     * @return array{x: float, y: float}
+     */
+    protected function hemOutward(array $piece): array
+    {
+        $corners = $this->hemCorners($piece);
+        $outline = array_values($piece['outline']);
+
+        if ($corners !== null) {
+            $dx = ((float) $outline[$corners['side']]['x']) - ((float) $outline[$corners['center']]['x']);
+            $dy = ((float) $outline[$corners['side']]['y']) - ((float) $outline[$corners['center']]['y']);
+            $norm = sqrt(($dx * $dx) + ($dy * $dy));
+
+            if ($norm > 0.1) {
+                return ['x' => -$dy / $norm, 'y' => $dx / $norm];
+            }
+        }
+
+        return ['x' => 0.0, 'y' => 1.0];
     }
 }
