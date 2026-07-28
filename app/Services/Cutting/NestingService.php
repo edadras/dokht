@@ -217,7 +217,7 @@ class NestingService
 
         foreach ($pattern->pieces as $piece) {
             $allowance = $options['include_allowance'] ? $this->allowanceFor($piece, $pattern) : 0.0;
-            [$minX, $minY, $maxX, $maxY] = $piece->bounds();
+            [$minX, $minY, $maxX, $maxY] = $this->pieceBounds($piece);
 
             $width = round(($maxX - $minX) + 2 * $allowance, 2);
             $height = round(($maxY - $minY) + 2 * $allowance, 2);
@@ -262,6 +262,40 @@ class NestingService
         });
 
         return $out;
+    }
+
+    /**
+     * کادر دربرگیرنده قطعه، با در نظر گرفتن نقطه‌های راهنمای منحنی.
+     *
+     * منحنی درجه دو از بدنه محدب نقطه‌ها و نقطه راهنمای خود بیرون نمی‌زند، پس این
+     * کادر کمی محافظه‌کارانه ولی مطمئن است و قطعه‌های گرد روی هم نمی‌افتند.
+     *
+     * @return array{0: float, 1: float, 2: float, 3: float}
+     */
+    public function pieceBounds(PatternPiece $piece): array
+    {
+        $xs = [];
+        $ys = [];
+
+        foreach ((array) ($piece->outline ?? []) as $point) {
+            if (! is_array($point) || ! isset($point['x'], $point['y'])) {
+                continue;
+            }
+
+            $xs[] = (float) $point['x'];
+            $ys[] = (float) $point['y'];
+
+            if (! empty($point['curve']) && isset($point['cx'], $point['cy'])) {
+                $xs[] = (float) $point['cx'];
+                $ys[] = (float) $point['cy'];
+            }
+        }
+
+        if ($xs === []) {
+            return array_map('floatval', $piece->bounds());
+        }
+
+        return [min($xs), min($ys), max($xs), max($ys)];
     }
 
     /** جای دوخت مؤثر قطعه: بیشترین مقدار لبه‌ها یا پیش‌فرض الگو. */
@@ -428,7 +462,7 @@ class NestingService
             'y_offset_cm' => round($offset, 2),
             'origin_x' => $instance['origin_x'],
             'origin_y' => $instance['origin_y'],
-            'path' => $this->piecePath($piece, $instance['allowance_cm'] > 0),
+            'path' => $this->piecePath($piece, $instance['allowance_cm'] > 0, $instance['allowance_cm']),
             'sew_path' => $instance['allowance_cm'] > 0 ? $this->piecePath($piece, false) : null,
             'grainline' => $this->grainline($piece),
             'transform' => $this->transform($instance, $orientation, $x, $y),
@@ -495,8 +529,9 @@ class NestingService
     /**
      * مسیر SVG یک قطعه؛ در صورت وجود، از رسام الگو استفاده می‌شود.
      */
-    public function piecePath(PatternPiece $piece, bool $withAllowance): string
+    public function piecePath(PatternPiece $piece, bool $withAllowance, ?float $allowance = null): string
     {
+        $allowance ??= $this->pieceAllowance($piece);
         $renderer = 'App\Services\Pattern\SvgRenderer';
 
         if (class_exists($renderer)) {
@@ -505,7 +540,7 @@ class NestingService
                 $path = $method->invoke(
                     $method->isStatic() ? null : app($renderer),
                     $piece,
-                    ['seam_allowance' => $withAllowance],
+                    ['seam_allowance' => $withAllowance, 'default_allowance' => $allowance],
                 );
 
                 if (is_string($path) && trim($path) !== '') {
@@ -519,7 +554,7 @@ class NestingService
         $outline = (array) ($piece->outline ?? []);
 
         if ($withAllowance) {
-            $outline = $this->offsetOutline($outline, $this->pieceAllowance($piece)) ?: $outline;
+            $outline = $this->offsetOutline($outline, $allowance) ?: $outline;
         }
 
         return $this->outlinePath($outline);
@@ -532,23 +567,113 @@ class NestingService
         return round($edges ? (float) max($edges) : (float) ($piece->pattern?->seamAllowance() ?? 1.0), 2);
     }
 
-    /** بزرگ‌کردن خط دور قطعه به اندازه جای دوخت (اگر سرویس آن در دسترس باشد). */
+    /** بزرگ‌کردن خط دور قطعه به اندازه جای دوخت (خط برش). */
     protected function offsetOutline(array $outline, float $allowance): array
     {
+        if ($allowance <= 0) {
+            return $outline;
+        }
+
         $service = 'App\Services\Pattern\SeamAllowanceService';
 
-        if ($allowance <= 0 || ! class_exists($service)) {
+        if (class_exists($service)) {
+            try {
+                $method = new ReflectionMethod($service, 'offsetOutline');
+                $result = $method->invoke($method->isStatic() ? null : app($service), $outline, $allowance);
+
+                if (is_array($result) && $result !== []) {
+                    return $result;
+                }
+            } catch (Throwable) {
+                // خودمان حساب می‌کنیم
+            }
+        }
+
+        return $this->miterOffset($outline, $allowance);
+    }
+
+    /**
+     * جابه‌جا کردن هر نقطه روی نیم‌ساز عمودهای دو لبه مجاور (اتصال میتر).
+     *
+     * برای چندضلعی‌های ساده الگو دقیق است و گوشه‌ها را تیز نگه می‌دارد.
+     */
+    protected function miterOffset(array $outline, float $allowance): array
+    {
+        $points = array_values(array_filter(
+            $outline,
+            fn ($point) => is_array($point) && isset($point['x'], $point['y']),
+        ));
+
+        $count = count($points);
+
+        if ($count < 3) {
             return $outline;
         }
 
-        try {
-            $method = new ReflectionMethod($service, 'offsetOutline');
-            $result = $method->invoke($method->isStatic() ? null : app($service), $outline, $allowance);
+        // جهت چرخش چندضلعی تعیین می‌کند کدام عمود «بیرون» است
+        $area = 0.0;
 
-            return is_array($result) && $result !== [] ? $result : $outline;
-        } catch (Throwable) {
-            return $outline;
+        for ($i = 0; $i < $count; $i++) {
+            $a = $points[$i];
+            $b = $points[($i + 1) % $count];
+            $area += ((float) $a['x'] * (float) $b['y']) - ((float) $b['x'] * (float) $a['y']);
         }
+
+        $sign = $area >= 0 ? 1 : -1;
+        $out = [];
+
+        for ($i = 0; $i < $count; $i++) {
+            $previous = $points[($i - 1 + $count) % $count];
+            $current = $points[$i];
+            $next = $points[($i + 1) % $count];
+
+            [$n1x, $n1y] = $this->edgeNormal($previous, $current, $sign);
+            [$n2x, $n2y] = $this->edgeNormal($current, $next, $sign);
+
+            $bx = $n1x + $n2x;
+            $by = $n1y + $n2y;
+            $length = sqrt(($bx * $bx) + ($by * $by));
+
+            if ($length < 1e-6) {
+                [$bx, $by, $length] = [$n1x, $n1y, 1.0];
+            }
+
+            $bx /= max($length, 1e-9);
+            $by /= max($length, 1e-9);
+
+            // حد میتر تا گوشه‌های تیز بی‌اندازه بلند نشوند
+            $cos = max(0.35, ($bx * $n1x) + ($by * $n1y));
+            $shift = $allowance / $cos;
+
+            $point = [
+                'x' => round((float) $current['x'] + $bx * $shift, 3),
+                'y' => round((float) $current['y'] + $by * $shift, 3),
+            ];
+
+            if (! empty($current['curve']) && isset($current['cx'], $current['cy'])) {
+                $point['curve'] = true;
+                $point['cx'] = round((float) $current['cx'] + $bx * $shift, 3);
+                $point['cy'] = round((float) $current['cy'] + $by * $shift, 3);
+            }
+
+            $out[] = $point;
+        }
+
+        return $out;
+    }
+
+    /** عمود بیرونی یک لبه. */
+    protected function edgeNormal(array $from, array $to, int $sign): array
+    {
+        $dx = (float) $to['x'] - (float) $from['x'];
+        $dy = (float) $to['y'] - (float) $from['y'];
+        $length = sqrt(($dx * $dx) + ($dy * $dy));
+
+        if ($length < 1e-9) {
+            return [0.0, 0.0];
+        }
+
+        return [$sign * ($dy / $length), $sign * (-$dx / $length)];
     }
 
     /** ساخت مسیر بسته از نقاط خط دور؛ نقطه با curve به‌صورت منحنی درجه دو کشیده می‌شود. */

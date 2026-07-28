@@ -8,6 +8,7 @@ use App\Models\PatternPiece;
 use App\Models\Project;
 use App\Models\Simulation;
 use App\Support\FabricProfile;
+use App\Support\Jalali;
 use App\Support\Measurements;
 
 /**
@@ -27,14 +28,16 @@ class FitAnalysisService
      * body: کلید اندازه‌ی بدن — kind: girth دور، width عرض، length قد
      * min: کمینه‌ی آزادی لازم برای راحتی — ideal: آزادی متعارف — loose: مرز گشادی
      * weight: وزن ناحیه در امتیاز نهایی
+     * paired: ناحیه‌ای که روی یک اندام است (آستین)، پس یک قطعه یک دور کامل می‌سازد
+     * pieces: آیا پهنای افقی قطعه در این ناحیه واقعاً همان دور لباس است
      */
     public const ZONES = [
         'bust' => ['label' => 'دور سینه', 'body' => 'bust', 'kind' => 'girth', 'min' => 2.0, 'ideal' => 6.0, 'loose' => 14.0, 'weight' => 20],
         'waist' => ['label' => 'دور کمر', 'body' => 'waist', 'kind' => 'girth', 'min' => 1.5, 'ideal' => 4.0, 'loose' => 12.0, 'weight' => 15],
         'hip' => ['label' => 'دور باسن', 'body' => 'hip', 'kind' => 'girth', 'min' => 2.0, 'ideal' => 6.0, 'loose' => 14.0, 'weight' => 18],
         'shoulder' => ['label' => 'عرض سرشانه', 'body' => 'shoulder_width', 'kind' => 'width', 'min' => -0.5, 'ideal' => 0.5, 'loose' => 3.0, 'weight' => 12],
-        'armhole' => ['label' => 'حلقه آستین', 'body' => 'armhole', 'kind' => 'girth', 'min' => 2.0, 'ideal' => 4.0, 'loose' => 10.0, 'weight' => 12],
-        'bicep' => ['label' => 'دور بازو', 'body' => 'bicep', 'kind' => 'girth', 'min' => 2.5, 'ideal' => 5.0, 'loose' => 12.0, 'weight' => 8],
+        'armhole' => ['label' => 'حلقه آستین', 'body' => 'armhole', 'kind' => 'girth', 'min' => 2.0, 'ideal' => 4.0, 'loose' => 10.0, 'weight' => 12, 'pieces' => false],
+        'bicep' => ['label' => 'دور بازو', 'body' => 'bicep', 'kind' => 'girth', 'min' => 2.5, 'ideal' => 5.0, 'loose' => 12.0, 'weight' => 8, 'paired' => true],
         'back' => ['label' => 'قد بالاتنه پشت', 'body' => 'back_length', 'kind' => 'length', 'min' => 0.0, 'ideal' => 1.5, 'loose' => 5.0, 'weight' => 8],
         'hem' => ['label' => 'دور پایین لباس', 'body' => 'hip', 'kind' => 'girth', 'min' => 2.0, 'ideal' => 8.0, 'loose' => 30.0, 'weight' => 7],
     ];
@@ -245,15 +248,17 @@ class FitAnalysisService
      */
     protected function garmentValue(Pattern $pattern, array $pieces, string $zone, array $def, array $body): array
     {
-        if ($def['kind'] === 'length') {
+        if (($def['pieces'] ?? true) === false) {
+            $fromPieces = null;   // خط افقی قطعه در این ناحیه معنی «دور» ندارد (مثل قوس حلقه آستین)
+        } elseif ($def['kind'] === 'length') {
             $fromPieces = $this->lengthFromPieces($pieces, $zone);
         } elseif ($def['kind'] === 'width') {
             $fromPieces = $this->widthFromPieces($pieces, $zone);
         } else {
-            $fromPieces = $this->girthFromPieces($pieces, $zone);
+            $fromPieces = $this->girthFromPieces($pieces, $zone, (bool) ($def['paired'] ?? false));
         }
 
-        if ($fromPieces !== null && $fromPieces > 0) {
+        if ($fromPieces !== null && $this->plausible($fromPieces, (float) ($body[$def['body']] ?? 0))) {
             return ['cm' => $fromPieces, 'source' => 'pieces'];
         }
 
@@ -265,6 +270,21 @@ class FitAnalysisService
         }
 
         return ['cm' => $base + $ease, 'source' => 'pattern'];
+    }
+
+    /**
+     * آیا عددِ درآمده از هندسه معقول است؟
+     *
+     * اگر نشانه‌های الگو معنای دیگری داشته باشند ممکن است عدد پرت دربیاید؛ در آن حالت
+     * به‌جای نمایش یک نتیجه‌ی نادرست، به اندازه‌های ثبت‌شده‌ی الگو برمی‌گردیم.
+     */
+    protected function plausible(float $value, float $bodyCm): bool
+    {
+        if ($value <= 0) {
+            return false;
+        }
+
+        return $bodyCm <= 0 || ($value >= $bodyCm * 0.45 && $value <= $bodyCm * 3);
     }
 
     /** آزادی ثبت‌شده‌ی الگو برای یک ناحیه. */
@@ -286,11 +306,11 @@ class FitAnalysisService
      *
      * @param  array<int, PatternPiece>  $pieces
      */
-    protected function girthFromPieces(array $pieces, string $zone): ?float
+    protected function girthFromPieces(array $pieces, string $zone, bool $paired = false): ?float
     {
         $relevant = $this->relevantPieces($pieces, $zone);
         $total = 0.0;
-        $found = false;
+        $covered = 0;
 
         foreach ($relevant as $piece) {
             $marker = $this->markerFor($piece, $zone);
@@ -305,11 +325,17 @@ class FitAnalysisService
                 continue;
             }
 
-            $found = true;
-            $total += $width * $this->pieceFactor($piece);
+            $covered++;
+            $total += $width * $this->pieceFactor($piece, $paired);
         }
 
-        return $found ? round($total, 1) : null;
+        // دور لباس فقط وقتی درست است که همه‌ی قطعه‌های آن ناحیه نشانه داشته باشند؛
+        // اگر مثلاً فقط قطعه‌ی پشت خط باسن داشته باشد، دور نصفه درمی‌آید.
+        if ($covered === 0 || $covered < count($relevant)) {
+            return null;
+        }
+
+        return round($total, 1);
     }
 
     /** @param  array<int, PatternPiece>  $pieces */
@@ -395,14 +421,22 @@ class FitAnalysisService
     }
 
     /**
-     * ضریب تعداد قطعه: قطعه‌ی روی دو لا دو برابر عرض دارد و قطعه‌ی قرینه دو عدد است.
+     * ضریب تعداد قطعه.
+     *
+     * قطعه‌ی روی دو لا دو برابر عرضِ رسم‌شده است و قطعه‌ی قرینه دو عدد بریده می‌شود.
+     * در ناحیه‌های اندامی (آستین) تعداد نصف می‌شود، چون آستین چپ و راست هر کدام دور
+     * بازوی خودشان را می‌سازند و جمع‌کردنشان دور را دو برابر نشان می‌دهد.
      */
-    protected function pieceFactor(PatternPiece $piece): float
+    protected function pieceFactor(PatternPiece $piece, bool $paired = false): float
     {
         $quantity = max(1, (int) $piece->cut_quantity);
 
         if ($piece->mirror && $quantity === 1) {
             $quantity = 2;
+        }
+
+        if ($paired) {
+            $quantity = max(1, $quantity / 2);
         }
 
         return $quantity * ($piece->on_fold ? 2 : 1);
@@ -748,6 +782,6 @@ class FitAnalysisService
     /** عدد فارسی با حداکثر یک رقم اعشار. */
     protected function fa(float $value): string
     {
-        return \App\Support\Jalali::digits(rtrim(rtrim(number_format($value, 1, '.', ''), '0'), '.'));
+        return Jalali::digits(rtrim(rtrim(number_format($value, 1, '.', ''), '0'), '.'));
     }
 }

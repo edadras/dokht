@@ -238,6 +238,70 @@ class SvgRenderer
         );
     }
 
+    /**
+     * یک «کاشی» از قطعه در اندازه واقعی، برای چاپ روی یک برگ کاغذ.
+     *
+     * پنجره در واحد سانتی‌متر داده می‌شود و اندازه بیرونی تصویر در میلی‌متر تولید
+     * می‌شود، پس چاپ بدون تغییر مقیاس دقیقاً یک‌به‌یک است. علامت‌های گوشه و شماره
+     * سطر و ستون برای چسباندن صفحه‌ها اضافه می‌شود.
+     */
+    public function renderTile(
+        PatternPiece $piece,
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        array $options = [],
+    ): string {
+        $body = $this->pieceGroup($piece, [
+            'seam_allowance' => $options['seam_allowance'] ?? true,
+            'labels' => $options['labels'] ?? true,
+            'size' => $options['size'] ?? null,
+        ]);
+
+        $marks = $this->alignmentMarks($x, $y, $width, $height);
+        $ruler = $this->scaleBar($x + 1.5, $y + $height - 1.5);
+
+        $tile = $options['tile'] ?? null;
+        $caption = '';
+
+        if (is_array($tile)) {
+            $caption = '<text x="'.$this->n($x + 1.5).'" y="'.$this->n($y + 1.8).'" font-size="1.5" fill="#78716c">'
+                .$this->escape(($options['title'] ?? '').'  |  ستون '.Jalali::digits((string) $tile['column'])
+                    .' از '.Jalali::digits((string) $tile['columns'])
+                    .' • سطر '.Jalali::digits((string) $tile['row']).' از '.Jalali::digits((string) $tile['rows']))
+                .'</text>';
+        }
+
+        return $this->document(
+            'width="'.$this->n($width * 10).'mm" height="'.$this->n($height * 10).'mm"',
+            $this->n($x).' '.$this->n($y).' '.$this->n($width).' '.$this->n($height),
+            $marks.$caption.$body.$ruler,
+        );
+    }
+
+    /** علامت‌های گوشه و خط برش کاغذ. */
+    protected function alignmentMarks(float $x, float $y, float $width, float $height): string
+    {
+        $corners = [
+            [$x + 0.5, $y + 0.5], [$x + $width - 0.5, $y + 0.5],
+            [$x + 0.5, $y + $height - 0.5], [$x + $width - 0.5, $y + $height - 0.5],
+        ];
+
+        $marks = '<rect x="'.$this->n($x + 0.5).'" y="'.$this->n($y + 0.5).'" width="'.$this->n($width - 1)
+            .'" height="'.$this->n($height - 1).'" fill="none" stroke="#d6d3d1" stroke-width="0.06" '
+            .'stroke-dasharray="1 1" />';
+
+        foreach ($corners as [$cx, $cy]) {
+            $marks .= '<line x1="'.$this->n($cx - 0.6).'" y1="'.$this->n($cy).'" x2="'.$this->n($cx + 0.6)
+                .'" y2="'.$this->n($cy).'" stroke="#78716c" stroke-width="0.08" />'
+                .'<line x1="'.$this->n($cx).'" y1="'.$this->n($cy - 0.6).'" x2="'.$this->n($cx).'" y2="'
+                .$this->n($cy + 0.6).'" stroke="#78716c" stroke-width="0.08" />';
+        }
+
+        return $marks;
+    }
+
     /** بندانگشتی کوچک برای فهرست‌ها. */
     public function thumbnail(Pattern $pattern, int $size = 220): string
     {

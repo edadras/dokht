@@ -1,15 +1,14 @@
 @php
     use App\Support\Format;
 
-    $verdictColors = [
-        'excellent' => 'emerald', 'good' => 'emerald', 'ok' => 'brand',
-        'fair' => 'amber', 'poor' => 'rose', 'bad' => 'rose',
-    ];
+    $verdictColors = ['suitable' => 'emerald', 'acceptable' => 'amber', 'unsuitable' => 'rose'];
 
-    $severityTypes = [
-        'error' => 'error', 'danger' => 'error', 'critical' => 'error',
-        'warning' => 'warning', 'info' => 'info', 'tip' => 'tip',
-    ];
+    $severityTypes = ['warning' => 'warning', 'suggestion' => 'tip', 'info' => 'info'];
+
+    // فقط قواعدی که به پارچه و برش مربوط‌اند در این مرحله به کار می‌آیند
+    $findings = collect($ruleFindings)
+        ->filter(fn ($f) => in_array($f['scope'] ?? '', ['fabric', 'cutting'], true))
+        ->take(4);
 @endphp
 
 <x-app-layout title="مرحله ۳ — انتخاب پارچه" wide>
@@ -18,7 +17,7 @@
 
     <x-step-nav :project="$project" current="3" />
 
-    @foreach ($ruleFindings as $finding)
+    @foreach ($findings as $finding)
         <x-alert :type="$severityTypes[$finding['severity'] ?? 'info'] ?? 'info'" :title="$finding['name'] ?? null"
             class="mb-4">
             {{ $finding['message'] ?? '' }}
@@ -64,6 +63,7 @@
 
                                 @if (is_numeric($score['overall'] ?? null))
                                     <x-badge :color="$verdictColors[$score['verdict'] ?? ''] ?? 'slate'">
+                                        {{ $score['verdict_label'] ?? '' }}
                                         {{ Format::number($score['overall']) }}
                                     </x-badge>
                                 @endif

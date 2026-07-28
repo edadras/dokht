@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\CuttingLayout;
 use App\Models\Customer;
+use App\Models\CuttingLayout;
 use App\Models\Fabric;
 use App\Models\GarmentType;
 use App\Models\MeasurementSet;

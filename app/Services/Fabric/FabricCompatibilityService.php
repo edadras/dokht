@@ -22,7 +22,7 @@ use Illuminate\Support\Collection;
  *   'drape'        => ['ideal' => 0.8, 'tolerance' => 0.25],
  *   'stiffness'    => ['ideal' => 0.2, 'tolerance' => 0.3],
  *   'weight_gsm'   => ['min' => 60, 'max' => 200],
- *   'stretch'      => ['min' => 0, 'max' => 30],   // بیشترین کشسانی به درصد
+ *   'stretch'      => ['min' => 0, 'max' => 30],   // بیشترین کشسانی به درصد (کلید stretch_weft هم پذیرفته است)
  *   'transparency' => ['max' => 0.3],
  *   'difficulty'   => ['max' => 0.7],
  *   'families'     => ['woven', 'knit'],
@@ -305,9 +305,11 @@ class FabricCompatibilityService
 
     protected function stretchCriterion(FabricProfile $profile, array $prefs, string $garmentName): array
     {
+        // هم کلید stretch و هم stretch_weft پذیرفته می‌شود تا با تنظیم انواع لباس بخواند
+        $range = $prefs['stretch'] ?? $prefs['stretch_weft'] ?? [];
         $value = $profile->maxStretch();
-        $min = (float) ($prefs['stretch']['min'] ?? 0);
-        $max = (float) ($prefs['stretch']['max'] ?? 40);
+        $min = (float) ($range['min'] ?? 0);
+        $max = (float) ($range['max'] ?? 40);
 
         $score = match (true) {
             $value < $min => (int) round(max(0, 100 - (($min - $value) / max(1, $min)) * 60)),

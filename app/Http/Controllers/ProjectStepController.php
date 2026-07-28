@@ -12,6 +12,7 @@ use App\Models\Project;
 use App\Models\Simulation;
 use App\Services\Fit\FitAnalysisService;
 use App\Services\Simulation\ClothPreviewService;
+use App\Support\Jalali;
 use App\Support\Measurements;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -725,7 +726,7 @@ class ProjectStepController extends Controller
         }
 
         try {
-            $suggested = app($service)->suggest($pattern);
+            $suggested = $service::suggest($pattern);
         } catch (\Throwable) {
             return [];
         }
@@ -756,7 +757,7 @@ class ProjectStepController extends Controller
             $count = max(1, count($piece->points()));
 
             for ($edge = 0; $edge < min($count, 12); $edge++) {
-                $options[$piece->code.':'.$edge] = $piece->name.' — لبه '.\App\Support\Jalali::digits($edge + 1);
+                $options[$piece->code.':'.$edge] = $piece->name.' — لبه '.Jalali::digits($edge + 1);
             }
         }
 

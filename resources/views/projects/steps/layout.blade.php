@@ -2,22 +2,19 @@
     use App\Support\Format;
     use App\Support\Jalali;
 
-    // خواندن مقاوم یک درز؛ ماژول الگو ممکن است کلیدهای کمی متفاوت بدهد
-    $describe = function (array $relation) use ($pieces) {
-        $name = fn ($code) => $pieces->firstWhere('code', $code)?->name ?? $code;
-        $from = $relation['from_piece'] ?? ($relation['from'] ?? '—');
-        $to = $relation['to_piece'] ?? ($relation['to'] ?? '—');
-        $fromEdge = $relation['from_edge'] ?? null;
-        $toEdge = $relation['to_edge'] ?? null;
+    // خواندن مقاوم یک درز؛ هم شکل تخت (from_piece/from_edge) و هم شکل تودرتو (from.piece)
+    $side = function ($value, $edge) use ($pieces) {
+        $code = is_array($value) ? $value['piece'] ?? '—' : ($value ?? '—');
+        $edge = is_array($value) ? $value['edge'] ?? $edge : $edge;
+        $name = $pieces->firstWhere('code', $code)?->name ?? $code;
 
-        return trim(
-            $name(is_array($from) ? $from['piece'] ?? '—' : $from).
-            ($fromEdge !== null ? ' (لبه '.Jalali::digits((int) $fromEdge + 1).')' : '').
-            ' ← '.
-            $name(is_array($to) ? $to['piece'] ?? '—' : $to).
-            ($toEdge !== null ? ' (لبه '.Jalali::digits((int) $toEdge + 1).')' : '')
-        );
+        return $name.($edge !== null ? ' (لبه '.\App\Support\Jalali::digits((int) $edge + 1).')' : '');
     };
+
+    $describe = fn (array $relation) => $relation['label']
+        ?? $side($relation['from_piece'] ?? ($relation['from'] ?? null), $relation['from_edge'] ?? null).
+            ' ← '.
+            $side($relation['to_piece'] ?? ($relation['to'] ?? null), $relation['to_edge'] ?? null);
 @endphp
 
 <x-app-layout title="مرحله ۶ — چیدمان دوبعدی" wide>

@@ -10,6 +10,7 @@ use App\Models\Pattern;
 use App\Models\PatternTemplate;
 use App\Models\Project;
 use App\Models\Workshop;
+use App\Services\Pattern\PatternBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -296,30 +297,69 @@ class ProjectStepTest extends TestCase
         $this->assertNotNull($project->simulations()->first()->fit_score);
     }
 
-    public function test_generating_a_pattern_without_the_pattern_module_fails_gracefully(): void
+    /** الگوی پایه‌ای که تولیدکننده‌اش در ماژول الگو موجود است. */
+    protected function template(Project $project, string $generator = 'bodice_block'): PatternTemplate
     {
-        $project = $this->readyProject(['pattern_id' => null]);
-
-        $template = PatternTemplate::create([
+        return PatternTemplate::create([
             'garment_type_id' => $project->garment_type_id,
-            'code' => 'basic-bodice',
-            'name_fa' => 'بالاتنه پایه',
-            'generator' => 'bodice',
+            'code' => 'test-'.$generator,
+            'name_fa' => 'الگوی پایه آزمون',
+            'generator' => $generator,
             'is_public' => true,
         ]);
+    }
+
+    public function test_generating_a_pattern_attaches_it_and_moves_to_the_seam_step(): void
+    {
+        $project = $this->readyProject(['pattern_id' => null]);
+        $template = $this->template($project);
 
         $response = $this->post(route('projects.pattern.generate', $project), [
             'pattern_template_id' => $template->id,
         ]);
 
-        if (class_exists(\App\Services\Pattern\PatternBuilder::class)) {
-            $response->assertRedirect(route('projects.step', [$project, 'seam']));
-            $this->assertNotNull($project->fresh()->pattern_id);
+        // اگر ماژول الگو در دسترس نباشد باید بی‌خطا و با پیام فارسی برگردد
+        if (! class_exists(PatternBuilder::class)) {
+            $response->assertRedirect()->assertSessionHas('error');
+            $this->assertNull($project->fresh()->pattern_id);
 
             return;
         }
 
-        $response->assertRedirect()->assertSessionHas('error');
+        $response->assertRedirect(route('projects.step', [$project, 'seam']))->assertSessionHas('status');
+
+        $project->refresh();
+
+        $this->assertNotNull($project->pattern_id);
+        $this->assertSame($this->workshop()->id, $project->pattern->workshop_id);
+        $this->assertTrue($project->pattern->pieces()->exists());
+
+        // با هندسه‌ی واقعی الگو هم همه‌ی مراحل باید سالم رندر شوند
+        foreach (Project::STEPS as $step) {
+            $this->get(route('projects.step', [$project, $step['key']]))->assertOk();
+        }
+
+        // و تحلیل تناسب باید بتواند اندازه‌ی لباس را از خود قطعه‌ها دربیاورد
+        $this->post(route('projects.simulate', $project), ['pose' => 'stand'])->assertRedirect();
+
+        $zones = $project->simulations()->first()->zones;
+
+        $this->assertNotEmpty($zones);
+
+        foreach ($zones as $zone) {
+            $this->assertGreaterThan(0, $zone['garment_cm'], "ناحیه {$zone['key']} اندازه ندارد.");
+        }
+    }
+
+    public function test_generating_a_pattern_with_an_unknown_generator_fails_gracefully(): void
+    {
+        $project = $this->readyProject(['pattern_id' => null]);
+        $template = $this->template($project, 'not-a-real-generator');
+
+        $this->post(route('projects.pattern.generate', $project), ['pattern_template_id' => $template->id])
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
         $this->assertNull($project->fresh()->pattern_id);
     }
 

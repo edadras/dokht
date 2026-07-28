@@ -6,6 +6,7 @@ use App\Models\Project;
 use App\Models\Simulation;
 use App\Services\Fit\FitAnalysisService;
 use App\Services\Simulation\ClothPreviewService;
+use App\Support\Jalali;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -113,14 +114,14 @@ class SimulationController extends Controller
         $tight = collect($simulation->zones ?? [])->where('level', 'tight')->count();
 
         $summary = 'شبیه‌سازی در حالت «'.$simulation->poseLabel().'» انجام شد؛ امتیاز تناسب '
-            .\App\Support\Jalali::digits((string) $simulation->fit_score).' از ۱۰۰.';
+            .Jalali::digits((string) $simulation->fit_score).' از ۱۰۰.';
 
         if ($tight > 0) {
-            return $summary.' '.\App\Support\Jalali::digits((string) $tight).' ناحیه تنگ است و باید اصلاح شود.';
+            return $summary.' '.Jalali::digits((string) $tight).' ناحیه تنگ است و باید اصلاح شود.';
         }
 
         if ($problems > 0) {
-            return $summary.' '.\App\Support\Jalali::digits((string) $problems).' نکته برای بررسی هست.';
+            return $summary.' '.Jalali::digits((string) $problems).' نکته برای بررسی هست.';
         }
 
         return $summary.' هیچ مشکل مهمی پیدا نشد.';

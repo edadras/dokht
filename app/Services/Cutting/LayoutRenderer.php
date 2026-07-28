@@ -55,10 +55,11 @@ class LayoutRenderer
             ? $this->printSize($viewWidth, $viewHeight, $options)
             : ['attributes' => 'style="width:100%;height:auto" class="max-w-full"', 'scale' => null];
 
+        // یادداشت مقیاس در گوشه خالی بالای خط‌کش می‌نشیند
         $scaleNote = $print && $size['scale']
             ? $this->text(
                 -static::GUTTER + 0.5,
-                $length + static::MARGIN + $legendHeight,
+                -1.2,
                 'مقیاس ۱ به '.Jalali::digits((string) $size['scale']),
                 ['size' => 2, 'fill' => '#78716c', 'anchor' => 'start'],
             )
@@ -375,7 +376,7 @@ class LayoutRenderer
     {
         return sprintf(
             '<text x="%s" y="%s" font-size="%s" fill="%s" text-anchor="%s" font-weight="%s" '
-            .'font-family="Vazirmatn, Tahoma, sans-serif" direction="rtl">%s</text>',
+            .'font-family="Vazirmatn, Tahoma, sans-serif">%s</text>',
             $this->num($x),
             $this->num($y),
             $this->num($options['size'] ?? 2.4),

@@ -1,13 +1,12 @@
 @php
     use App\Support\Format;
 
-    $severityTypes = [
-        'error' => 'error', 'danger' => 'error', 'critical' => 'error',
-        'warning' => 'warning', 'info' => 'info', 'tip' => 'tip',
-    ];
+    $severityTypes = ['warning' => 'warning', 'suggestion' => 'tip', 'info' => 'info'];
 
-    // پیشنهادهای موتور قواعد که مربوط به جای دوخت هستند
-    $suggestions = collect($ruleFindings)->filter(fn ($f) => ! empty($f['actions']));
+    // پیشنهادهای موتور قواعد که به الگو و دوخت مربوط‌اند
+    $suggestions = collect($ruleFindings)
+        ->filter(fn ($f) => in_array($f['scope'] ?? '', ['pattern', 'production', 'fit'], true))
+        ->take(4);
 @endphp
 
 <x-app-layout title="مرحله ۵ — جای دوخت">
