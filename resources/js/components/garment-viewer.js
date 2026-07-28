@@ -1,5 +1,3 @@
-import * as THREE from 'three';
-
 /*
  * نمای سه‌بعدی لباس روی مانکن.
  *
@@ -13,6 +11,18 @@ import * as THREE from 'three';
  */
 
 const RAD = Math.PI / 180;
+
+/*
+ * کتابخانه سه‌بعدی فقط زمانی دانلود می‌شود که کاربر به صفحه نمای سه‌بعدی برسد؛
+ * بقیه صفحه‌ها نباید هزینه این حجم را بپردازند.
+ */
+let THREE = null;
+
+const loadThree = async () => {
+    THREE ??= await import('three');
+
+    return THREE;
+};
 
 /* تبدیل دور (سانتی‌متر) به شعاع در مقیاس صحنه (متر) */
 const radius = (girthCm) => Math.max(0.02, girthCm / (2 * Math.PI) / 100);
@@ -44,14 +54,25 @@ export default (config = {}) => ({
     pose: config.pose || 'stand',
     payload: config.payload || {},
 
+    loading: true,
+
     init() {
         if (!this.hasWebGl()) {
             this.supported = false;
+            this.loading = false;
 
             return;
         }
 
-        this.$nextTick(() => this.build());
+        loadThree()
+            .then(() => {
+                this.loading = false;
+                this.$nextTick(() => this.build());
+            })
+            .catch(() => {
+                this.supported = false;
+                this.loading = false;
+            });
     },
 
     destroy() {
