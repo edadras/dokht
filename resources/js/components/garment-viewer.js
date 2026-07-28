@@ -4,7 +4,8 @@
  * این فایل چهار کار انجام می‌دهد:
  *   ۱) از اندازه‌های بدن یک مانکن پارامتری می‌سازد (تن، گردن، سر، دست‌ها، پاها).
  *   ۲) روی همان مانکن لباسی می‌پوشاند که فرم و قدش از الگو می‌آید.
- *   ۳) با یک پاس ساده پارچه را «می‌نشاند» تا افتادگی و چین آن دیده شود.
+ *   ۳) پارچه را به یک حل‌کننده‌ی واقعی می‌سپارد: لباس زیر وزن خودش می‌افتد، به
+ *      بدن برخورد می‌کند و با تغییر حالت دوباره روی بدن می‌نشیند.
  *   ۴) نواحی تنگ و گشاد را با رنگ روی لباس نشان می‌دهد.
  *
  * نکتهٔ کلیدی شکل‌گیری: بدن و لباس هر دو از یک جدول مشترک «مقطع بدن» ساخته
@@ -12,6 +13,16 @@
  * جدا از هم؛ چون بدن از پهلو گشاد و از جلو به عقب باریک است و سرشانه پهن ولی
  * کم‌عمق است. لباس همان جدول را با «آزادی» هر ناحیه می‌خواند، پس هیچ‌وقت از بدن
  * جدا نمی‌افتد و هیچ‌وقت هم داخل بدن فرو نمی‌رود.
+ *
+ * همان جدول، عیناً به حل‌کننده هم داده می‌شود تا برخوردگرهای بدن ساخته شوند؛
+ * برای همین چیزی که کاربر می‌بیند دقیقاً همان چیزی است که پارچه با آن برخورد
+ * می‌کند.
+ *
+ * فضای مختصات پارچه: لباس‌ها بعد از ساخته شدن از گروه بدن جدا و مستقیم به صحنه
+ * وصل می‌شوند، یعنی رأس‌هایشان در فضای جهانی‌اند. فقط رأس‌های «دوخته‌شده»
+ * (سرشانه، کمربند، سرِ آستین) هر فریم از روی ماتریس همان گروه بدن جابه‌جا
+ * می‌شوند و بقیه‌ی پارچه دنبالشان می‌افتد. همین است که تغییر حالت به‌جای پرش،
+ * یک افتادن نرم چندصد میلی‌ثانیه‌ای دیده می‌شود.
  *
  * هیچ کتابخانه‌ی کمکی لازم نیست؛ چرخش با ماوس هم دستی نوشته شده است.
  */
@@ -21,11 +32,16 @@ const RAD = Math.PI / 180;
 /* کمترین فاصلهٔ پارچه از پوست (متر)؛ جلوی فرورفتن لباس در بدن را می‌گیرد */
 const SKIN_GAP = 0.006;
 
+/* مدت گذر نرم از یک حالت بدن به حالت بعد (ثانیه) */
+const POSE_DURATION = 0.45;
+
 /*
  * کتابخانه سه‌بعدی فقط زمانی دانلود می‌شود که کاربر به صفحه نمای سه‌بعدی برسد؛
- * بقیه صفحه‌ها نباید هزینه این حجم را بپردازند.
+ * بقیه صفحه‌ها نباید هزینه این حجم را بپردازند. حل‌کننده‌ی پارچه هم با همان
+ * درخواست می‌آید تا بستهٔ اصلی سنگین‌تر نشود.
  */
 let THREE = null;
+let CLOTH = null;
 
 /*
  * اشیای three بیرون از حالت واکنشی آلپاین نگه داشته می‌شوند.
@@ -33,6 +49,9 @@ let THREE = null;
  * اگر یک شیء three از داخل دادهٔ آلپاین خوانده شود، در یک Proxy واکنشی پیچیده
  * می‌شود و three روی ویژگی‌های فقط‌خواندنی مثل modelViewMatrix خطا می‌دهد و صحنه
  * سیاه می‌ماند. WeakMap زیر همین مسیر را دور می‌زند.
+ *
+ * کلید نقشه همیشه ریشه‌ی کامپوننت است ($root نه $el)؛ چون آلپاین داخل شنونده‌ی
+ * رویداد، $el را برابر همان دکمه‌ای می‌گذارد که کلیک شده و نه ریشه‌ی x-data.
  */
 const contexts = new WeakMap();
 
@@ -46,6 +65,18 @@ const contextFor = (element) => {
 
 const loadThree = async () => {
     THREE ??= await import('three');
+
+    /*
+     * اگر به هر دلیلی حل‌کننده نیامد، صفحه نباید بمیرد: لباس ایستا نمایش داده
+     * می‌شود و فقط شبیه‌سازی زنده در دسترس نیست.
+     */
+    if (! CLOTH) {
+        try {
+            CLOTH = await import('../lib/cloth-solver');
+        } catch (error) {
+            CLOTH = null;
+        }
+    }
 
     return THREE;
 };
@@ -116,6 +147,7 @@ export default (config = {}) => ({
     supported: true,
     autoRotate: false,
     showZones: true,
+    liveSim: true,
     pose: config.pose || 'stand',
     payload: config.payload || {},
 
@@ -170,7 +202,7 @@ export default (config = {}) => ({
             return;
         }
 
-        const ctx = contextFor(this.$el);
+        const ctx = contextFor(this.$root);
         const width = stage.clientWidth || 480;
         const height = stage.clientHeight || 360;
 
@@ -197,6 +229,7 @@ export default (config = {}) => ({
 
         this.addLights();
         this.buildModel();
+        this.buildCloth();
         this.applyPose(this.pose);
         this.updateCamera();
         this.bindPointer();
@@ -206,7 +239,7 @@ export default (config = {}) => ({
 
     /* نور: یک نور اصلی نرم، یک نور پرکننده و کمی نور محیط */
     addLights() {
-        const ctx = contextFor(this.$el);
+        const ctx = contextFor(this.$root);
 
         ctx.scene.add(new THREE.HemisphereLight('#fdf6ee', '#3f3a35', 0.85));
 
@@ -234,7 +267,7 @@ export default (config = {}) => ({
      * پس با تغییر دور سینه یا باسن، شکل مانکن به‌چشم عوض می‌شود.
      */
     buildModel() {
-        const ctx = contextFor(this.$el);
+        const ctx = contextFor(this.$root);
         const avatar = this.payload.avatar || {};
         const H = (avatar.height || 165) / 100;
 
@@ -438,7 +471,7 @@ export default (config = {}) => ({
      *     می‌دانند تا کجا می‌توانند تنگ شوند.
      */
     bodyProfile() {
-        const ctx = contextFor(this.$el);
+        const ctx = contextFor(this.$root);
         const level = ctx.level;
         const r = ctx.radii;
 
@@ -468,14 +501,14 @@ export default (config = {}) => ({
 
     /* مقطع بدن (نیم‌پهنا و نیم‌عمق) در ارتفاع دلخواه */
     bodyAt(y) {
-        const [rx, rz] = sample(contextFor(this.$el).profile, y);
+        const [rx, rz] = sample(contextFor(this.$root).profile, y);
 
         return { rx, rz };
     },
 
     /* شعاع بازو در ارتفاع محلیِ گروه دست (۰ روی سرشانه، منفی به سمت مچ) */
     armAt(y) {
-        return sample(contextFor(this.$el).armTable, y)[0];
+        return sample(contextFor(this.$root).armTable, y)[0];
     },
 
     /* ------------------------------------------------------------------
@@ -566,7 +599,7 @@ export default (config = {}) => ({
      * لباس
      * ------------------------------------------------------------------ */
     buildGarment() {
-        const ctx = contextFor(this.$el);
+        const ctx = contextFor(this.$root);
         const garment = this.payload.garment || {};
         const fabric = this.payload.fabric || {};
         const physics = fabric.physics || {};
@@ -579,6 +612,7 @@ export default (config = {}) => ({
         ctx.zoneMaterial = this.fabricMaterial(fabric, true);
         ctx.disposables.push(ctx.fabricMaterial, ctx.zoneMaterial);
         ctx.garmentMeshes = [];
+        ctx.garmentPatches = [];
 
         const drape = this.drapeOf(fabric, physics);
 
@@ -689,6 +723,12 @@ export default (config = {}) => ({
                     y,
                     ...shellAt(y, bodiceHemY),
                     free: clamp((support - y) / Math.max(0.12, support - bodiceHemY), 0, 1),
+                    /*
+                     * «دوخته» یعنی این حلقه با بدن حرکت می‌کند و حل‌کننده تکانش
+                     * نمی‌دهد. سرشانه و کارور بالای حلقه‌ی آستین روی بدن سوارند؛
+                     * از آنجا به پایین پارچه آزاد است و خودش می‌افتد.
+                     */
+                    pin: y >= level.armhole,
                 });
             }
 
@@ -713,6 +753,7 @@ export default (config = {}) => ({
                     bodyRx: body.rx,
                     bodyRz: body.rz,
                     free: 0,
+                    pin: true,
                 });
             }
 
@@ -724,6 +765,7 @@ export default (config = {}) => ({
                 bodyRx: r.neck,
                 bodyRz: r.neck,
                 free: 0,
+                pin: true,
             });
 
             this.addGarmentMesh(this.settle(rings, drape), drape, 72, 'body');
@@ -744,6 +786,8 @@ export default (config = {}) => ({
                     y,
                     ...shellAt(y, hemY),
                     free: clamp((topY - y) / Math.max(0.1, topY - hemY), 0, 1),
+                    // دامن فقط از خط کمر آویزان است؛ بقیه‌اش دست حل‌کننده
+                    pin: i === steps,
                 });
             }
 
@@ -759,6 +803,7 @@ export default (config = {}) => ({
                         bodyRx: top.bodyRx,
                         bodyRz: top.bodyRz,
                         free: 0,
+                        pin: true,
                     });
                 });
             }
@@ -798,6 +843,8 @@ export default (config = {}) => ({
                     bodyRx: arm,
                     bodyRz: arm * 0.95,
                     free: (1 - t) * 0.85,
+                    // فقط بالاترین حلقه‌ی بدنه‌ی آستین به حلقه‌ی آستین دوخته است
+                    pin: i === steps,
                 });
             }
 
@@ -819,6 +866,7 @@ export default (config = {}) => ({
                     bodyRx: 0,
                     bodyRz: 0,
                     free: 0,
+                    pin: true,
                 });
             });
 
@@ -832,18 +880,37 @@ export default (config = {}) => ({
         this.applyZoneMaterial();
     },
 
-    /* حلقه‌های نشسته را به مش تبدیل می‌کند، رنگ نواحی را می‌زند و به صحنه می‌افزاید */
+    /*
+     * حلقه‌های نشسته را به مش تبدیل می‌کند، رنگ نواحی را می‌زند و به صحنه می‌افزاید.
+     *
+     * مش موقتاً فرزند همان گروه بدن می‌شود تا مختصاتش با بقیه‌ی مدل هم‌خوان بماند؛
+     * buildCloth بعداً آن را به فضای جهانی می‌برد و به حل‌کننده می‌سپارد.
+     */
     addGarmentMesh(rings, drape, segments, kind, parent = null) {
-        const ctx = contextFor(this.$el);
+        const ctx = contextFor(this.$root);
         const geometry = this.ringSurface(rings.map((spec) => this.ringPoints(spec, segments, drape)));
 
         this.paintZones(geometry, kind);
 
         const mesh = new THREE.Mesh(geometry, ctx.fabricMaterial);
+        const group = parent || ctx.torso;
 
-        (parent || ctx.torso).add(mesh);
+        group.add(mesh);
         ctx.disposables.push(geometry);
         ctx.garmentMeshes.push(mesh);
+
+        // نقشه‌ی دوخت: کدام رأس روی بدن سوار است و کدام آزاد
+        const pinned = new Uint8Array(rings.length * segments);
+
+        rings.forEach((spec, row) => {
+            if (! spec.pin) {
+                return;
+            }
+
+            pinned.fill(1, row * segments, (row + 1) * segments);
+        });
+
+        ctx.garmentPatches.push({ mesh, geometry, group, rows: rings.length, segments, pinned });
 
         return mesh;
     },
@@ -867,13 +934,197 @@ export default (config = {}) => ({
     },
 
     /* ------------------------------------------------------------------
-     * نشستن پارچه
+     * حل‌کننده‌ی پارچه
      * ------------------------------------------------------------------
-     * حل‌کننده‌ی واقعی نداریم؛ سه اثر از شناسنامه‌ی فیزیکی پارچه ساخته می‌شود:
+     * اینجا لباسِ ساخته‌شده به یک سیستم ذره‌ای تبدیل می‌شود:
+     *   • هر رأس یک ذره است؛ رأس‌های سرشانه/کمربند/سرِ آستین جرمِ بی‌نهایت دارند
+     *     (w = 0) و با بدن حرکت می‌کنند.
+     *   • طول استراحت قیدها از همان هندسه‌ی دوخته‌شده گرفته می‌شود، پس فرم الگو
+     *     نقطه‌ی تعادل شبیه‌سازی است و لباس از ریخت نمی‌افتد.
+     *   • بدن به چند «برخوردگر» تبدیل می‌شود که مستقیم از جدول مقطع بدن و
+     *     شعاع اندام‌ها می‌آیند؛ پس ران هیچ‌وقت از دامن بیرون نمی‌زند.
+     */
+    buildCloth() {
+        const ctx = contextFor(this.$root);
+
+        ctx.cloth = [];
+        ctx.colliders = [];
+
+        if (! CLOTH || ! (ctx.garmentPatches || []).length) {
+            return;
+        }
+
+        // ماتریس‌ها باید تازه باشند تا تبدیل به فضای جهانی درست دربیاید
+        ctx.root.updateMatrixWorld(true);
+        ctx.tmpMatrix = new THREE.Matrix4();
+
+        ctx.world = new CLOTH.ClothWorld({
+            fabric: this.payload.fabric || {},
+            skin: SKIN_GAP,
+        });
+
+        ctx.garmentPatches.forEach((item) => {
+            const positions = item.geometry.attributes.position.array;
+            const point = new THREE.Vector3();
+
+            // بردن رأس‌ها از فضای گروه بدن به فضای جهانی و جدا کردن مش از بدن
+            for (let i = 0; i < positions.length; i += 3) {
+                point.set(positions[i], positions[i + 1], positions[i + 2]).applyMatrix4(item.group.matrixWorld);
+                positions[i] = point.x;
+                positions[i + 1] = point.y;
+                positions[i + 2] = point.z;
+            }
+
+            ctx.scene.add(item.mesh);
+            item.mesh.matrixAutoUpdate = false;
+            item.mesh.matrix.identity();
+            item.mesh.matrixWorld.identity();
+            // پارچه مدام جابه‌جا می‌شود؛ کره‌ی مرزیِ کهنه نباید باعث حذف آن شود
+            item.mesh.frustumCulled = false;
+
+            const patch = ctx.world.addPatch(
+                new CLOTH.ClothPatch({
+                    positions,
+                    rows: item.rows,
+                    segments: item.segments,
+                    pinned: item.pinned,
+                    fabric: ctx.world.law,
+                }),
+            );
+
+            ctx.tmpMatrix.copy(item.group.matrixWorld).invert();
+            patch.capturePins(ctx.tmpMatrix.elements);
+
+            item.geometry.attributes.position.needsUpdate = true;
+            ctx.cloth.push({ patch, group: item.group, geometry: item.geometry });
+        });
+
+        this.buildColliders();
+        ctx.world.setColliders(ctx.colliders.map((entry) => entry.collider));
+        this.refreshColliders();
+    },
+
+    /*
+     * برخوردگرهای بدن.
+     *
+     * هرکدام یک «استوانه‌ی بیضویِ کشیده» روی محور Y محلیِ گروهی است که به آن وصل
+     * است؛ پس با چرخیدن ران یا بازو، خودِ برخوردگر هم می‌چرخد و لازم نیست چیزی
+     * دوباره ساخته شود.
+     *
+     * تن از همان bodyProfile می‌آید (از فاق به بالا؛ پایین‌تر از فاق کارِ پاهاست).
+     */
+    buildColliders() {
+        const ctx = contextFor(this.$root);
+        const level = ctx.level;
+        const r = ctx.radii;
+        const H = (this.payload.avatar?.height || 165) / 100;
+        const add = (group, sections, name, caps = {}) => {
+            ctx.colliders.push({
+                group,
+                collider: new CLOTH.Collider({ sections, name, ...caps }),
+            });
+        };
+
+        add(
+            ctx.torso,
+            ctx.profile.filter(([y]) => y >= level.crotch - 1e-6).map(([y, rx, rz]) => [y, rx, rz]),
+            'torso',
+        );
+
+        add(
+            ctx.torso,
+            [
+                [level.neck - 0.02, r.neck * 1.05, r.neck * 1.05],
+                [level.chin, r.neck * 0.92, r.neck * 0.92],
+            ],
+            'neck',
+        );
+
+        // سر: کره‌ی کشیده‌ی مانکن با سه مقطع تقریب زده می‌شود
+        const headR = (H - level.chin) * 0.62;
+        const headY = level.chin + (H - level.chin) * 0.55;
+
+        add(
+            ctx.torso,
+            [
+                [headY - headR * 0.95, headR * 0.86 * 0.45, headR * 0.9 * 0.45],
+                [headY, headR * 0.86, headR * 0.9],
+                [headY + headR * 0.95, headR * 0.86 * 0.45, headR * 0.9 * 0.45],
+            ],
+            'head',
+        );
+
+        // بازوها: از مچ تا سرِ گردِ شانه (همان جدولی که خود بازو از آن ساخته شد)
+        const armLength = ctx.armLength;
+
+        [
+            [ctx.armL, 'armL'],
+            [ctx.armR, 'armR'],
+        ].forEach(([group, name]) => {
+            add(
+                group,
+                [
+                    [-armLength - r.wrist * 0.5, r.wrist * 1.1, r.wrist * 1.1],
+                    [-armLength * 0.55, r.bicep * 0.74, r.bicep * 0.74],
+                    [-armLength * 0.12, r.bicep * 1.02, r.bicep * 1.02],
+                    [0, r.bicep * 1.06, r.bicep * 1.06],
+                    [r.bicep * 0.5, r.bicep * 0.86, r.bicep * 0.86],
+                ],
+                name,
+            );
+        });
+
+        // ران‌ها و ساق‌ها؛ همان نقطه‌های چرخانه‌های پا با کمی گشادی
+        const thighDrop = level.crotch - level.knee;
+        const shinDrop = level.knee - level.ankle;
+
+        [
+            [ctx.legL, ctx.kneeL, 'L'],
+            [ctx.legR, ctx.kneeR, 'R'],
+        ].forEach(([leg, knee, side]) => {
+            add(
+                leg,
+                [
+                    [-thighDrop, r.knee * 1.02, r.knee * 1.02],
+                    [-thighDrop * 0.5, r.thigh * 0.84, r.thigh * 0.84],
+                    [-0.02, r.thigh * 1.02, r.thigh * 1.02],
+                    [0, r.thigh * 1.04, r.thigh * 1.04],
+                ],
+                'thigh' + side,
+            );
+
+            add(
+                knee,
+                [
+                    [-shinDrop, r.ankle * 1.1, r.ankle * 1.1],
+                    [-shinDrop * 0.6, r.ankle * 1.42, r.ankle * 1.42],
+                    [0, r.knee * 0.98, r.knee * 0.98],
+                ],
+                'shin' + side,
+            );
+        });
+    },
+
+    /* ماتریس جهانی هر برخوردگر و جعبه‌ی مرزی‌اش را تازه می‌کند (یک بار در فریم) */
+    refreshColliders() {
+        const ctx = contextFor(this.$root);
+
+        (ctx.colliders || []).forEach(({ group, collider }) => {
+            ctx.tmpMatrix.copy(group.matrixWorld).invert();
+            collider.setTransform(group.matrixWorld.elements, ctx.tmpMatrix.elements, 0.03);
+        });
+    },
+
+    /* ------------------------------------------------------------------
+     * شکل اولیه‌ی پارچه پیش از تحویل به حل‌کننده
+     * ------------------------------------------------------------------
+     * حل‌کننده از یک نقطه‌ی شروع خوب سریع‌تر می‌نشیند، پس همان سه اثر قدیمی
+     * به‌عنوان «فرم اولیه» می‌مانند:
      *   • چسبیدن  (cling) پارچه‌ی لخت خودش را به بدن می‌چسباند.
      *   • افتادگی (sag)   وزن پارچه لبه را پایین می‌کشد.
      *   • چین     (fold)  نرمی خمش، موج‌های عمودی می‌سازد.
-     * پس حریر موج می‌خورد و به بدن می‌نشیند ولی گاباردین صاف و ایستا می‌ماند.
+     * این موج‌های ریز تقارن استوانه را هم می‌شکنند؛ بدون آن‌ها پارچه‌ی لخت
+     * هیچ‌وقت تصمیم نمی‌گیرد به کدام سمت چین بخورد.
      */
     drapeOf(fabric, physics) {
         const drape = clamp(fabric.drape ?? 0.5, 0, 1);
@@ -919,7 +1170,7 @@ export default (config = {}) => ({
      * رنگ‌آمیزی نواحی تناسب روی لباس
      * ------------------------------------------------------------------ */
     paintZones(geometry, kind) {
-        const level = contextFor(this.$el).level;
+        const level = contextFor(this.$root).level;
         const map = {};
 
         this.zones.forEach((zone) => {
@@ -987,7 +1238,7 @@ export default (config = {}) => ({
     },
 
     applyZoneMaterial() {
-        const ctx = contextFor(this.$el);
+        const ctx = contextFor(this.$root);
 
         (ctx.garmentMeshes || []).forEach((mesh) => {
             mesh.material = this.showZones ? ctx.zoneMaterial : ctx.fabricMaterial;
@@ -999,34 +1250,103 @@ export default (config = {}) => ({
         this.applyZoneMaterial();
     },
 
+    /* شبیه‌سازی زنده: خاموش که باشد، پارچه در همان حالتِ فعلی یخ می‌زند */
+    toggleLive() {
+        this.liveSim = !this.liveSim;
+
+        const ctx = contextFor(this.$root);
+
+        if (ctx.world) {
+            ctx.world.enabled = this.liveSim;
+
+            if (this.liveSim) {
+                ctx.world.wake();
+            }
+        }
+    },
+
     /* ------------------------------------------------------------------
      * حالت‌های بدن
-     * ------------------------------------------------------------------ */
+     * ------------------------------------------------------------------
+     * تغییر حالت پرشی نیست: زاویه‌ها در طول POSE_DURATION از حالت فعلی به حالت
+     * تازه می‌روند. پارچه چون فقط از رأس‌های دوخته‌شده کشیده می‌شود، خودش با
+     * تأخیر دنبال بدن می‌افتد و همان «دوباره نشستن» دیده می‌شود.
+     */
+    poseAngles(pose) {
+        return {
+            spin: 0,
+            drop: 0,
+            torso: 0,
+            armL: 0,
+            armR: 0,
+            armLZ: -8,
+            armRZ: 8,
+            legL: 0,
+            legR: 0,
+            knee: 0,
+            ...(POSES[pose] || {}),
+        };
+    },
+
     setPose(pose) {
         this.pose = pose;
         this.applyPose(pose);
     },
 
     applyPose(pose) {
-        const ctx = contextFor(this.$el);
+        const ctx = contextFor(this.$root);
 
-        if (!ctx.root) {
+        if (! ctx.root) {
             return;
         }
 
-        const p = POSES[pose] || {};
+        ctx.poseNow ??= this.poseAngles('stand');
+        ctx.poseFrom = { ...ctx.poseNow };
+        ctx.poseTo = this.poseAngles(pose);
+        ctx.poseT = 0;
 
-        ctx.root.rotation.y = (p.spin || 0) * RAD;
-        ctx.root.position.y = p.drop || 0;
-        ctx.spine.rotation.x = (p.torso || 0) * RAD;
+        ctx.world?.wake();
+        this.advancePose(0);
+    },
 
-        ctx.armL.rotation.set((p.armL || 0) * RAD, 0, (p.armLZ || -8) * RAD);
-        ctx.armR.rotation.set((p.armR || 0) * RAD, 0, (p.armRZ || 8) * RAD);
+    /* یک قدم از گذر حالت؛ خروجی true یعنی هنوز در حال حرکت است */
+    advancePose(dt) {
+        const ctx = contextFor(this.$root);
 
-        ctx.legL.rotation.x = (p.legL || 0) * RAD;
-        ctx.legR.rotation.x = (p.legR || 0) * RAD;
-        ctx.kneeL.rotation.x = (p.knee || 0) * RAD;
-        ctx.kneeR.rotation.x = (p.knee || 0) * RAD;
+        if (! ctx.poseTo || ctx.poseT >= 1) {
+            return false;
+        }
+
+        ctx.poseT = Math.min(1, ctx.poseT + (POSE_DURATION > 0 ? dt / POSE_DURATION : 1));
+
+        const t = smooth(ctx.poseT);
+        const now = {};
+
+        Object.keys(ctx.poseTo).forEach((key) => {
+            now[key] = lerp(ctx.poseFrom[key] ?? 0, ctx.poseTo[key], t);
+        });
+
+        ctx.poseNow = now;
+        this.writePose(now);
+
+        return ctx.poseT < 1;
+    },
+
+    /* نوشتن زاویه‌ها روی گروه‌های بدن */
+    writePose(p) {
+        const ctx = contextFor(this.$root);
+
+        ctx.root.rotation.y = p.spin * RAD;
+        ctx.root.position.y = p.drop;
+        ctx.spine.rotation.x = p.torso * RAD;
+
+        ctx.armL.rotation.set(p.armL * RAD, 0, p.armLZ * RAD);
+        ctx.armR.rotation.set(p.armR * RAD, 0, p.armRZ * RAD);
+
+        ctx.legL.rotation.x = p.legL * RAD;
+        ctx.legR.rotation.x = p.legR * RAD;
+        ctx.kneeL.rotation.x = p.knee * RAD;
+        ctx.kneeR.rotation.x = p.knee * RAD;
     },
 
     /* ------------------------------------------------------------------
@@ -1035,7 +1355,7 @@ export default (config = {}) => ({
     setView(view) {
         const angles = { front: 0, side: 90, back: 180 };
 
-        contextFor(this.$el).orbit.yaw = (angles[view] ?? 0) * RAD;
+        contextFor(this.$root).orbit.yaw = (angles[view] ?? 0) * RAD;
         this.updateCamera();
     },
 
@@ -1044,7 +1364,7 @@ export default (config = {}) => ({
     },
 
     updateCamera() {
-        const ctx = contextFor(this.$el);
+        const ctx = contextFor(this.$root);
 
         if (!ctx.camera) {
             return;
@@ -1061,7 +1381,7 @@ export default (config = {}) => ({
 
     /* چرخش با ماوس و لمس، و بزرگ‌نمایی با غلتک — دست‌نویس و کوتاه */
     bindPointer() {
-        const ctx = contextFor(this.$el);
+        const ctx = contextFor(this.$root);
         const canvas = ctx.renderer.domElement;
         let dragging = false;
         let lastX = 0;
@@ -1112,7 +1432,7 @@ export default (config = {}) => ({
     },
 
     observeResize() {
-        const ctx = contextFor(this.$el);
+        const ctx = contextFor(this.$root);
         const stage = this.$refs.stage;
 
         const resize = () => {
@@ -1133,17 +1453,54 @@ export default (config = {}) => ({
         }
     },
 
+    /*
+     * حلقه‌ی نمایش.
+     *
+     * ترتیب کارها مهم است: اول بدن به حالت تازه‌اش می‌رود، بعد برخوردگرها و
+     * رأس‌های دوخته‌شده با همان ماتریس‌ها به‌روز می‌شوند و آخر پارچه یک گام جلو
+     * می‌رود. اگر پارچه خوابیده باشد و حالتی هم عوض نشده باشد، هیچ‌کدام از این‌ها
+     * اجرا نمی‌شود و فریم فقط یک render ساده است.
+     */
     loop() {
-        const ctx = contextFor(this.$el);
+        const ctx = contextFor(this.$root);
+        const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        let last = clock();
 
         const frame = () => {
             if (!ctx.renderer) {
                 return;
             }
 
+            const time = clock();
+            const dt = Math.min(0.05, (time - last) / 1000);
+
+            last = time;
+
             if (this.autoRotate) {
-                ctx.orbit.yaw += 0.005;
+                ctx.orbit.yaw += dt * 0.3;
                 this.updateCamera();
+            }
+
+            const moving = this.advancePose(dt);
+
+            if (ctx.world && (moving || ! ctx.world.sleeping)) {
+                if (moving) {
+                    ctx.world.wake();
+                }
+
+                ctx.root.updateMatrixWorld(true);
+                this.refreshColliders();
+
+                ctx.cloth.forEach((item) => item.patch.applyPins(item.group.matrixWorld.elements));
+
+                if (ctx.world.update(dt) > 0) {
+                    ctx.cloth.forEach((item) => {
+                        item.geometry.attributes.position.needsUpdate = true;
+                        item.geometry.computeVertexNormals();
+                    });
+                }
+
+                this.report(ctx, time);
             }
 
             ctx.renderer.render(ctx.scene, ctx.camera);
@@ -1153,11 +1510,36 @@ export default (config = {}) => ({
         frame();
     },
 
+    /*
+     * قلاب اشکال‌زدایی.
+     *
+     * چند عدد فقط‌خواندنی روی window می‌گذارد تا اگر کاربری از کندی صفحه گزارش
+     * داد، بشود بدون ابزار خاصی پرسید window.dokhtCloth چه می‌گوید: هزینه‌ی هر
+     * گام، تعداد ذره‌ها، سطح کیفیت و اینکه پارچه خوابیده یا نه. هیچ چیزی از این
+     * شیء خوانده نمی‌شود؛ فقط نوشته می‌شود.
+     */
+    report(ctx, time) {
+        if (typeof window === 'undefined' || ! ctx.world) {
+            return;
+        }
+
+        const stats = (window.dokhtCloth ??= {});
+
+        stats.solverMs = Math.round(ctx.world.cost * 100) / 100;
+        stats.frameMs = Math.round((time - (stats.at || time)) * 100) / 100;
+        stats.at = time;
+        stats.particles = ctx.world.particles;
+        stats.constraints = ctx.world.constraints;
+        stats.quality = ctx.world.quality;
+        stats.sleeping = ctx.world.sleeping;
+        stats.energy = ctx.world.energy;
+    },
+
     /* ------------------------------------------------------------------
      * پاک‌سازی: هندسه‌ها و جنس‌ها آزاد و شنونده‌ها برداشته می‌شوند
      * ------------------------------------------------------------------ */
     teardown() {
-        const ctx = contexts.get(this.$el);
+        const ctx = contexts.get(this.$root);
 
         if (!ctx) {
             return;
@@ -1173,10 +1555,17 @@ export default (config = {}) => ({
 
         (ctx.disposables || []).forEach((item) => item?.dispose?.());
 
+        // آرایه‌های بزرگ حل‌کننده هم رها می‌شوند تا حافظه پس از خروج آزاد شود
+        ctx.world = null;
+        ctx.cloth = null;
+        ctx.colliders = null;
+        ctx.garmentPatches = null;
+        ctx.garmentMeshes = null;
+
         ctx.renderer?.dispose();
         ctx.renderer?.domElement?.remove();
 
-        contexts.delete(this.$el);
+        contexts.delete(this.$root);
     },
 
     /* نقطه‌های کلیدی را به یک خط نرم تبدیل می‌کند (ورودی چرخانه‌های دست و پا) */

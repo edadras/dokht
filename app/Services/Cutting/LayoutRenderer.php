@@ -46,6 +46,7 @@ class LayoutRenderer
 
         $body = implode("\n", array_filter([
             $this->fabric($usable, $length, (bool) $layout->folded),
+            $this->patternGrid($layout, $usable, $length, $options),
             $this->ruler($length),
             $this->plan($placements, $showLabels),
             $showLegend ? $this->legend($placements, $usable, $length) : null,
@@ -139,6 +140,82 @@ class LayoutRenderer
             );
             $parts[] = $this->text(1.4, -1.2, 'پارچه باز', ['size' => 2, 'fill' => '#78716c', 'anchor' => 'start']);
         }
+
+        return implode("\n", $parts);
+    }
+
+    /**
+     * شبکه راه‌راه یا چهارخانه پارچه، پشت قطعه‌ها.
+     *
+     * تا وقتی خیاط شبکه طرح را نبیند، نمی‌تواند داوری کند که تطبیق درزها درست
+     * درآمده است یا نه. خط‌های افقی تکرار طرح در طول پارچه‌اند و خط‌های عمودی —
+     * فقط برای چهارخانه — تکرار در عرض. مبدأ شبکه، لبه تای پارچه و سر پارچه است.
+     */
+    protected function patternGrid(CuttingLayout $layout, float $usable, float $length, array $options): string
+    {
+        $fabric = $layout->fabric;
+        $surface = (string) ($options['surface_pattern'] ?? $fabric?->surface_pattern ?? 'plain');
+        $repeat = (float) ($options['repeat_cm'] ?? $fabric?->pattern_repeat_cm ?? 0);
+
+        if ($repeat < 0.5 || ! in_array($surface, ['stripe', 'plaid'], true)) {
+            return '';
+        }
+
+        // اگر تکرار طرح خیلی ریز باشد، چند برابرش کشیده می‌شود تا نقشه سیاه نشود
+        $step = $repeat;
+
+        while ($length / $step > 160) {
+            $step *= 2;
+        }
+
+        $color = $layout->match_stripes ? '#0d9488' : '#a8a29e';
+        $parts = [];
+
+        for ($y = $step; $y < $length - 0.01; $y += $step) {
+            $parts[] = sprintf(
+                '<line x1="0" y1="%s" x2="%s" y2="%s" stroke="%s" stroke-width="0.12" opacity="0.45" />',
+                $this->num($y),
+                $this->num($usable),
+                $this->num($y),
+                $color,
+            );
+        }
+
+        if ($surface === 'plaid') {
+            $stepX = (float) ($options['repeat_x_cm'] ?? $repeat);
+
+            if ($stepX >= 0.5) {
+                while ($usable / $stepX > 80) {
+                    $stepX *= 2;
+                }
+
+                for ($x = $stepX; $x < $usable - 0.01; $x += $stepX) {
+                    $parts[] = sprintf(
+                        '<line x1="%s" y1="0" x2="%s" y2="%s" stroke="%s" stroke-width="0.12" opacity="0.45" />',
+                        $this->num($x),
+                        $this->num($x),
+                        $this->num($length),
+                        $color,
+                    );
+                }
+            }
+        }
+
+        if ($parts === []) {
+            return '';
+        }
+
+        $parts[] = $this->text(
+            $usable,
+            $length + 2.6,
+            sprintf(
+                '%s پارچه — تکرار %s سانتی‌متر%s',
+                $surface === 'plaid' ? 'شبکه چهارخانه' : 'راه‌راه',
+                Jalali::digits($this->num($repeat)),
+                $layout->match_stripes ? ' (قطعه‌ها روی همین شبکه تنظیم شده‌اند)' : '',
+            ),
+            ['size' => 2, 'fill' => $color, 'anchor' => 'end'],
+        );
 
         return implode("\n", $parts);
     }

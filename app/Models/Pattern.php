@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
@@ -60,6 +61,24 @@ class Pattern extends Model
     public function projects(): HasMany
     {
         return $this->hasMany(Project::class);
+    }
+
+    /** آگهی‌های بازارچه برای این الگو (حداکثر یکی از آن‌ها فعال است). */
+    public function listings(): HasMany
+    {
+        return $this->hasMany(PatternListing::class);
+    }
+
+    /** آگهی فعال این الگو، اگر روی ویترین بازارچه باشد. */
+    public function activeListing(): HasOne
+    {
+        return $this->hasOne(PatternListing::class)->where('is_active', true);
+    }
+
+    /** آیا این الگو همین حالا در بازارچه برای فروش گذاشته شده است؟ */
+    public function isListed(): bool
+    {
+        return $this->listings()->where('is_active', true)->exists();
     }
 
     public function scopePublished(Builder $query): Builder

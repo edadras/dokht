@@ -94,7 +94,7 @@ class PatternExportTest extends TestCase
         $pattern = $this->pattern();
 
         $this->get(route('patterns.export', [$pattern, 'json']).'x')->assertNotFound();
-        $this->get('/patterns/'.$pattern->id.'/export/pdf')->assertNotFound();
+        $this->get('/patterns/'.$pattern->id.'/export/eps')->assertNotFound();
     }
 
     public function test_print_page_tiles_pieces_at_real_size(): void
