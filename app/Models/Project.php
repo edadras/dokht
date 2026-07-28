@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToWorkshop;
+use App\Support\Measurements;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -175,5 +176,50 @@ class Project extends Model
         }
 
         return 11;
+    }
+
+    /** شماره مرحله از روی کلید آن؛ برای مسیرهای گام‌به‌گام. */
+    public static function stepNumber(string $key): ?int
+    {
+        foreach (static::STEPS as $number => $step) {
+            if ($step['key'] === $key) {
+                return $number;
+            }
+        }
+
+        return null;
+    }
+
+    public static function stepKey(int $number): ?string
+    {
+        return static::STEPS[$number]['key'] ?? null;
+    }
+
+    public function nextStepKey(): string
+    {
+        return static::stepKey($this->nextStep()) ?? 'export';
+    }
+
+    /**
+     * اندازه‌های بدن این پروژه.
+     *
+     * ترتیب: دفترچه اندازه مشتری، سایز استاندارد انتخاب‌شده، و در نهایت سایز ۴۰
+     * تا هیچ صفحه‌ای بدون عدد نماند.
+     */
+    public function resolvedMeasurements(): array
+    {
+        if ($this->measurementSet) {
+            return $this->measurementSet->completed();
+        }
+
+        return Measurements::fromSize($this->size ?: '40');
+    }
+
+    /** یک بخش از کارنامه کیفیت. */
+    public function scoreOf(string $key): ?int
+    {
+        $value = $this->scorecard[$key] ?? null;
+
+        return is_numeric($value) ? (int) $value : null;
     }
 }

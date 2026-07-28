@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class Workshop extends Model
@@ -105,5 +106,33 @@ class Workshop extends Model
             'armhole' => 1.0,
             'waist' => 1.0,
         ], (array) $this->setting('seam_allowances', []));
+    }
+
+    /** برچشب واحد پول برای نمایش در فاکتور و گزارش. */
+    public function currencyLabel(): string
+    {
+        return match ($this->currency) {
+            'IRT', 'TOMAN', null, '' => 'تومان',
+            'IRR' => 'ریال',
+            default => (string) $this->currency,
+        };
+    }
+
+    /** عرض پیش‌فرض پارچه به سانتی‌متر (برای چیدمان برش). */
+    public function defaultFabricWidth(): float
+    {
+        return (float) ($this->setting('fabric_width') ?: 140);
+    }
+
+    /** پیش‌شماره سفارش‌ها؛ مثل «۱۴۰۳-» یا «S». */
+    public function orderPrefix(): string
+    {
+        return (string) ($this->setting('order_prefix') ?? '');
+    }
+
+    /** نشانی نمایش نشان کارگاه. */
+    public function logoUrl(): ?string
+    {
+        return $this->logo_path ? Storage::disk('public')->url($this->logo_path) : null;
     }
 }
