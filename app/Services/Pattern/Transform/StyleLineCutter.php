@@ -178,12 +178,20 @@ final class StyleLineCutter
         $left = $crossings[0];
         $right = $crossings[count($crossings) - 1];
 
+        $normalize = $options['normalize'] ?? true;
+
+        // مرتب کردن باید پیش از بردن هر قطعه به مبدأ خودش انجام شود، وگرنه هر دو
+        // نیمه از y=0 شروع می‌شوند و «بالا و پایین» معنایش را از دست می‌دهد.
         $pieces = self::cut($piece, [
             ['x' => $left['x'], 'y' => $left['y']],
             ['x' => $right['x'], 'y' => $right['y']],
-        ], $options);
+        ], array_merge($options, ['normalize' => false]));
 
         usort($pieces, fn ($a, $b) => Geometry::centroid($a['outline'])['y'] <=> Geometry::centroid($b['outline'])['y']);
+
+        if ($normalize) {
+            $pieces = array_map(fn (array $half) => Geometry::normalizePiece($half), $pieces);
+        }
 
         return array_values($pieces);
     }
@@ -317,7 +325,10 @@ final class StyleLineCutter
             fn ($marker) => $inside($marker['from'] ?? null) || $inside($marker['to'] ?? null),
         ));
 
-        if (! empty($source['grainline']['from']) && ! $inside($source['grainline']['from'])) {
+        // راستای پارچه باید تمامش روی همین نیمه بیفتد؛ اگر حتی یک سرش بیرون
+        // مانده باشد، پیکان تازه‌ای در میانه قطعه کشیده می‌شود.
+        if (! empty($source['grainline']['from'])
+            && (! $inside($source['grainline']['from']) || ! $inside($source['grainline']['to'] ?? null))) {
             $bounds = Geometry::bounds($outline);
             $half['grainline'] = [
                 'from' => Geometry::point(($bounds[0] + $bounds[2]) / 2, $bounds[1] + 1),

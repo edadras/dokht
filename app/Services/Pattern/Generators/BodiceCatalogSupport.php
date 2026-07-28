@@ -527,6 +527,21 @@ trait BodiceCatalogSupport
     }
 
     /**
+     * پهنای یک قطعه روی ارتفاع داده‌شده (از چپ‌ترین تا راست‌ترین برخورد).
+     *
+     * برای پیدا کردن اندازه واقعی لبه یک برش افقی به کار می‌رود تا قطعه پایینی
+     * دقیقاً هم‌اندازه لبه قطعه بالایی درفت شود.
+     *
+     * @param  array<string, mixed>  $piece
+     */
+    protected function panelWidthAt(array $piece, float $y): float
+    {
+        $xs = $this->crossingsAt(Geometry::flatten($piece['outline'] ?? []), $y);
+
+        return $xs === [] ? 0.0 : round(max($xs) - min($xs), 3);
+    }
+
+    /**
      * محل برخورد یک خط افقی با مسیر بسته.
      *
      * @return array<int, float>

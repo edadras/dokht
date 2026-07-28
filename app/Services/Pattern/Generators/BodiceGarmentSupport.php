@@ -50,7 +50,7 @@ trait BodiceGarmentSupport
             'grainline' => $this->grainline($upperWidth * 0.5, $upperCap * 0.4, $length - 4),
             'notches' => [
                 $this->notch($upperWidth * 0.5, 0, 2, 'نوک آستین (سرشانه)', 'sleeve_top'),
-                $this->notch(0, $upperCap, 4, 'نشانه آستین زیر', 'under_sleeve'),
+                $this->notch(0, $upperCap, 6, 'نشانه آستین زیر', 'under_sleeve'),
             ],
             'markers' => [
                 $this->marker('bicep', 'خط بازو', 0, $upperCap, $upperWidth),
@@ -83,7 +83,7 @@ trait BodiceGarmentSupport
             'outline' => $underOutline,
             'grainline' => $this->grainline($underWidth * 0.5, $underCap + 2, $length - 4),
             'notches' => [
-                $this->notch(0, $underCap, 4, 'نشانه آستین رو', 'under_sleeve'),
+                $this->notch(0, $underCap, 3, 'نشانه آستین رو', 'under_sleeve'),
             ],
             'meta' => [
                 'part' => 'sleeve',
@@ -226,6 +226,9 @@ trait BodiceGarmentSupport
             'mirror' => ! $onFold,
             'layer' => $o['layer'] ?? 'outer',
         ], $outline, $edges, [
+            // پهنای تنه روی خط زیر بغل به‌جای اندازه‌گیری از مسیر اعلام می‌شود؛
+            // چون آستین یک‌سره از همان خط رد می‌شود و اندازه‌گیری را به هم می‌زند
+            'girth' => ['bust' => round($qb, 3)],
             'lines' => ['bust' => $underarmY],
             'center_x' => $cf,
             'on_fold' => $onFold,
@@ -245,6 +248,7 @@ trait BodiceGarmentSupport
                 'one_piece_sleeve' => true,
                 'underarm_drop' => round($drop, 2),
                 'bust_y' => round($underarmY, 2),
+                'waist_y' => round($g['side_waist_y'], 2),
             ],
         ]);
     }
@@ -374,79 +378,6 @@ trait BodiceGarmentSupport
     }
 
     /**
-     * دامن کلوش کامل: یک‌چهارم حلقه با کمر روی کمان داخلی.
-     *
-     * @return array<string, mixed>
-     */
-    protected function circleSkirtPanel(array $g, array $o = []): array
-    {
-        $front = ($o['side'] ?? 'front') === 'front';
-        $qw = $g['quarter_waist'] + (float) ($o['grow'] ?? 0);
-        $fullness = max(0.25, min(1.0, (float) ($o['fullness'] ?? 1.0)));
-        $length = max(15.0, (float) ($o['length'] ?? 65));
-
-        // کمان کمر یک‌چهارم = qw ⇒ شعاع از طول کمان درمی‌آید
-        $sweep = (M_PI / 2) * $fullness;
-        $radius = $qw / $sweep;
-        $outer = $radius + $length;
-        $steps = 16;
-
-        $outline = [];
-        $edges = [];
-
-        for ($i = 0; $i <= $steps; $i++) {
-            $angle = $sweep * ($i / $steps);
-            $outline[] = Geometry::point($radius * sin($angle), $radius * cos($angle));
-            $edges[] = 'waist';
-        }
-
-        array_pop($edges);
-        $edges[] = 'side';
-
-        for ($i = $steps; $i >= 0; $i--) {
-            $angle = $sweep * ($i / $steps);
-            $outline[] = Geometry::point($outer * sin($angle), $outer * cos($angle));
-            $edges[] = 'hem';
-        }
-
-        array_pop($edges);
-        $edges[] = 'side';
-
-        $waistArc = 0.0;
-
-        for ($i = 1; $i <= $steps; $i++) {
-            $waistArc += Geometry::distance(
-                ['x' => $outline[$i - 1]['x'], 'y' => $outline[$i - 1]['y']],
-                ['x' => $outline[$i]['x'], 'y' => $outline[$i]['y']],
-            );
-        }
-
-        return $this->finishPanel([
-            'code' => $o['code'] ?? (($o['prefix'] ?? '').($front ? 'skirt-front' : 'skirt-back')),
-            'name' => $o['name'] ?? ($front ? 'دامن کلوش جلو' : 'دامن کلوش پشت'),
-            'cut' => (int) ($o['cut'] ?? 1),
-            'mirror' => false,
-            'layer' => $o['layer'] ?? 'outer',
-            'girth_role' => $o['girth_role'] ?? 'skirt',
-        ], $outline, $edges, [
-            'girth' => ['waist' => round($waistArc, 3)],
-            'on_fold' => (bool) ($o['on_fold'] ?? true),
-            'fold_edges' => [],
-            'grainline' => $this->grainline($radius * 0.3, $radius * 0.75, $outer * 0.9),
-            'markers' => [
-                $this->marker('waist', 'کمان کمر', 0, $radius, $radius, 0),
-            ],
-            'meta' => [
-                'part' => $front ? 'skirt_front' : 'skirt_back',
-                'side' => $front ? 'front' : 'back',
-                'skirt_type' => 'circle',
-                'radius' => round($radius, 2),
-                'fullness' => ['hem' => round(($outer * $sweep) - $waistArc, 2)],
-            ],
-        ]);
-    }
-
-    /**
      * یقه ایستاده / نوار یقه.
      *
      * @return array<string, mixed>
@@ -530,77 +461,6 @@ trait BodiceGarmentSupport
                 'part' => 'facing',
                 'edges' => ['neck', 'default', 'default', 'hem', 'default'],
                 'fold_edges' => [],
-                'interfacing' => true,
-                'girth_role' => 'trim',
-            ],
-        ]);
-    }
-
-    /**
-     * سجاف جلو برای لباس جلوباز.
-     *
-     * @return array<string, mixed>
-     */
-    protected function frontFacingPiece(array $g, float $stand, float $bottom, array $o = []): array
-    {
-        $top = $g['neck_width'] + $stand + (float) ($o['neck_extra'] ?? 0);
-        $width = max(5.0, (float) ($o['width'] ?? 8));
-
-        $outline = [
-            Geometry::point(0, 0),
-            Geometry::point($top, 0),
-            Geometry::curve($width, $bottom, $top + 1.0, $g['front_waist_y'] * 0.55),
-            Geometry::point(0, $bottom),
-        ];
-
-        return $this->piece([
-            'code' => ($o['prefix'] ?? '').'front-facing',
-            'name' => $o['name'] ?? 'سجاف جلو',
-            'cut_quantity' => 2,
-            'mirror' => true,
-            'outline' => $outline,
-            'grainline' => $this->grainline($width * 0.5, 3, $bottom - 3),
-            'meta' => [
-                'part' => 'facing',
-                'edges' => ['neck', 'side', 'hem', 'default'],
-                'fold_edges' => [],
-                'interfacing' => true,
-                'girth_role' => 'trim',
-            ],
-        ]);
-    }
-
-    /**
-     * سجاف یقه پشت.
-     *
-     * @return array<string, mixed>
-     */
-    protected function backNeckFacingPiece(array $g, array $o = []): array
-    {
-        $neckW = $g['neck_width'] + 0.3 + (float) ($o['neck_width_extra'] ?? 0);
-        $depth = $g['back_neck_depth'];
-        $width = max(5.0, (float) ($o['width'] ?? 7));
-        $shoulder = $g['shoulder_half'];
-
-        $outline = [
-            Geometry::point(0, $depth),
-            Geometry::curve($neckW, 0, $neckW * 0.34, $depth * 0.28),
-            Geometry::point($shoulder, $g['shoulder_drop'] + 0.5),
-            Geometry::point($shoulder - 1.5, $g['shoulder_drop'] + $width),
-            Geometry::curve(0, $depth + $width, $neckW * 0.6, $depth + $width - 0.5),
-        ];
-
-        return $this->piece([
-            'code' => ($o['prefix'] ?? '').'back-neck-facing',
-            'name' => 'سجاف یقه پشت',
-            'cut_quantity' => 1,
-            'on_fold' => true,
-            'outline' => $outline,
-            'grainline' => $this->grainline($neckW * 0.7, $depth + 1, $depth + $width - 1),
-            'meta' => [
-                'part' => 'facing',
-                'edges' => ['neck', 'shoulder', 'default', 'default', 'default'],
-                'fold_edges' => [4],
                 'interfacing' => true,
                 'girth_role' => 'trim',
             ],

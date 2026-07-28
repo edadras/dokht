@@ -78,7 +78,11 @@ final class Outline
     /**
      * افزودن چند رأس تازه به مسیر و بازگرداندن شماره هرکدام.
      *
-     * لبه‌ها از انتها به ابتدا شکسته می‌شوند تا شماره‌ها به هم نریزد.
+     * لبه‌ها از انتها به ابتدا شکسته می‌شوند تا شماره‌ها به هم نریزد. اگر چند لنگر
+     * روی یک لبه بنشینند، هر شکستن لبه را کوتاه می‌کند؛ پس نسبت لنگر بعدی باید
+     * نسبت به همان لبه کوتاه‌شده حساب شود، وگرنه نقطه‌ها روی هم می‌لغزند (لنگر
+     * ۰٫۲۵ بعد از شکستن در ۰٫۷۵ روی ۰٫۱۸۷۵ می‌افتاد). دو لنگر با نسبت یکسان هم
+     * یک رأس مشترک می‌گیرند، نه دو رأس چسبیده به هم.
      *
      * @param  array<int, array{edge: int, t: float}>  $anchors
      * @return array{outline: array<int, array<string, mixed>>, tags: array<int, string>, index: array<int|string, int>}
@@ -92,22 +96,26 @@ final class Outline
         usort($order, fn ($a, $b) => [$anchors[$b]['edge'], $anchors[$b]['t']] <=> [$anchors[$a]['edge'], $anchors[$a]['t']]);
 
         $index = [];
+        $bounds = []; // شماره لبه ⇒ کوچک‌ترین نسبتی که تا کنون روی آن لبه شکسته شده
 
         foreach ($order as $key) {
             $edge = (int) $anchors[$key]['edge'];
             $t = (float) $anchors[$key]['t'];
+            $bound = $bounds[$edge] ?? 1.0;
+            $local = $bound > 1e-9 ? $t / $bound : 0.0;
             $inserted = true;
 
-            if ($t <= 1e-6) {
+            if ($local <= 1e-6) {
                 $position = $edge;
                 $inserted = false;
-            } elseif ($t >= 1 - 1e-6) {
+            } elseif ($local >= 1 - 1e-6) {
                 $position = $edge + 1;
                 $inserted = false;
             } else {
-                $outline = Geometry::splitEdgeAt($outline, $edge, $t);
+                $outline = Geometry::splitEdgeAt($outline, $edge, $local);
                 array_splice($tags, $edge + 1, 0, [$tags[$edge] ?? 'default']);
                 $position = $edge + 1;
+                $bounds[$edge] = $t;
             }
 
             if ($inserted) {
@@ -239,9 +247,16 @@ final class Outline
         $count = count($outline);
 
         if ($count > 3 && self::same($outline[$count - 1], $outline[0])) {
-            array_pop($outline);
+            $dropped = array_pop($outline);
             unset($tags[$count - 1]);
             $count--;
+
+            // انحنای لبه بسته‌شدن روی نقطه پایانی است و نباید با حذف آن گم شود
+            if (Geometry::isCurve($dropped)) {
+                $outline[0]['curve'] = true;
+                $outline[0]['cx'] = $dropped['cx'];
+                $outline[0]['cy'] = $dropped['cy'];
+            }
         }
 
         $tags[$count - 1] = $closingTag;
@@ -276,9 +291,17 @@ final class Outline
         $total = count($points);
 
         if ($total > 3 && self::same($points[$total - 1], $points[0], $epsilon)) {
-            array_pop($points);
+            $dropped = array_pop($points);
             $last = array_pop($kept);
             $kept[count($kept) - 1] = $last;
+
+            // لبه بسته‌شدن، منحنی خودش را روی نقطه پایانی نگه می‌دارد؛ چون آن نقطه
+            // همان نقطه نخست است، انحنا باید به نقطه نخست منتقل شود وگرنه لبه صاف می‌شود.
+            if (Geometry::isCurve($dropped)) {
+                $points[0]['curve'] = true;
+                $points[0]['cx'] = $dropped['cx'];
+                $points[0]['cy'] = $dropped['cy'];
+            }
         }
 
         return ['outline' => $points, 'tags' => $kept];
@@ -328,8 +351,11 @@ final class Outline
                 continue;
             }
 
-            if (($dart['edge'] ?? null) === null) {
-                continue; // ساسون بادامی روی لبه ننشسته است
+            // ساسون بادامی وسط قطعه می‌ماند و لبه‌ای ندارد؛ ولی ساسونی که تازه روی
+            // محیط باز شده (مثل ساسون چرخانده‌شده) هنوز شماره لبه نگرفته است و باید
+            // اینجا بگیرد. ملاک این است که هر دو پا روی محیط نشسته باشند.
+            if (($dart['edge'] ?? null) === null && ! self::mouthOnOutline($outline, $dart)) {
+                continue;
             }
 
             $piece['darts'][$index]['edge'] = Geometry::nearestEdge($outline, [
@@ -338,6 +364,30 @@ final class Outline
         }
 
         return $piece;
+    }
+
+    /** آیا دهانه ساسون (هر دو پا) روی محیط قطعه نشسته است؟ */
+    public static function mouthOnOutline(array $outline, array $dart, float $tolerance = 0.15): bool
+    {
+        $legs = array_values($dart['legs'] ?? []);
+
+        if (count($legs) !== 2) {
+            return false;
+        }
+
+        foreach ($legs as $leg) {
+            if (! isset($leg['x'], $leg['y'])) {
+                return false;
+            }
+
+            $near = Geometry::nearestEdge($outline, ['x' => (float) $leg['x'], 'y' => (float) $leg['y']]);
+
+            if ($near['distance'] > $tolerance) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** لبه‌های روی تای پارچه را بعد از تغییر شکل دوباره پیدا می‌کند. */

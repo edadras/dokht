@@ -519,10 +519,14 @@ final class DartTool
     {
         $polygon = Outline::polygon($chain, $extra);
 
-        $inside = fn (array $point): bool => Geometry::containsPoint(
-            $polygon,
-            ['x' => (float) $point['x'], 'y' => (float) $point['y']],
-        );
+        // نقطه‌ای که دقیقاً روی محیطِ لنگه چرخان نشسته (دهانه ساسون، نشانه درز)
+        // با «داخل بودن» سنجیده نمی‌شود؛ پرتاب پرتو روی مرز جواب دلخواه می‌دهد.
+        // پس جدا هم می‌سنجیم که روی خودِ زنجیره نشسته باشد.
+        $inside = function (array $point) use ($polygon, $chain): bool {
+            $at = ['x' => (float) $point['x'], 'y' => (float) $point['y']];
+
+            return Geometry::containsPoint($polygon, $at) || self::onChain($chain, $at);
+        };
 
         return Geometry::mapPiece($piece, function (array $point) use ($inside, $center, $angle) {
             if (! isset($point['x'], $point['y'])) {
@@ -531,6 +535,46 @@ final class DartTool
 
             return $inside($point) ? Geometry::rotatePoint($point, $center, $angle) : $point;
         });
+    }
+
+    /**
+     * آیا نقطه روی خودِ زنجیره (نه روی خط‌های بسته‌شدن آن) نشسته است؟
+     *
+     * @param  array<int, array<string, mixed>>  $chain
+     */
+    protected static function onChain(array $chain, array $point, float $tolerance = 0.05): bool
+    {
+        $chain = array_values($chain);
+        $count = count($chain);
+
+        for ($i = 0; $i < $count - 1; $i++) {
+            $from = Outline::straighten($chain[$i]);
+            $to = $chain[$i + 1];
+            $end = Outline::straighten($to);
+
+            if (! Geometry::isCurve($to)) {
+                if (Outline::onSegment($point, [$from, $end], $tolerance)) {
+                    return true;
+                }
+
+                continue;
+            }
+
+            $control = ['x' => (float) $to['cx'], 'y' => (float) $to['cy']];
+            $previous = $from;
+
+            for ($s = 1; $s <= Geometry::CURVE_SEGMENTS; $s++) {
+                $current = Geometry::quadraticAt($from, $control, $end, $s / Geometry::CURVE_SEGMENTS);
+
+                if (Outline::onSegment($point, [$previous, $current], $tolerance)) {
+                    return true;
+                }
+
+                $previous = $current;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -976,11 +1020,14 @@ final class DartTool
 
         $topPair = [$inserted['index']['top0'], $inserted['index']['top1']];
         $bottomPair = [$inserted['index']['bottom0'], $inserted['index']['bottom1']];
-        sort($topPair);
-        sort($bottomPair);
 
-        // کدام دهانه زودتر روی مسیر می‌آید؟
-        [$firstPair, $secondPair] = $topPair[0] <= $bottomPair[0] ? [$topPair, $bottomPair] : [$bottomPair, $topPair];
+        // دو سر هر دهانه باید در جهت خودِ مسیر مرتب شوند، نه بر پایه شماره؛ وگرنه
+        // دهانه‌ای که روی نقطه صفرِ مسیر می‌افتد وارونه خوانده می‌شود و یکی از
+        // پانل‌ها دهانه ساسون را به جای بستن، در خودش نگه می‌دارد.
+        $topPair = self::orderMouth($topPair, $bottomPair, $count);
+        $bottomPair = self::orderMouth($bottomPair, $topPair, $count);
+
+        [$firstPair, $secondPair] = [$topPair, $bottomPair];
 
         $tag = (string) ($options['tag'] ?? 'side');
         $bow = (float) ($options['bow'] ?? 0);
@@ -1000,6 +1047,14 @@ final class DartTool
                 ['points' => [self::bowed($chain[count($chain) - 1], $apex, $bow), $apex], 'tags' => [$tag, $tag]],
             ], $tag);
 
+            // درز تازه دقیقاً همان دو پاره‌خطی است که تازه کشیده شد: از ته زنجیره
+            // تا نوک، و از نوک تا سر زنجیره. نمی‌شود آن را از روی برچسب پیدا کرد،
+            // چون برچسب درز (پیش‌فرض side) روی درز پهلوی خودِ قطعه هم هست.
+            $seamSegments = [
+                [Outline::straighten($chain[count($chain) - 1]), Outline::straighten($apex)],
+                [Outline::straighten($apex), Outline::straighten($chain[0])],
+            ];
+
             $panel = $piece;
             $panel['code'] = (string) ($options['codes'][$side] ?? (($piece['code'] ?? 'piece').'-'.($side === 0 ? 'a' : 'b')));
             $panel['name'] = (string) ($options['names'][$side] ?? (($piece['name'] ?? 'قطعه').' '.($side === 0 ? '۱' : '۲')));
@@ -1010,7 +1065,7 @@ final class DartTool
 
             $panel = Outline::apply($panel, $joined['outline'], $joined['tags'], normalize: false);
             $panel = self::keepInside($panel, $piece);
-            $panel['meta']['cut_edges'] = Geometry::edgesWithTag($panel, $tag);
+            $panel['meta']['cut_edges'] = Outline::refoldEdges($panel, $seamSegments);
             $panel['meta']['cut_pair'] = 'princess-'.substr(md5(($piece['code'] ?? '').$label), 0, 8);
             $panel['meta']['fold_edges'] = Outline::refoldEdges($panel, self::foldSegments($piece));
             $panel['on_fold'] = $panel['meta']['fold_edges'] !== [];
@@ -1033,6 +1088,35 @@ final class DartTool
         });
 
         return array_values($panels);
+    }
+
+    /**
+     * ترتیب دو سر یک دهانه در جهت مسیر.
+     *
+     * خروجی [ورود، خروج] است، طوری که کمانِ رو به جلو از ورود تا خروج هیچ‌کدام از
+     * لنگرهای دیگر ($others) را در بر نگیرد؛ یعنی همان کمانی که با بستن ساسون از
+     * بین می‌رود.
+     *
+     * @param  array<int, int>  $pair
+     * @param  array<int, int>  $others
+     * @return array<int, int>
+     */
+    protected static function orderMouth(array $pair, array $others, int $count): array
+    {
+        [$a, $b] = [(int) $pair[0], (int) $pair[1]];
+        $count = max(1, $count);
+        $offset = fn (int $from, int $to): int => ((($to - $from) % $count) + $count) % $count;
+        $span = $offset($a, $b);
+
+        foreach ($others as $other) {
+            $at = $offset($a, (int) $other);
+
+            if ($at > 0 && $at < $span) {
+                return [$b, $a];
+            }
+        }
+
+        return [$a, $b];
     }
 
     /**
@@ -1150,7 +1234,9 @@ final class DartTool
             fn ($marker) => $inside($marker['from'] ?? null) || $inside($marker['to'] ?? null),
         ));
 
-        if (! empty($source['grainline']['from']) && ! $inside($source['grainline']['from'])) {
+        // راستای پارچه باید تمامش روی همین پانل بیفتد، نه فقط سرِ آن
+        if (! empty($source['grainline']['from'])
+            && (! $inside($source['grainline']['from']) || ! $inside($source['grainline']['to'] ?? null))) {
             $bounds = Geometry::bounds($outline);
             $panel['grainline'] = [
                 'from' => Geometry::point(($bounds[0] + $bounds[2]) / 2, $bounds[1] + 1),

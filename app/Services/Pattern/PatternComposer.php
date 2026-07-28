@@ -5,18 +5,34 @@ namespace App\Services\Pattern;
 use App\Models\GarmentType;
 use App\Models\Pattern;
 use App\Models\PatternPiece;
+use App\Services\Pattern\Style\StyleModifier;
+use App\Services\Pattern\Style\StyleRegistry;
 use App\Support\Format;
 use App\Support\Measurements;
 use App\Support\WorkshopContext;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use ReflectionClass;
+use Throwable;
 
 /**
- * ترکیب مدل‌ها: ساخت یک لباس از بلوک‌های جدا.
+ * ترکیب مدل‌ها: ساخت یک لباس از یک «دستور» (recipe).
  *
- * خیاط چهار چیز انتخاب می‌کند — بالاتنه، آستین، پایین‌تنه (دامن یا شلوار) و یقه —
- * و این کلاس آن‌ها را مثل یک الگوی یکپارچه به هم می‌دوزد:
+ * دستور دو بخش دارد:
+ *
+ *   پایه — یا یک «لباس کامل» (یک تولیدکننده از گروه garment) یا «بلوک‌ها»
+ *          (بالاتنه + آستین + پایین‌تنه + یقه دوخته‌شده).
+ *   سبک‌ها — فهرستی مرتب از سبک‌ها با پارامترهایشان که یکی‌یکی روی قطعه‌های آماده
+ *          اجرا می‌شوند (خط یقه ← یقه ← آستین ← چین ← لبه ← جیب ← بست ← جزئیات).
+ *
+ * هیچ فهرست ثابتی از مدل‌ها و سبک‌ها این‌جا نیست؛ همه چیز از GeneratorRegistry و
+ * StyleRegistry خوانده می‌شود، پس هر مدل یا سبک تازه‌ای خودکار در دسترس است.
+ *
+ * پس از اجرای سبک‌ها همان جورکردن‌های همیشگی دوباره اجرا می‌شود (کمر، حلقه آستین
+ * و خط یقه)، تا سبکی که یک درز را عوض کرده لباس را ندوختنی نکند.
+ *
+ * برای پایهٔ بلوکی کار اصلی این است:
  *
  *   ۱. بالاتنه در «خط کمر» خودش بریده می‌شود تا به پایین‌تنه برسد.
  *   ۲. دور کمر دو بخش اندازه‌گیری می‌شود (طول لبه منهای ساسون و پیلی) و اگر یکی
@@ -33,7 +49,7 @@ use InvalidArgumentException;
  */
 class PatternComposer
 {
-    /** بلوک‌هایی که می‌توانند «بالاتنه» ترکیب باشند. */
+    /** بلوک‌های پیش‌فرض هر نقش (فقط برای پیش‌فرض صفحه؛ فهرست کامل از رجیستری می‌آید). */
     public const BODICE_BLOCKS = ['bodice_block', 'tshirt', 'shirt_classic', 'blazer'];
 
     /** بلوک آستین. */
@@ -43,14 +59,35 @@ class PatternComposer
 
     public const PANTS_BLOCKS = ['pants_straight', 'pants_wide_leg'];
 
+    /** گروه‌های رجیستری که می‌توانند نقش «بالاتنه» را بازی کنند. */
+    public const BODICE_GROUPS = ['bodice', 'garment'];
+
+    /** گروه‌های رجیستری که می‌توانند نقش «پایین‌تنه» را بازی کنند. */
+    public const LOWER_GROUPS = ['skirt', 'pants'];
+
+    /**
+     * ترتیب اجرای سبک‌ها.
+     *
+     * اول شکل خود لباس عوض می‌شود (خط یقه، یقه، آستین، گشادی، لبه) و بعد چیزهایی
+     * که رویش می‌نشینند (جیب، بست، جزئیات)؛ وگرنه مثلاً جیب روی جایی می‌افتد که
+     * سبک بعدی آن را می‌بُرد. هر گروه ناشناخته آخر از همه اجرا می‌شود.
+     */
+    public const STYLE_ORDER = ['neckline', 'collar', 'sleeve', 'fullness', 'hem', 'pocket', 'closure', 'detail'];
+
+    /** قطعه‌های آستین (برای جورکردن دوباره پس از سبک‌ها). */
+    public const SLEEVE_PARTS = ['sleeve', 'sleeve_lower', 'sleeve_upper'];
+
+    /** قطعه‌های یقه. */
+    public const COLLAR_PARTS = ['collar', 'neckband'];
+
     /** یقه‌ها ژنراتور جدا ندارند و همین‌جا درفت می‌شوند. */
     public const COLLAR_STYLES = ['band', 'stand', 'shirt', 'flat'];
 
-    /** از مدل بالاتنه فقط این قطعه‌ها برداشته می‌شود؛ آستین و یقه‌اش جداگانه انتخاب می‌شود. */
-    public const BODICE_PARTS = ['front_bodice', 'back_bodice', 'yoke', 'placket'];
+    /** قطعه‌هایی که همیشه «تنه» حساب می‌شوند (نام‌های تازه با برچسب لبه‌ها شناخته می‌شوند). */
+    public const BODICE_PARTS = ['front_bodice', 'back_bodice', 'front_panel', 'back_panel', 'yoke', 'placket'];
 
-    /** از مدل پایین‌تنه این قطعه‌ها برداشته می‌شود (کمربند فقط وقتی بالاتنه نباشد). */
-    public const LOWER_PARTS = ['skirt_front', 'skirt_back', 'front_leg', 'back_leg'];
+    /** قطعه‌هایی که همیشه «پایین‌تنه» حساب می‌شوند. */
+    public const LOWER_PARTS = ['skirt_front', 'skirt_back', 'front_leg', 'back_leg', 'skirt_panel', 'skirt_tier', 'peplum', 'godet'];
 
     /** بیشترین اختلاف کمری که با چین‌دادن جبران می‌شود؛ بیشتر از این درز پهلو راست می‌شود. */
     public const MAX_GATHER = 12.0;
@@ -86,28 +123,37 @@ class PatternComposer
      */
     public function options(): array
     {
-        $label = fn (string $key) => GeneratorRegistry::make($key)->label();
+        $entry = fn (string $key, array $extra = []) => array_merge([
+            'label' => GeneratorRegistry::make($key)->label(),
+            'hint' => $this->describe($key),
+        ], $extra);
 
         $bodice = [];
 
-        foreach (static::BODICE_BLOCKS as $key) {
-            $bodice[$key] = ['label' => $label($key), 'hint' => static::BLOCK_HINTS[$key] ?? ''];
+        foreach (static::BODICE_GROUPS as $group) {
+            foreach (GeneratorRegistry::group($group) as $key => $ignored) {
+                $bodice[$key] = $entry($key, ['kind' => $group]);
+            }
         }
 
         $lower = ['none' => ['label' => 'بدون پایین‌تنه', 'hint' => 'فقط بالاتنه بریده می‌شود.', 'kind' => null]];
 
-        foreach (static::SKIRT_BLOCKS as $key) {
-            $lower[$key] = ['label' => $label($key), 'hint' => static::BLOCK_HINTS[$key] ?? '', 'kind' => 'skirt'];
-        }
-
-        foreach (static::PANTS_BLOCKS as $key) {
-            $lower[$key] = ['label' => $label($key), 'hint' => static::BLOCK_HINTS[$key] ?? '', 'kind' => 'pants'];
+        foreach (static::LOWER_GROUPS as $group) {
+            foreach (GeneratorRegistry::group($group) as $key => $ignored) {
+                $lower[$key] = $entry($key, ['kind' => $group]);
+            }
         }
 
         $sleeve = ['none' => ['label' => 'بدون آستین', 'hint' => 'حلقه آستین با نوار یا سجاف تمام می‌شود.']];
 
-        foreach (static::SLEEVE_BLOCKS as $key) {
-            $sleeve[$key] = ['label' => $label($key), 'hint' => static::BLOCK_HINTS[$key] ?? ''];
+        foreach (GeneratorRegistry::group('sleeve') as $key => $ignored) {
+            $sleeve[$key] = $entry($key, ['kind' => 'sleeve']);
+        }
+
+        $garment = [];
+
+        foreach (GeneratorRegistry::group('garment') + GeneratorRegistry::group('accessory') as $key => $ignored) {
+            $garment[$key] = $entry($key, ['kind' => 'garment']);
         }
 
         $collar = ['none' => ['label' => 'بدون یقه', 'hint' => 'خط یقه با سجاف تمام می‌شود.']];
@@ -119,7 +165,143 @@ class PatternComposer
             ];
         }
 
-        return ['bodice' => $bodice, 'sleeve' => $sleeve, 'lower' => $lower, 'collar' => $collar];
+        return ['garment' => $garment, 'bodice' => $bodice, 'sleeve' => $sleeve, 'lower' => $lower, 'collar' => $collar];
+    }
+
+    /**
+     * فهرست کامل کارگاه ترکیب: پایه‌ها و سبک‌ها با هر چیزی که صفحه لازم دارد.
+     *
+     * هیچ‌چیز این‌جا دستی نوشته نشده؛ همه از رجیستری‌ها خوانده می‌شود تا مدل و سبک
+     * تازه بدون تغییر کد در صفحه پیدا شود.
+     *
+     * @return array<string, mixed>
+     */
+    public function catalogue(): array
+    {
+        $options = $this->options();
+        $styles = [];
+
+        foreach (StyleRegistry::grouped() as $group => $row) {
+            $items = [];
+
+            foreach ($row['styles'] as $key => $style) {
+                $items[$key] = [
+                    'key' => $key,
+                    'group' => $group,
+                    'label' => $style->label(),
+                    'description' => $style->description(),
+                    'schema' => $style->paramsSchema(),
+                    'defaults' => $this->styleDefaults($style),
+                ];
+            }
+
+            $styles[$group] = ['label' => $row['label'], 'styles' => $items];
+        }
+
+        return [
+            'base' => $options,
+            'styles' => $styles,
+            'groups' => GeneratorRegistry::GROUPS,
+            'style_order' => static::STYLE_ORDER,
+        ];
+    }
+
+    /**
+     * برای هر سبک: آیا روی این لباس اجرا می‌شود، و اگر نه چرا (به فارسی).
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     * @return array<string, array{ok: bool, reason: string|null}>
+     */
+    public function styleAvailability(array $pieces, array $context = []): array
+    {
+        $out = [];
+
+        foreach (StyleRegistry::all() as $key => $class) {
+            $style = StyleRegistry::make($key);
+            $ctx = array_merge([
+                'measurements' => [],
+                'ease' => [],
+                'garment' => [],
+                'notes' => [],
+            ], $context, ['params' => $this->styleDefaults($style)]);
+
+            try {
+                $verdict = $style->supports($pieces, $ctx);
+            } catch (Throwable $exception) {
+                $verdict = 'این سبک روی این لباس بررسی نشد: '.$exception->getMessage();
+            }
+
+            $out[$key] = [
+                'ok' => $verdict === true,
+                'reason' => $verdict === true ? null : (string) $verdict,
+            ];
+        }
+
+        return $out;
+    }
+
+    /** پیش‌فرض پارامترهای یک سبک، از روی خود توضیح پارامترهایش. */
+    public function styleDefaults(StyleModifier|string $style): array
+    {
+        $style = is_string($style) ? StyleRegistry::make($style) : $style;
+        $defaults = [];
+
+        foreach ($style->paramsSchema() as $key => $field) {
+            $defaults[$key] = $field['default'] ?? null;
+        }
+
+        return $defaults;
+    }
+
+    /**
+     * یک خط توضیح فارسی برای یک مدل.
+     *
+     * تولیدکننده‌ها متد توضیح ندارند، ولی همه‌شان توضیح فارسی بالای کلاس دارند؛
+     * جمله اول همان توضیح برداشته می‌شود.
+     */
+    public function describe(string $key): string
+    {
+        if (isset(static::BLOCK_HINTS[$key])) {
+            return static::BLOCK_HINTS[$key];
+        }
+
+        $class = GeneratorRegistry::all()[$key] ?? null;
+
+        if ($class === null) {
+            return '';
+        }
+
+        $doc = (new ReflectionClass($class))->getDocComment();
+
+        if ($doc === false) {
+            return '';
+        }
+
+        $label = GeneratorRegistry::make($key)->label();
+        $lines = [];
+
+        // نکته: پرچم u لازم است؛ وگرنه \R وسط حرف‌های فارسی هم می‌بُرد
+        foreach (preg_split('/\R/u', $doc) ?: [] as $line) {
+            $line = trim(preg_replace('#^\s*/?\*+/?#u', '', $line) ?? '');
+
+            if ($line !== '' && ! str_starts_with($line, '@')) {
+                $lines[] = $line;
+            }
+        }
+
+        if ($lines === []) {
+            return '';
+        }
+
+        // خط اول معمولاً همان نام مدل است؛ در آن صورت جمله بعدی توضیح است
+        if (rtrim($lines[0], '.') === rtrim($label, '.')) {
+            array_shift($lines);
+        }
+
+        $text = trim(implode(' ', $lines));
+        $sentence = preg_split('/(?<=[.؟!])\s/u', $text)[0] ?? $text;
+
+        return mb_strlen($sentence) > 120 ? mb_substr($sentence, 0, 117).'…' : $sentence;
     }
 
     public const BLOCK_HINTS = [
@@ -198,10 +380,13 @@ class PatternComposer
      */
     public function paramsSchema(array $selection): array
     {
-        $selection = $this->normalizeSelection($selection, validate: false);
+        $selection = isset($selection['kind']) || isset($selection['garment']) || isset($selection['base'])
+            ? $this->normalizeRecipe($selection, validate: false)['base']
+            : $this->normalizeSelection($selection, validate: false);
+
         $out = [];
 
-        foreach (['bodice', 'sleeve', 'lower'] as $group) {
+        foreach (['garment', 'bodice', 'sleeve', 'lower'] as $group) {
             $key = $selection[$group] ?? null;
 
             if ($key === null) {
@@ -261,7 +446,7 @@ class PatternComposer
         $lower = $clean($selection['lower'] ?? null);
 
         if ($lower !== null) {
-            if (in_array($lower, static::PANTS_BLOCKS, true)) {
+            if ($this->playsRole($lower, ['pants'])) {
                 $pants ??= $lower;
             } else {
                 $skirt ??= $lower;
@@ -285,19 +470,19 @@ class PatternComposer
                 throw new InvalidArgumentException('برای ترکیب مدل‌ها انتخاب بالاتنه الزامی است.');
             }
 
-            if (! in_array($bodice, static::BODICE_BLOCKS, true)) {
+            if (! $this->playsRole($bodice, static::BODICE_GROUPS)) {
                 throw new InvalidArgumentException("«{$bodice}» بالاتنه نیست؛ یکی از بالاتنه‌های فهرست را انتخاب کنید.");
             }
 
-            if ($sleeve !== null && ! in_array($sleeve, static::SLEEVE_BLOCKS, true)) {
+            if ($sleeve !== null && ! $this->playsRole($sleeve, ['sleeve'])) {
                 throw new InvalidArgumentException("آستین «{$sleeve}» شناخته نشد.");
             }
 
-            if ($skirt !== null && ! in_array($skirt, static::SKIRT_BLOCKS, true)) {
+            if ($skirt !== null && ! $this->playsRole($skirt, ['skirt'])) {
                 throw new InvalidArgumentException("دامن «{$skirt}» شناخته نشد.");
             }
 
-            if ($pants !== null && ! in_array($pants, static::PANTS_BLOCKS, true)) {
+            if ($pants !== null && ! $this->playsRole($pants, ['pants'])) {
                 throw new InvalidArgumentException("شلوار «{$pants}» شناخته نشد.");
             }
 
@@ -313,6 +498,138 @@ class PatternComposer
             'lower_kind' => $skirt !== null ? 'skirt' : ($pants !== null ? 'pants' : null),
             'collar' => $collar,
         ];
+    }
+
+    /** آیا این مدل می‌تواند این نقش را بازی کند؟ */
+    protected function playsRole(string $key, array $groups): bool
+    {
+        return GeneratorRegistry::has($key) && in_array(GeneratorRegistry::groupOf($key), $groups, true);
+    }
+
+    /**
+     * «دستور» ترکیب را مرتب و بررسی می‌کند.
+     *
+     * ورودی می‌تواند سه شکل داشته باشد و هر سه یک خروجی می‌دهند:
+     *   ['base' => [...], 'styles' => [...]]        شکل کامل
+     *   ['garment' => 'dress', 'styles' => [...]]   لباس کامل
+     *   ['bodice' => ..., 'sleeve' => ...]          همان انتخاب قدیمی چهار بخشی
+     *
+     * سبک‌ها هم سه شکل می‌پذیرند: فهرست کلید، فهرست ['key' => .., 'params' => ..]
+     * یا نگاشت کلید ⇒ پارامترها.
+     *
+     * @return array{base: array<string, mixed>, styles: array<int, array{key: string, group: string, params: array<string, mixed>}>}
+     */
+    public function normalizeRecipe(array $input, array $params = [], bool $validate = true): array
+    {
+        $base = is_array($input['base'] ?? null) ? $input['base'] : $input;
+        $styles = $this->normalizeStyles($input['styles'] ?? ($base['styles'] ?? []), $params['styles'] ?? []);
+
+        $garment = is_string($base['garment'] ?? null) && $base['garment'] !== '' && $base['garment'] !== 'none'
+            ? $base['garment']
+            : null;
+
+        $kind = (string) ($base['kind'] ?? $input['base_kind'] ?? ($garment !== null ? 'garment' : 'blocks'));
+
+        if ($kind === 'garment') {
+            if ($validate && $garment === null) {
+                throw new InvalidArgumentException('برای «یک لباس کامل» باید یک مدل انتخاب کنید.');
+            }
+
+            if ($validate && ! GeneratorRegistry::has($garment)) {
+                throw new InvalidArgumentException("مدل «{$garment}» شناخته نشد.");
+            }
+
+            return [
+                'base' => [
+                    'kind' => 'garment',
+                    'garment' => $garment,
+                    'bodice' => null,
+                    'sleeve' => null,
+                    'lower' => null,
+                    'lower_kind' => null,
+                    'collar' => null,
+                ],
+                'styles' => $styles,
+            ];
+        }
+
+        return [
+            'base' => array_merge(
+                ['kind' => 'blocks', 'garment' => null],
+                $this->normalizeSelection($base, $validate),
+            ),
+            'styles' => $styles,
+        ];
+    }
+
+    /**
+     * فهرست سبک‌ها را به شکل یکسان درمی‌آورد و به ترتیب اجرا مرتب می‌کند.
+     *
+     * @return array<int, array{key: string, group: string, params: array<string, mixed>}>
+     */
+    public function normalizeStyles(mixed $styles, array $extraParams = []): array
+    {
+        if (! is_array($styles)) {
+            return [];
+        }
+
+        $out = [];
+
+        foreach ($styles as $index => $value) {
+            $key = null;
+            $params = [];
+
+            if (is_string($value)) {
+                $key = $value;
+            } elseif (is_array($value) && isset($value['key']) && is_string($value['key'])) {
+                $key = $value['key'];
+                $params = is_array($value['params'] ?? null) ? $value['params'] : [];
+            } elseif (is_string($index)) {
+                $key = $index;
+                $params = is_array($value) ? $value : [];
+            }
+
+            if ($key === null || $key === '' || $key === 'none' || isset($out[$key])) {
+                continue;
+            }
+
+            $out[$key] = [
+                'key' => $key,
+                'group' => StyleRegistry::has($key) ? StyleRegistry::make($key)::group() : 'unknown',
+                'params' => $this->cleanStyleParams(array_merge(
+                    is_array($extraParams[$key] ?? null) ? $extraParams[$key] : [],
+                    $params,
+                )),
+            ];
+        }
+
+        $out = array_values($out);
+
+        usort($out, function (array $a, array $b) {
+            $rank = fn (string $group) => ($position = array_search($group, static::STYLE_ORDER, true)) === false
+                ? count(static::STYLE_ORDER)
+                : $position;
+
+            return $rank($a['group']) <=> $rank($b['group']);
+        });
+
+        return $out;
+    }
+
+    /** پارامترهای سبک: مقدارهای خالی کنار می‌رود و عددها عدد می‌شوند. */
+    protected function cleanStyleParams(array $params): array
+    {
+        $out = [];
+
+        foreach ($params as $key => $value) {
+            if ($value === null || $value === '' || is_array($value)) {
+                continue;
+            }
+
+            $out[(string) $key] = is_numeric($value) ? (float) $value : $value;
+        }
+
+        return $out;
     }
 
     /* ---------------------------------------------------------------------
@@ -339,18 +656,95 @@ class PatternComposer
         array $params = [],
         array $seamAllowances = [],
     ): array {
-        $selection = $this->normalizeSelection($selection);
+        $recipe = $this->normalizeRecipe($selection, $params);
         $measurements = Measurements::complete($measurements);
         $seamMap = $seamAllowances === [] ? PatternBuilder::DEFAULT_SEAM_ALLOWANCES : $seamAllowances;
 
+        [$groups, $notes, $metrics, $labels] = $recipe['base']['kind'] === 'garment'
+            ? $this->garmentBase($recipe['base'], $measurements, $ease, $params)
+            : $this->blockBase($recipe['base'], $measurements, $ease, $params);
+
+        $pieces = $this->flatten($groups);
+
+        // سبک‌ها یکی‌یکی روی همین قطعه‌ها اجرا می‌شوند
+        if ($recipe['styles'] !== []) {
+            [$pieces, $styleNotes, $metrics['styles']] = $this->applyStyles($pieces, $recipe['styles'], [
+                'measurements' => $measurements,
+                'ease' => $ease,
+                'garment' => $recipe['base'] + ['labels' => $labels],
+                'notes' => $notes,
+            ]);
+
+            $notes = array_merge($notes, $styleNotes);
+
+            // هر سبکی می‌تواند یک درز را عوض کرده باشد؛ دوباره همه را جور می‌کنیم
+            [$pieces, $fixNotes, $fixMetrics] = $this->reconcile($pieces, $params, $labels['lower'] ?? 'پایین‌تنه');
+            $notes = array_merge($notes, $fixNotes);
+            $metrics = array_merge($metrics, $fixMetrics);
+        }
+
+        $pieces = $this->finalize($pieces, $seamMap);
+
+        $metrics['pieces'] = count($pieces);
+        $metrics['cut_pieces'] = (int) collect($pieces)->sum('cut_quantity');
+
+        return [
+            'recipe' => $recipe,
+            'selection' => $recipe['base'],
+            'labels' => $labels,
+            'pieces' => $pieces,
+            'notes' => $notes,
+            'metrics' => $metrics,
+            'measurements' => $measurements,
+            'seam_allowances' => $seamMap,
+            'sewing_relations' => $this->relations($pieces),
+            'name' => $this->suggestName($recipe),
+        ];
+    }
+
+    /**
+     * پایه «یک لباس کامل»: قطعه‌های یک تولیدکننده، دسته‌بندی‌شده.
+     *
+     * @return array{0: array<string, array<int, array<string, mixed>>>, 1: array<int, array<string, string>>, 2: array<string, mixed>, 3: array<string, string|null>}
+     */
+    protected function garmentBase(array $base, array $measurements, array $ease, array $params): array
+    {
+        $key = $base['garment'];
+        $generator = GeneratorRegistry::make($key);
+        $pieces = $this->blockPieces('garment', $key, $measurements, $ease, $params);
+
+        $groups = [];
+
+        foreach ($pieces as $piece) {
+            $groups[$this->groupOfPart($piece)][] = $piece;
+        }
+
+        $notes = [$this->note('info', 'پایه ترکیب مدل «'.$generator->label().'» است؛ '
+            .Format::number(count($pieces)).' قطعه از خود مدل آمد و سبک‌ها روی همین‌ها اجرا می‌شود.')];
+
+        return [
+            $groups,
+            $notes,
+            ['garment' => ['key' => $key, 'pieces' => count($pieces)]],
+            ['garment' => $generator->label(), 'bodice' => null, 'lower' => null, 'sleeve' => null, 'collar' => null],
+        ];
+    }
+
+    /**
+     * پایه «از بلوک بساز»: همان ترکیب بالاتنه + پایین‌تنه + آستین + یقه.
+     *
+     * @return array{0: array<string, array<int, array<string, mixed>>>, 1: array<int, array<string, string>>, 2: array<string, mixed>, 3: array<string, string|null>}
+     */
+    protected function blockBase(array $selection, array $measurements, array $ease, array $params): array
+    {
         $notes = [];
         $metrics = [];
 
         // ۱) بالاتنه — فقط قطعه‌های تنه؛ آستین و یقه خودِ مدل کنار گذاشته می‌شود
         $bodiceLabel = GeneratorRegistry::make($selection['bodice'])->label();
-        $bodice = $this->keepParts(
+        $bodice = $this->keepForBodice(
             $this->blockPieces('bodice', $selection['bodice'], $measurements, $ease, $params),
-            static::BODICE_PARTS,
+            $selection['lower'] !== null,
             $droppedBodice,
         );
 
@@ -367,8 +761,9 @@ class PatternComposer
             $lowerLabel = GeneratorRegistry::make($selection['lower'])->label();
             $lower = $this->keepParts(
                 $this->blockPieces('lower', $selection['lower'], $measurements, $ease, $params),
-                static::LOWER_PARTS,
+                ['waistband'],
                 $droppedLower,
+                exclude: true,
             );
 
             if ($droppedLower !== []) {
@@ -422,33 +817,457 @@ class PatternComposer
             $notes = array_merge($notes, $collarNotes);
         }
 
-        // ۶) یکپارچه‌سازی: گروه، کد یکتا، ترتیب، برچسب لبه‌ها و جای دوخت
-        $pieces = $this->mergePieces([
-            'bodice' => $bodice,
-            'lower' => $lower,
-            'sleeve' => $sleeve,
-            'collar' => $collar,
-        ], $seamMap);
-
-        $metrics['pieces'] = count($pieces);
-        $metrics['cut_pieces'] = (int) collect($pieces)->sum('cut_quantity');
-
         return [
-            'selection' => $selection,
-            'labels' => [
+            [
+                'bodice' => $bodice,
+                'lower' => $lower,
+                'sleeve' => $sleeve,
+                'collar' => $collar,
+            ],
+            $notes,
+            $metrics,
+            [
+                'garment' => null,
                 'bodice' => $bodiceLabel,
                 'lower' => $lowerLabel,
                 'sleeve' => $selection['sleeve'] ? GeneratorRegistry::make($selection['sleeve'])->label() : null,
                 'collar' => $selection['collar'] ? static::COLLAR_LABELS[$selection['collar']] : null,
             ],
-            'pieces' => $pieces,
-            'notes' => $notes,
-            'metrics' => $metrics,
-            'measurements' => $measurements,
-            'seam_allowances' => $seamMap,
-            'sewing_relations' => $this->relations($pieces),
-            'name' => $this->suggestName($selection),
         ];
+    }
+
+    /* ---------------------------------------------------------------------
+     |  اجرای سبک‌ها
+     * ------------------------------------------------------------------- */
+
+    /**
+     * سبک‌ها را به ترتیب روی قطعه‌ها اجرا می‌کند.
+     *
+     * قانون‌ها:
+     *   • سبکی که خودش می‌گوید روی این لباس نمی‌نشیند، با همان دلیل فارسی رد می‌شود
+     *     و بقیه سبک‌ها ادامه پیدا می‌کنند.
+     *   • اگر سبکی خطا داد یا خروجی بی‌ریخت داد، قطعه‌های پیش از آن دست‌نخورده
+     *     می‌مانند؛ یک سبک خراب نباید کل لباس را خراب کند.
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     * @param  array<int, array{key: string, group: string, params: array<string, mixed>}>  $styles
+     * @return array{0: array<int, array<string, mixed>>, 1: array<int, array<string, string>>, 2: array<int, array<string, mixed>>}
+     */
+    protected function applyStyles(array $pieces, array $styles, array $context): array
+    {
+        $notes = [];
+        $report = [];
+
+        foreach ($styles as $entry) {
+            $key = $entry['key'];
+
+            if (! StyleRegistry::has($key)) {
+                $notes[] = $this->note('warning', 'سبک «'.$key.'» دیگر در فهرست سبک‌ها نیست، پس روی این لباس اجرا نشد.');
+                $report[] = ['key' => $key, 'label' => $key, 'group' => $entry['group'], 'status' => 'missing'];
+
+                continue;
+            }
+
+            $style = StyleRegistry::make($key);
+            $params = array_merge($this->styleDefaults($style), $entry['params']);
+            $ctx = array_merge($context, ['params' => $params, 'notes' => $notes]);
+            $row = [
+                'key' => $key,
+                'label' => $style->label(),
+                'group' => $style::group(),
+                'params' => $params,
+            ];
+
+            try {
+                $verdict = $style->supports($pieces, $ctx);
+            } catch (Throwable $exception) {
+                $verdict = $exception->getMessage();
+            }
+
+            if ($verdict !== true) {
+                $notes[] = $this->note('warning', 'سبک «'.$style->label().'» روی این لباس اجرا نشد: '.$verdict);
+                $report[] = $row + ['status' => 'skipped', 'reason' => (string) $verdict];
+
+                continue;
+            }
+
+            try {
+                $result = $style->apply($pieces, $ctx);
+            } catch (Throwable $exception) {
+                $notes[] = $this->note('warning', 'سبک «'.$style->label().'» نیمه‌کاره ماند و کنار گذاشته شد: '
+                    .$exception->getMessage());
+                $report[] = $row + ['status' => 'failed', 'reason' => $exception->getMessage()];
+
+                continue;
+            }
+
+            $next = is_array($result['pieces'] ?? null) ? array_values($result['pieces']) : [];
+
+            if (! $this->piecesAreSane($next)) {
+                $notes[] = $this->note('warning', 'سبک «'.$style->label()
+                    .'» قطعه‌های سالمی نداد، پس اجرا نشد و لباس بدون آن ساخته شد.');
+                $report[] = $row + ['status' => 'invalid'];
+
+                continue;
+            }
+
+            $before = count($pieces);
+            $pieces = $next;
+
+            foreach ($result['notes'] ?? [] as $note) {
+                $notes[] = $this->styleNote($note);
+            }
+
+            $report[] = $row + [
+                'status' => 'applied',
+                'added' => max(0, count($pieces) - $before),
+                'meta' => $result['meta'] ?? [],
+            ];
+        }
+
+        return [$pieces, $notes, $report];
+    }
+
+    /** یادداشت سبک‌ها گاهی رشته است و گاهی ['type' => .., 'text' => ..]. */
+    protected function styleNote(mixed $note): array
+    {
+        if (is_array($note) && isset($note['text'])) {
+            return $this->note((string) ($note['type'] ?? 'info'), (string) $note['text']);
+        }
+
+        return $this->note('info', is_scalar($note) ? (string) $note : '');
+    }
+
+    /** حداقل سلامت خروجی یک سبک: قطعه‌ها باید مسیر بسته و قابل‌بریدن داشته باشند. */
+    protected function piecesAreSane(array $pieces): bool
+    {
+        if ($pieces === []) {
+            return false;
+        }
+
+        foreach ($pieces as $piece) {
+            if (! is_array($piece) || count($piece['outline'] ?? []) < 3) {
+                return false;
+            }
+
+            foreach ($piece['outline'] as $point) {
+                if (! is_array($point) || ! is_numeric($point['x'] ?? null) || ! is_numeric($point['y'] ?? null)) {
+                    return false;
+                }
+            }
+
+            if (Geometry::width($piece['outline']) < 0.5 || Geometry::height($piece['outline']) < 0.5) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /* ---------------------------------------------------------------------
+     |  جورکردن دوباره پس از سبک‌ها
+     * ------------------------------------------------------------------- */
+
+    /**
+     * همان سه جورکردن همیشگی، این بار روی قطعه‌های سبک‌خورده: کمر، حلقه آستین و
+     * خط یقه. سبکی که یک درز را عوض کرده باید این‌جا جبران شود، نه سر چرخ خیاطی.
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     * @return array{0: array<int, array<string, mixed>>, 1: array<int, array<string, string>>, 2: array<string, mixed>}
+     */
+    protected function reconcile(array $pieces, array $params, string $lowerLabel = 'پایین‌تنه'): array
+    {
+        $notes = [];
+        $metrics = [];
+
+        [$pieces, $waistNotes, $waistMetrics] = $this->reconcileWaistInPlace($pieces, $params, $lowerLabel);
+        $notes = array_merge($notes, $waistNotes);
+
+        if ($waistMetrics !== null) {
+            $metrics['waist_after_styles'] = $waistMetrics;
+        }
+
+        [$pieces, $armNotes, $armMetrics] = $this->reconcileArmhole($pieces);
+        $notes = array_merge($notes, $armNotes);
+
+        if ($armMetrics !== null) {
+            $metrics['sleeve_after_styles'] = $armMetrics;
+        }
+
+        [$pieces, $collarNotes, $collarMetrics] = $this->reconcileCollar($pieces, $params);
+        $notes = array_merge($notes, $collarNotes);
+
+        if ($collarMetrics !== null) {
+            $metrics['collar_after_styles'] = $collarMetrics;
+        }
+
+        return [$pieces, $notes, $metrics];
+    }
+
+    /**
+     * کمر بالاتنه و پایین‌تنه را دوباره هم‌اندازه می‌کند (اگر هنوز درز کمری هست).
+     *
+     * @return array{0: array<int, array<string, mixed>>, 1: array<int, array<string, string>>, 2: array<string, mixed>|null}
+     */
+    protected function reconcileWaistInPlace(array $pieces, array $params, string $lowerLabel): array
+    {
+        $top = $this->indexesOfGroup($pieces, 'bodice', 'waist');
+        $bottom = $this->indexesOfGroup($pieces, 'lower', 'waist');
+
+        if ($top === [] || $bottom === []) {
+            return [$pieces, [], null];
+        }
+
+        $bodice = $this->pick($pieces, $top);
+        $lower = $this->pick($pieces, $bottom);
+        $difference = round($this->waistGirth($lower) - $this->waistGirth($bodice), 2);
+
+        if (abs($difference) <= static::WAIST_TOLERANCE) {
+            return [$pieces, [], null];
+        }
+
+        [$bodice, $lower, $metrics, $notes] = $this->reconcileWaist($bodice, $lower, $lowerLabel, $params);
+
+        $pieces = $this->put($pieces, $top, $bodice);
+        $pieces = $this->put($pieces, $bottom, $lower);
+
+        array_unshift($notes, $this->note('info', 'سبک‌ها خط کمر را '.Format::cm(abs($difference))
+            .' جابه‌جا کردند، پس کمر دوباره جور شد.'));
+
+        return [$pieces, $notes, $metrics];
+    }
+
+    /**
+     * سرآستین و حلقه آستین را دوباره اندازه می‌گیرد.
+     *
+     * چین و پیلی ثبت‌شده روی سرآستین از طول کم می‌شود، چون آستین پفی عمداً بلندتر
+     * بریده می‌شود. اگر باز هم سرآستین بلندتر بود، حلقه تا جای ممکن گودتر می‌شود و
+     * باقیمانده گزارش.
+     *
+     * @return array{0: array<int, array<string, mixed>>, 1: array<int, array<string, string>>, 2: array<string, mixed>|null}
+     */
+    protected function reconcileArmhole(array $pieces): array
+    {
+        $body = $this->indexesOfGroup($pieces, 'bodice', 'armhole');
+        $sleeves = $this->indexesOfGroup($pieces, 'sleeve', 'armhole');
+
+        if ($body === [] || $sleeves === []) {
+            return [$pieces, [], null];
+        }
+
+        $armhole = $this->armholeLength($this->pick($pieces, $body));
+        $cap = 0.0;
+
+        foreach ($sleeves as $index) {
+            $cap += $this->sewnCapLength($pieces[$index]);
+        }
+
+        if ($armhole <= 0 || $cap <= 0) {
+            return [$pieces, [], null];
+        }
+
+        $difference = round($cap - $armhole, 2);
+        $dropped = 0.0;
+
+        // سرآستین خیلی بلندتر: حلقه را گودتر می‌کنیم تا در آن جا شود
+        while ($difference > static::MAX_GATHER && $dropped < static::MAX_ARMHOLE_DROP) {
+            $bodice = $this->pick($pieces, $body);
+            $step = min(($difference - static::MAX_GATHER) / max(1, count($body)), static::MAX_ARMHOLE_DROP - $dropped);
+            [$bodice, $applied] = $this->deepenArmhole($bodice, $step);
+
+            if ($applied < 0.05) {
+                break;
+            }
+
+            $pieces = $this->put($pieces, $body, $bodice);
+            $dropped = round($dropped + $applied, 2);
+            $armhole = $this->armholeLength($this->pick($pieces, $body));
+            $difference = round($cap - $armhole, 2);
+        }
+
+        $metrics = [
+            'armhole' => $armhole,
+            'cap' => round($cap, 2),
+            'difference' => $difference,
+            'armhole_drop' => $dropped,
+            'status' => abs($difference) <= static::CAP_TOLERANCE ? 'fitted' : 'eased',
+        ];
+
+        $notes = [];
+
+        if ($dropped > 0.05) {
+            $notes[] = $this->note('tip', 'پس از سبک‌ها حلقه آستین '.Format::cm($dropped)
+                .' گودتر شد تا سرآستین در آن بنشیند.');
+        }
+
+        if ($difference < -static::CAP_TOLERANCE) {
+            $notes[] = $this->note('warning', 'سرآستین '.Format::cm(abs($difference))
+                .' از حلقه آستین کوتاه‌تر است؛ آستین کشیده می‌شود. دور بازو یا گودی حلقه را بازبینی کنید.');
+        } elseif ($difference > static::CAP_TOLERANCE) {
+            $notes[] = $this->note('info', 'سرآستین '.Format::cm($difference)
+                .' بلندتر از حلقه آستین است؛ این مقدار روی سرشانه چین می‌خورد.');
+        }
+
+        return [$pieces, $notes, $metrics];
+    }
+
+    /** طول دوختنی سرآستین: طول لبه‌های حلقه منهای چین و پیلی ثبت‌شده روی همان‌ها. */
+    protected function sewnCapLength(array $piece): float
+    {
+        $total = 0.0;
+
+        foreach ($this->edgesWithTag($piece, 'armhole') as $edge) {
+            $total += $this->seamLength($piece, $edge);
+        }
+
+        return round($total, 2);
+    }
+
+    /**
+     * اگر سبکی خط یقه را عوض کرده باشد، یقه دوخته‌شده دوباره به اندازه خط یقه تازه
+     * بریده می‌شود.
+     *
+     * @return array{0: array<int, array<string, mixed>>, 1: array<int, array<string, string>>, 2: array<string, mixed>|null}
+     */
+    protected function reconcileCollar(array $pieces, array $params): array
+    {
+        $collarIndex = null;
+
+        foreach ($pieces as $index => $piece) {
+            if (($piece['meta']['part'] ?? null) === 'collar' && isset($piece['meta']['collar_style'])) {
+                $collarIndex = $index;
+                break;
+            }
+        }
+
+        if ($collarIndex === null) {
+            return [$pieces, [], null];
+        }
+
+        $style = (string) $pieces[$collarIndex]['meta']['collar_style'];
+
+        if (! isset(static::COLLAR_DEFAULTS[$style])) {
+            return [$pieces, [], null];
+        }
+
+        $body = $this->indexesOfGroup($pieces, 'bodice', 'neck');
+        $neck = $this->necklineLength($this->pick($pieces, $body));
+        $before = (float) ($pieces[$collarIndex]['meta']['neckline_length'] ?? 0);
+
+        if ($neck <= 0 || abs($neck - $before) <= 0.4) {
+            return [$pieces, [], null];
+        }
+
+        [$collar, $metrics, $notes] = $this->fitCollar($style, $this->pick($pieces, $body), $params);
+
+        if ($collar === []) {
+            return [$pieces, $notes, $metrics];
+        }
+
+        $collar[0]['code'] = $pieces[$collarIndex]['code'];
+        $collar[0]['meta']['group'] = $pieces[$collarIndex]['meta']['group'] ?? 'collar';
+        $pieces[$collarIndex] = $collar[0];
+
+        array_unshift($notes, $this->note('info', 'سبک‌ها خط یقه را از '.Format::cm($before).' به '
+            .Format::cm($neck).' رساندند، پس '.static::COLLAR_LABELS[$style].' دوباره بریده شد.'));
+
+        return [array_values($pieces), $notes, $metrics];
+    }
+
+    /* --- کمک‌کننده‌های کار با فهرست تخت قطعه‌ها ---------------------------- */
+
+    /**
+     * شماره قطعه‌هایی که این «نقش» را دارند (و در صورت خواست، این لبه را).
+     *
+     * @return array<int, int>
+     */
+    protected function indexesOfGroup(array $pieces, string $group, ?string $tag = null): array
+    {
+        $out = [];
+
+        foreach ($pieces as $index => $piece) {
+            if (! $this->cuts($piece)) {
+                continue;
+            }
+
+            if (($piece['meta']['group'] ?? $this->groupOfPart($piece)) !== $group) {
+                continue;
+            }
+
+            if ($tag !== null && $this->edgeWithTag($piece, $tag) === null) {
+                continue;
+            }
+
+            $out[] = (int) $index;
+        }
+
+        return $out;
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    protected function pick(array $pieces, array $indexes): array
+    {
+        return array_values(array_map(fn (int $index) => $pieces[$index], $indexes));
+    }
+
+    /** قطعه‌های تغییرکرده را سر جای خودشان برمی‌گرداند. */
+    protected function put(array $pieces, array $indexes, array $updated): array
+    {
+        foreach (array_values($indexes) as $position => $index) {
+            if (isset($updated[$position])) {
+                $pieces[$index] = $updated[$position];
+            }
+        }
+
+        return $pieces;
+    }
+
+    /**
+     * گروه‌های ترکیب را به یک فهرست تخت تبدیل می‌کند و روی هر قطعه گروهش را می‌نویسد.
+     *
+     * @param  array<string, array<int, array<string, mixed>>>  $groups
+     * @return array<int, array<string, mixed>>
+     */
+    protected function flatten(array $groups): array
+    {
+        $order = ['bodice', 'lower', 'sleeve', 'collar'];
+        $pieces = [];
+
+        foreach (array_unique(array_merge($order, array_keys($groups))) as $group) {
+            foreach ($groups[$group] ?? [] as $piece) {
+                $piece['meta']['group'] = $group;
+                $pieces[] = $piece;
+            }
+        }
+
+        return $pieces;
+    }
+
+    /**
+     * گروه یک قطعه از روی نقش و برچسب لبه‌هایش.
+     *
+     * نام قطعه‌ها بسته نیست (هر مدل تازه‌ای می‌تواند نام تازه بیاورد)، پس اگر نام
+     * ناشناخته بود از روی لبه‌ها حدس زده می‌شود: هرچه حلقه آستین یا سرشانه و یقه
+     * دارد تنه است، هرچه دم دارد و حلقه ندارد پایین‌تنه.
+     */
+    protected function groupOfPart(array $piece): string
+    {
+        $part = (string) ($piece['meta']['part'] ?? '');
+        $tags = array_values($piece['meta']['edges'] ?? []);
+        $has = fn (string $tag) => in_array($tag, $tags, true);
+
+        return match (true) {
+            in_array($part, static::SLEEVE_PARTS, true), str_starts_with($part, 'sleeve') => 'sleeve',
+            in_array($part, static::COLLAR_PARTS, true) => 'collar',
+            in_array($part, static::BODICE_PARTS, true), $part === 'lapel' => 'bodice',
+            in_array($part, static::LOWER_PARTS, true), $part === 'waistband' => 'lower',
+            str_contains($part, 'skirt'), str_contains($part, '_leg') => 'lower',
+            $part !== '' && ! in_array($part, ['facing', 'lining', 'pocket', 'cuff', 'tie', 'binding'], true)
+                && ($has('armhole') || ($has('shoulder') && $has('neck'))) => 'bodice',
+            $part === '' && ($has('armhole') || ($has('shoulder') && $has('neck'))) => 'bodice',
+            $has('hem') && $has('waist') && ! $has('armhole') && ! $has('neck') => 'lower',
+            default => 'detail',
+        };
     }
 
     /**
@@ -503,6 +1322,7 @@ class PatternComposer
                 'seam_allowances' => $seamAllowances,
                 'params' => [
                     'compose' => [
+                        'recipe' => $result['recipe'],
                         'selection' => $result['selection'],
                         'labels' => $result['labels'],
                         'metrics' => $result['metrics'],
@@ -541,7 +1361,7 @@ class PatternComposer
         $total = 0.0;
 
         foreach ($pieces as $piece) {
-            $edge = $this->edgeWithTag($piece, 'waist');
+            $edge = $this->cuts($piece) ? $this->edgeWithTag($piece, 'waist') : null;
 
             if ($edge === null) {
                 continue;
@@ -562,6 +1382,10 @@ class PatternComposer
         $total = 0.0;
 
         foreach ($pieces as $piece) {
+            if (! $this->cuts($piece)) {
+                continue;
+            }
+
             foreach ($this->edgesWithTag($piece, 'armhole') as $edge) {
                 $total += Geometry::edgeLength($piece['outline'], $edge);
             }
@@ -570,12 +1394,28 @@ class PatternComposer
         return round($total, 2);
     }
 
+    /**
+     * آیا این قطعه در اندازه‌گیری درزهای بیرونی حساب می‌شود؟
+     *
+     * آستر و لایی و رودوزی روی هم می‌خوابند و اگر شمرده شوند دور کمر و حلقه آستین
+     * دو برابر درمی‌آید.
+     */
+    protected function cuts(array $piece): bool
+    {
+        return ($piece['layer'] ?? 'outer') === 'outer'
+            && ! in_array($piece['meta']['part'] ?? null, ['facing', 'lining', 'binding'], true);
+    }
+
     /** نصف خط یقه (جلو + پشت روی تای پارچه) — همان اندازه‌ای که نیم‌یقه باید داشته باشد. */
     public function necklineLength(array $pieces): float
     {
         $total = 0.0;
 
         foreach ($pieces as $piece) {
+            if (! $this->cuts($piece)) {
+                continue;
+            }
+
             foreach ($this->edgesWithTag($piece, 'neck') as $edge) {
                 $total += Geometry::edgeLength($piece['outline'], $edge);
             }
@@ -1590,27 +2430,101 @@ class PatternComposer
         };
 
         if ($keep !== null) {
-            $pieces = $this->keepParts($pieces, $keep, $ignored);
+            $kept = $this->keepParts($pieces, $keep, $ignored);
+
+            // مدل‌هایی که نام قطعه‌شان تازه است (مثلاً طبقه دامن) هم باید بندانگشتی داشته باشند
+            $pieces = $kept === [] ? $pieces : $kept;
         }
 
-        return array_slice($pieces, 0, 3);
+        return array_map($this->simplify(...), array_slice($pieces, 0, 2));
+    }
+
+    /**
+     * سبک‌کردن قطعه برای بندانگشتی.
+     *
+     * در کارتی به اندازه ناخن، نشانه و مته و راستای پارچه دیده نمی‌شود ولی حجم
+     * صفحه را چند برابر می‌کند؛ فقط مسیر قطعه و ساسون‌ها می‌ماند.
+     *
+     * @param  array<string, mixed>  $piece
+     * @return array<string, mixed>
+     */
+    protected function simplify(array $piece): array
+    {
+        $piece['notches'] = [];
+        $piece['drills'] = [];
+        $piece['markers'] = [];
+        $piece['grainline'] = null;
+        $piece['edge_allowances'] = [];
+
+        return $piece;
+    }
+
+    /**
+     * دستور ذخیره‌شده در یک الگو، برای بازکردن دوباره در کارگاه ترکیب.
+     *
+     * @return array{base: array<string, mixed>, styles: array<int, array<string, mixed>>}
+     */
+    public function recipeOf(Pattern|array $pattern): array
+    {
+        $params = $pattern instanceof Pattern ? ($pattern->params ?? []) : $pattern;
+        $compose = is_array($params['compose'] ?? null) ? $params['compose'] : [];
+
+        foreach (['recipe', 'selection'] as $key) {
+            if (is_array($compose[$key] ?? null) && $compose[$key] !== []) {
+                return $this->normalizeRecipe($compose[$key], validate: false);
+            }
+        }
+
+        return $this->normalizeRecipe([], validate: false);
     }
 
     /**
      * فقط قطعه‌های خواسته‌شده را نگه می‌دارد و بقیه را در $dropped می‌گذارد.
      *
+     * با $exclude برعکس می‌شود: همه چیز جز این نقش‌ها می‌ماند.
+     *
      * @return array<int, array<string, mixed>>
      */
-    protected function keepParts(array $pieces, array $parts, ?array &$dropped): array
+    protected function keepParts(array $pieces, array $parts, ?array &$dropped, bool $exclude = false): array
     {
         $kept = [];
         $dropped = [];
 
         foreach ($pieces as $piece) {
-            if (in_array($piece['meta']['part'] ?? null, $parts, true)) {
+            if (in_array($piece['meta']['part'] ?? null, $parts, true) !== $exclude) {
                 $kept[] = $piece;
             } else {
                 $dropped[] = $piece;
+            }
+        }
+
+        return $kept;
+    }
+
+    /**
+     * قطعه‌های یک مدل در نقش «بالاتنه».
+     *
+     * آستین و یقه خودِ مدل کنار می‌رود چون جداگانه انتخاب می‌شوند، و اگر پایین‌تنه
+     * جدا انتخاب شده باشد دامنِ خود مدل هم کنار می‌رود. بقیه (یوک، سجاف، آستر،
+     * برگردان یقه) می‌ماند، پس مدل‌های تازه با نام قطعه تازه هم درست بریده می‌شوند.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    protected function keepForBodice(array $pieces, bool $hasLower, ?array &$dropped): array
+    {
+        $kept = [];
+        $dropped = [];
+
+        foreach ($pieces as $piece) {
+            $group = $this->groupOfPart($piece);
+            $drop = in_array($group, ['sleeve', 'collar'], true)
+                || ($piece['meta']['part'] ?? null) === 'waistband'
+                || ($hasLower && $group === 'lower');
+
+            if ($drop) {
+                $dropped[] = $piece;
+            } else {
+                $kept[] = $piece;
             }
         }
 
@@ -1625,39 +2539,63 @@ class PatternComposer
      */
     protected function mergePieces(array $groups, array $seamMap): array
     {
-        $pieces = [];
+        return $this->finalize($this->flatten($groups), $seamMap);
+    }
+
+    /**
+     * آماده‌سازی نهایی هر قطعه: گروه، کد یکتا، ترتیب، برچسب لبه‌ها و جای دوخت.
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     * @return array<int, array<string, mixed>>
+     */
+    protected function finalize(array $pieces, array $seamMap): array
+    {
+        $out = [];
         $codes = [];
         $sort = 0;
 
-        foreach ($groups as $group => $groupPieces) {
-            foreach ($groupPieces as $piece) {
-                $piece['meta'] = array_merge($piece['meta'] ?? [], [
-                    'group' => $group,
-                    'composed' => true,
-                ]);
+        foreach ($pieces as $index => $piece) {
+            $piece['meta'] = array_merge($piece['meta'] ?? [], [
+                'group' => $piece['meta']['group'] ?? $this->groupOfPart($piece),
+                'composed' => true,
+            ]);
 
-                $code = (string) ($piece['code'] ?? $group);
+            $code = (string) ($piece['code'] ?? $piece['meta']['group'] ?? 'piece');
+            $code = $code === '' ? 'piece-'.($index + 1) : $code;
 
-                if (isset($codes[$code])) {
-                    $codes[$code]++;
-                    $code = $code.'-'.$codes[$code];
-                } else {
-                    $codes[$code] = 1;
-                }
-
-                $piece['code'] = $code;
-                $piece['sort'] = $sort;
-                $sort += 10;
-
-                $piece = Geometry::normalizePiece($piece);
-                $piece['outline'] = Geometry::round($piece['outline']);
-                $piece['edge_allowances'] = $this->seams->allowancesFor($piece, $seamMap);
-
-                $pieces[] = $piece;
+            if (isset($codes[$code])) {
+                $codes[$code]++;
+                $code = $code.'-'.$codes[$code];
+            } else {
+                $codes[$code] = 1;
             }
+
+            $piece['code'] = $code;
+            $piece['sort'] = $sort;
+            $sort += 10;
+
+            $piece = Geometry::normalizePiece($piece);
+            $piece['outline'] = Geometry::round($piece['outline']);
+            $piece['meta']['edges'] = $this->paddedEdges($piece);
+            $piece['edge_allowances'] = $this->seams->allowancesFor($piece, $seamMap);
+
+            $out[] = $piece;
         }
 
-        return $pieces;
+        return $out;
+    }
+
+    /** هر لبه باید دقیقاً یک برچسب داشته باشد، وگرنه جای دوخت و دوخت مجازی می‌لنگد. */
+    protected function paddedEdges(array $piece): array
+    {
+        $count = count($piece['outline'] ?? []);
+        $edges = array_values($piece['meta']['edges'] ?? []);
+
+        while (count($edges) < $count) {
+            $edges[] = 'default';
+        }
+
+        return array_slice($edges, 0, $count);
     }
 
     /**
@@ -1824,17 +2762,24 @@ class PatternComposer
     /** نام پیشنهادی الگو از روی انتخاب‌ها. */
     public function suggestName(array $selection): string
     {
-        $selection = $this->normalizeSelection($selection, validate: false);
+        $recipe = $this->normalizeRecipe($selection, validate: false);
+        $base = $recipe['base'];
         $parts = [];
 
-        foreach (['bodice', 'sleeve', 'lower'] as $group) {
-            if ($selection[$group] !== null) {
-                $parts[] = GeneratorRegistry::make($selection[$group])->label();
+        foreach (['garment', 'bodice', 'sleeve', 'lower'] as $group) {
+            if (($base[$group] ?? null) !== null && GeneratorRegistry::has($base[$group])) {
+                $parts[] = GeneratorRegistry::make($base[$group])->label();
             }
         }
 
-        if ($selection['collar'] !== null) {
-            $parts[] = static::COLLAR_LABELS[$selection['collar']];
+        if (($base['collar'] ?? null) !== null && isset(static::COLLAR_LABELS[$base['collar']])) {
+            $parts[] = static::COLLAR_LABELS[$base['collar']];
+        }
+
+        foreach (array_slice($recipe['styles'], 0, 2) as $style) {
+            if (StyleRegistry::has($style['key'])) {
+                $parts[] = StyleRegistry::make($style['key'])->label();
+            }
         }
 
         return 'ترکیب: '.implode(' + ', $parts ?: ['بدون انتخاب']);
@@ -1842,22 +2787,40 @@ class PatternComposer
 
     protected function selectionSummary(array $result): string
     {
-        return implode(' + ', array_filter(array_values($result['labels'] ?? [])));
+        $parts = array_filter(array_values($result['labels'] ?? []));
+
+        foreach ($result['recipe']['styles'] ?? [] as $style) {
+            if (StyleRegistry::has($style['key'])) {
+                $parts[] = StyleRegistry::make($style['key'])->label();
+            }
+        }
+
+        return implode(' + ', $parts);
     }
 
     /** نوع لباس حدسی برای ترکیب (پیراهن یک‌تکه، شلوار یا بلوز). */
     protected function guessGarmentTypeId(array $selection): ?int
     {
+        $base = $selection['garment'] ?? $selection['bodice'] ?? null;
+
         $code = match (true) {
-            $selection['lower_kind'] === 'pants' => 'pants',
-            $selection['lower_kind'] === 'skirt' => 'dress',
-            $selection['bodice'] === 'tshirt' => 'tshirt',
-            $selection['bodice'] === 'shirt_classic' => 'shirt',
-            $selection['bodice'] === 'blazer' => 'blazer',
+            ($selection['kind'] ?? null) === 'garment' => match ($base) {
+                'tshirt' => 'tshirt',
+                'shirt_classic' => 'shirt',
+                'blazer' => 'blazer',
+                'dress' => 'dress',
+                default => str_starts_with((string) $base, 'skirt') ? 'skirt' : 'blouse',
+            },
+            ($selection['lower_kind'] ?? null) === 'pants' => 'pants',
+            ($selection['lower_kind'] ?? null) === 'skirt' => 'dress',
+            $base === 'tshirt' => 'tshirt',
+            $base === 'shirt_classic' => 'shirt',
+            $base === 'blazer' => 'blazer',
             default => 'blouse',
         };
 
-        return GarmentType::query()->where('code', $code)->value('id');
+        return GarmentType::query()->where('code', $code)->value('id')
+            ?? GarmentType::query()->where('code', 'blouse')->value('id');
     }
 
     /** @return array<string, float> */

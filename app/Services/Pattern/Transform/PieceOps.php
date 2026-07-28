@@ -540,12 +540,21 @@ final class PieceOps
         $piece['on_fold'] = false;
         $piece['mirror'] = false;
         $piece['meta']['fold_edges'] = [];
+
+        $piece = Outline::apply($piece, $joined['outline'], $joined['tags'], normalize: false);
+
+        // خط تا باید در همان دستگاه مختصاتی ذخیره شود که قطعه پس از مرتب‌سازی
+        // دارد، وگرنه refold() آن را جای دیگری می‌برد و قطعه را نابجا می‌برد.
+        [$minX, $minY] = Geometry::bounds($piece['outline']);
         $piece['meta']['unfolded'] = [
-            'line' => [Geometry::point($a['x'], $a['y']), Geometry::point($b['x'], $b['y'])],
+            'line' => [
+                Geometry::point($a['x'] - $minX, $a['y'] - $minY),
+                Geometry::point($b['x'] - $minX, $b['y'] - $minY),
+            ],
             'side' => $side >= 0 ? 1 : -1,
         ];
 
-        return Outline::apply($piece, $joined['outline'], $joined['tags']);
+        return Geometry::normalizePiece($piece);
     }
 
     /**

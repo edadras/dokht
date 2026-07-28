@@ -8,18 +8,11 @@ namespace App\Services\Pattern\Generators;
  * همه کاهش کمر روی درز پهلو گرفته می‌شود؛ بلوکی که برای پارچه‌های نرم، بلوز
  * راحت و مدل‌هایی که ساسون در آن‌ها دیده نمی‌شود به کار می‌رود.
  */
-class BodiceDartlessGenerator extends BaseGenerator
+class BodiceDartlessGenerator extends BodiceBaseGenerator
 {
-    use BodiceCatalogSupport;
-
     public static function key(): string
     {
         return 'bodice_dartless';
-    }
-
-    public static function group(): string
-    {
-        return 'bodice';
     }
 
     public function label(): string
@@ -60,7 +53,7 @@ class BodiceDartlessGenerator extends BaseGenerator
             'bottom_tag' => $length > 0.5 ? 'hem' : 'waist',
         ];
 
-        return $this->finish([
+        return $this->finishBlock([
             $this->bodyPanel($g, array_merge($shared, [
                 'side' => 'front',
                 'code' => 'bodice-dartless-front',
@@ -71,6 +64,6 @@ class BodiceDartlessGenerator extends BaseGenerator
                 'code' => 'bodice-dartless-back',
                 'name' => 'بالاتنه پشت',
             ])),
-        ]);
+        ], $g);
     }
 }

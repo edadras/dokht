@@ -3,8 +3,10 @@
 namespace Tests\Unit;
 
 use App\Models\PatternPiece;
+use App\Services\Pattern\GeneratorRegistry;
 use App\Services\Pattern\Geometry;
 use App\Services\Pattern\PatternComposer;
+use App\Services\Pattern\Style\StyleRegistry;
 use App\Services\Pattern\SvgRenderer;
 use App\Support\Measurements;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -43,6 +45,45 @@ class PatternComposerTest extends TestCase
         }
 
         $this->fail("قطعه «{$code}» در ترکیب نیست.");
+    }
+
+    /**
+     * سبک‌ها با کلید ثابت انتخاب نمی‌شوند؛ اولین سبکِ هر گروه که روی این قطعه‌ها
+     * می‌نشیند برداشته می‌شود، تا آزمون با بزرگ‌شدن کاتالوگ نشکند.
+     */
+    protected function styleFrom(string $group, array $pieces, array $context = []): ?string
+    {
+        $availability = $this->composer()->styleAvailability($pieces, $context);
+
+        foreach (StyleRegistry::group($group) as $key => $style) {
+            if ($availability[$key]['ok'] ?? false) {
+                return $key;
+            }
+        }
+
+        return null;
+    }
+
+    /** بررسی سلامت هر قطعه ترکیب: مسیر بسته، برچسب لبه‌ها، راستای پارچه و جای دوخت. */
+    protected function assertPiecesAreSewable(array $result, string $message = ''): void
+    {
+        $codes = array_column($result['pieces'], 'code');
+
+        $this->assertNotEmpty($result['pieces'], $message.': قطعه‌ای ساخته نشد.');
+        $this->assertSame($codes, array_unique($codes), $message.': کد قطعه‌ها باید یکتا باشد.');
+
+        foreach ($result['pieces'] as $piece) {
+            $where = $message.' / '.$piece['code'];
+
+            $this->assertGreaterThanOrEqual(3, count($piece['outline']), $where.': مسیر قطعه');
+            $this->assertCount(count($piece['outline']), $piece['meta']['edges'], $where.': برچسب هر لبه');
+            $this->assertNotEmpty($piece['edge_allowances'], $where.': جای دوخت');
+            $this->assertGreaterThan(1, (new PatternPiece($piece))->area(), $where.': مساحت');
+            $this->assertSame([0.0, 0.0], [
+                round(Geometry::bounds($piece['outline'])[0], 2),
+                round(Geometry::bounds($piece['outline'])[1], 2),
+            ], $where.': مبدأ گوشه بالا-چپ');
+        }
     }
 
     public function test_bodice_sleeve_and_skirt_compose_into_one_coherent_piece_list(): void
@@ -353,6 +394,281 @@ class PatternComposerTest extends TestCase
             $this->assertGreaterThan(1, $model->area(), $piece['code'].': مساحت قطعه باید معنادار باشد.');
             $this->assertGreaterThan(1, $model->perimeter(), $piece['code']);
         }
+    }
+
+    /* ---------------------------------------------------------------------
+     |  دستور: پایه + سبک‌ها
+     * ------------------------------------------------------------------- */
+
+    public function test_a_recipe_of_a_base_and_several_styles_still_walks_the_seams_together(): void
+    {
+        $composer = $this->composer();
+        $measurements = $this->measurements();
+        $base = ['bodice' => 'bodice_block', 'sleeve' => 'sleeve', 'lower' => 'skirt_a_line'];
+
+        $plain = $composer->compose($base, $measurements, ['bust' => 6, 'waist' => 4, 'hip' => 6]);
+
+        $styles = array_values(array_filter([
+            $this->styleFrom('neckline', $plain['pieces']),
+            $this->styleFrom('hem', $plain['pieces']),
+            $this->styleFrom('pocket', $plain['pieces']),
+            $this->styleFrom('closure', $plain['pieces']),
+        ]));
+
+        $this->assertGreaterThanOrEqual(3, count($styles), 'کاتالوگ باید دست‌کم سه گروه سبک داشته باشد.');
+
+        $result = $composer->compose(
+            $base + ['styles' => $styles],
+            $measurements,
+            ['bust' => 6, 'waist' => 4, 'hip' => 6],
+        );
+
+        $this->assertPiecesAreSewable($result, implode('+', $styles));
+
+        // همه سبک‌ها اجرا شدند و هر کدام گزارش خودش را دارد
+        $this->assertCount(count($styles), $result['metrics']['styles']);
+        $this->assertSame($styles, array_column($result['metrics']['styles'], 'key'));
+
+        foreach ($result['metrics']['styles'] as $row) {
+            $this->assertSame('applied', $row['status'], $row['key'].': باید اجرا می‌شد.');
+        }
+
+        // پس از سبک‌ها هم کمر بالاتنه و دامن هم‌اندازه دوخته می‌شوند
+        $bodice = array_values(array_filter($result['pieces'], fn ($piece) => ($piece['meta']['group'] ?? null) === 'bodice'));
+        $lower = array_values(array_filter($result['pieces'], fn ($piece) => ($piece['meta']['group'] ?? null) === 'lower'));
+
+        $this->assertEqualsWithDelta(
+            $composer->waistGirth($bodice),
+            $composer->waistGirth($lower),
+            0.5,
+            'سبک‌ها نباید کمر را ناجور بگذارند.',
+        );
+
+        // و سرآستین هنوز در حلقه آستین می‌نشیند
+        $this->assertGreaterThan(0, $composer->armholeLength($bodice));
+        $this->assertLessThanOrEqual(
+            PatternComposer::MAX_GATHER,
+            abs($composer->capLength($this->piece($result, 'sleeve')) - $composer->armholeLength($bodice)),
+            'اختلاف سرآستین و حلقه باید در حد چین‌خوردن بماند.',
+        );
+
+        $this->assertNotEmpty($result['notes']);
+        $this->assertNotEmpty($result['sewing_relations']);
+    }
+
+    public function test_a_refused_style_is_skipped_with_its_persian_reason_without_touching_the_pieces(): void
+    {
+        $composer = $this->composer();
+        $measurements = $this->measurements();
+        $base = ['bodice' => 'bodice_block', 'sleeve' => 'none', 'lower' => 'skirt_a_line'];
+
+        $plain = $composer->compose($base, $measurements);
+        $availability = $composer->styleAvailability($plain['pieces'], ['measurements' => $measurements]);
+        $refused = collect($availability)->reject(fn ($row) => $row['ok'])->keys()->first();
+
+        $this->assertNotNull($refused, 'بدون آستین باید دست‌کم یک سبک (مثلاً مچ) رد شود.');
+
+        $reason = $availability[$refused]['reason'];
+        $result = $composer->compose($base + ['styles' => [$refused]], $measurements);
+
+        $report = $result['metrics']['styles'][0];
+        $this->assertSame('skipped', $report['status']);
+        $this->assertSame($reason, $report['reason']);
+
+        $note = collect($result['notes'])->firstWhere('type', 'warning');
+        $this->assertNotNull($note, 'رد شدن سبک باید به کاربر گفته شود.');
+        $this->assertStringContainsString($reason, $note['text']);
+        $this->assertStringContainsString(StyleRegistry::make($refused)->label(), $note['text']);
+
+        // قطعه‌ها دقیقاً همان‌اند که بدون این سبک ساخته می‌شد
+        $this->assertSame(array_column($plain['pieces'], 'code'), array_column($result['pieces'], 'code'));
+        $this->assertSame(
+            json_encode(array_column($plain['pieces'], 'outline')),
+            json_encode(array_column($result['pieces'], 'outline')),
+            'سبک رد‌شده نباید هیچ قطعه‌ای را دست بزند.',
+        );
+        $this->assertPiecesAreSewable($result, 'با سبک رد‌شده');
+    }
+
+    public function test_styles_run_in_the_sewing_order_whatever_order_they_were_picked(): void
+    {
+        $composer = $this->composer();
+        $picked = [];
+
+        foreach (array_reverse(PatternComposer::STYLE_ORDER) as $group) {
+            $key = array_key_first(StyleRegistry::group($group));
+
+            if ($key !== null) {
+                $picked[] = $key;
+            }
+        }
+
+        $this->assertGreaterThan(2, count($picked));
+
+        $ordered = $composer->normalizeStyles($picked);
+        $groups = array_column($ordered, 'group');
+        $ranks = array_map(fn (string $group) => array_search($group, PatternComposer::STYLE_ORDER, true), $groups);
+        $sorted = $ranks;
+        sort($sorted);
+
+        $this->assertSame($sorted, $ranks, 'سبک‌ها باید به ترتیب خط یقه ← … ← جزئیات اجرا شوند.');
+        $this->assertSame(count($picked), count($ordered));
+    }
+
+    public function test_an_unknown_style_is_reported_instead_of_breaking_the_garment(): void
+    {
+        $result = $this->composer()->compose(
+            ['bodice' => 'bodice_block', 'styles' => ['سبک‌ناموجود']],
+            $this->measurements(),
+        );
+
+        $this->assertSame('missing', $result['metrics']['styles'][0]['status']);
+        $this->assertStringContainsString('سبک‌ناموجود', collect($result['notes'])->firstWhere('type', 'warning')['text']);
+        $this->assertPiecesAreSewable($result, 'با سبک ناشناخته');
+    }
+
+    public function test_a_whole_garment_base_is_composed_and_styled_like_any_other(): void
+    {
+        $composer = $this->composer();
+        $measurements = $this->measurements();
+
+        $plain = $composer->compose(['kind' => 'garment', 'garment' => 'dress'], $measurements);
+
+        $this->assertSame('garment', $plain['recipe']['base']['kind']);
+        $this->assertSame('dress', $plain['recipe']['base']['garment']);
+        $this->assertPiecesAreSewable($plain, 'پیراهن یک‌تکه');
+        $this->assertNotEmpty(array_filter($plain['pieces'], fn ($piece) => ($piece['meta']['group'] ?? null) === 'sleeve'));
+
+        $neckline = $this->styleFrom('neckline', $plain['pieces']);
+        $this->assertNotNull($neckline);
+
+        $styled = $composer->compose(
+            ['kind' => 'garment', 'garment' => 'dress', 'styles' => [$neckline]],
+            $measurements,
+        );
+
+        $this->assertSame('applied', $styled['metrics']['styles'][0]['status']);
+        $this->assertPiecesAreSewable($styled, 'پیراهن یک‌تکه + '.$neckline);
+        $this->assertNotSame(
+            $composer->necklineLength($plain['pieces']),
+            $composer->necklineLength($styled['pieces']),
+            'سبک خط یقه باید خط یقه را عوض کند.',
+        );
+    }
+
+    public function test_a_neckline_style_makes_the_drafted_collar_be_cut_again(): void
+    {
+        $composer = $this->composer();
+        $measurements = $this->measurements();
+        $base = ['bodice' => 'bodice_block', 'collar' => 'shirt'];
+
+        $plain = $composer->compose($base, $measurements);
+        $deep = collect(StyleRegistry::group('neckline'))
+            ->keys()
+            ->first(fn (string $key) => str_contains($key, 'scoop') || str_contains($key, 'u_deep') || str_contains($key, 'v'));
+
+        $this->assertNotNull($deep);
+
+        $result = $composer->compose($base + ['styles' => [$deep]], $measurements, [], ['collar' => ['collar_height' => 7.5]]);
+        $collar = $this->piece($result, 'collar');
+        $neckline = $composer->necklineLength(array_values(array_filter(
+            $result['pieces'],
+            fn ($piece) => ($piece['meta']['group'] ?? null) === 'bodice',
+        )));
+
+        $before = $composer->necklineLength(array_values(array_filter(
+            $plain['pieces'],
+            fn ($piece) => ($piece['meta']['group'] ?? null) === 'bodice',
+        )));
+
+        $this->assertGreaterThan($before, $neckline, 'خط یقه باید بازتر شده باشد.');
+        $this->assertEqualsWithDelta(
+            $neckline,
+            Geometry::edgeLength($collar['outline'], $composer->edgeWithTag($collar, 'neck')),
+            0.5,
+            'یقه باید دوباره به اندازه خط یقه تازه بریده شود.',
+        );
+        $this->assertNotEmpty(collect($result['notes'])->filter(
+            fn (array $note) => str_contains($note['text'], 'دوباره بریده شد'),
+        ));
+    }
+
+    public function test_the_recipe_survives_a_round_trip_and_rebuilds_the_same_garment(): void
+    {
+        $this->actingAsWorkshopUser();
+        $composer = $this->composer();
+        $recipe = [
+            'kind' => 'blocks',
+            'bodice' => 'bodice_block',
+            'sleeve' => 'sleeve',
+            'lower' => 'skirt_a_line',
+            'collar' => 'none',
+            'styles' => [['key' => $this->styleFrom('neckline', $composer->compose(['bodice' => 'bodice_block'], $this->measurements())['pieces']), 'params' => ['depth' => 9]]],
+        ];
+
+        $pattern = $composer->composeIntoPattern($recipe, [
+            'measurements' => $this->measurements(),
+            'base_size' => '40',
+        ]);
+
+        $stored = $pattern->params['compose']['recipe'];
+        $this->assertSame('blocks', $stored['base']['kind']);
+        $this->assertSame('skirt_a_line', $stored['base']['lower']);
+        $this->assertSame($recipe['styles'][0]['key'], $stored['styles'][0]['key']);
+        $this->assertEqualsWithDelta(9.0, $stored['styles'][0]['params']['depth'], 0.001);
+
+        // دستور ذخیره‌شده دوباره خوانده می‌شود و همان لباس درمی‌آید
+        $reopened = $composer->recipeOf($pattern);
+        $this->assertEquals($stored, $reopened);
+
+        $again = $composer->compose($reopened, $pattern->measurements);
+
+        $this->assertSame(
+            $pattern->pieces->pluck('code')->all(),
+            array_column($again['pieces'], 'code'),
+        );
+        $this->assertEqualsWithDelta(
+            $pattern->pieces->sum(fn ($piece) => $piece->area()),
+            collect($again['pieces'])->sum(fn (array $piece) => (new PatternPiece($piece))->area()),
+            1.0,
+        );
+    }
+
+    /**
+     * آزمون دیده‌بان: هر مدلی که در رجیستری باشد باید در کارگاه ترکیب،
+     * با سبک‌های پیش‌فرض، قطعه‌های سالم بدهد.
+     */
+    public function test_every_generator_in_the_registry_composes_into_valid_pieces(): void
+    {
+        $composer = $this->composer();
+        $measurements = $this->measurements('42');
+        $ease = ['bust' => 8, 'waist' => 6, 'hip' => 8];
+
+        $probe = $composer->compose(['bodice' => 'bodice_block', 'sleeve' => 'sleeve'], $measurements, $ease);
+        $styles = array_values(array_filter([
+            $this->styleFrom('neckline', $probe['pieces']),
+            $this->styleFrom('hem', $probe['pieces']),
+        ]));
+
+        $failures = [];
+
+        foreach (GeneratorRegistry::keys() as $key) {
+            $recipe = match (GeneratorRegistry::groupOf($key)) {
+                'bodice' => ['bodice' => $key, 'sleeve' => 'sleeve'],
+                'sleeve' => ['bodice' => 'bodice_block', 'sleeve' => $key],
+                'skirt', 'pants' => ['bodice' => 'bodice_block', 'sleeve' => 'sleeve', 'lower' => $key],
+                default => ['kind' => 'garment', 'garment' => $key],
+            };
+
+            try {
+                $result = $composer->compose($recipe + ['styles' => $styles], $measurements, $ease);
+                $this->assertPiecesAreSewable($result, $key);
+            } catch (\Throwable $exception) {
+                $failures[] = $key.' → '.$exception->getMessage();
+            }
+        }
+
+        $this->assertSame([], $failures, "این مدل‌ها در کارگاه ترکیب می‌شکنند:\n".implode("\n", $failures));
     }
 
     public function test_every_bodice_and_lower_combination_produces_a_joinable_waist(): void

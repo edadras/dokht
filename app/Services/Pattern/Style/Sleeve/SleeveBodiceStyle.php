@@ -32,7 +32,47 @@ abstract class SleeveBodiceStyle implements StyleModifier
 
     public function supports(array $pieces, array $context): true|string
     {
-        return $this->requireArmhole($pieces);
+        $armhole = $this->requireArmhole($pieces);
+
+        if ($armhole !== true) {
+            return $armhole;
+        }
+
+        $sleeve = $this->existingSleeve($pieces);
+
+        if ($sleeve !== null) {
+            return 'این لباس همین حالا آستین جداگانه («'.$sleeve.'») دارد و «'.$this->label().'» بالاتنه را '
+                .'دوباره می‌بُرد؛ اول آستین دوخته‌شده را بردارید تا دو آستین روی هم نیفتد.';
+        }
+
+        foreach ($this->armholePieces($pieces) as $index) {
+            if ($this->bodiceAnchors($pieces[$index]) === null) {
+                return 'در «'.($pieces[$index]['name'] ?? 'قطعه').'» ترتیب یقه، سرشانه و حلقه آستین دنبال هم نیست، '
+                    .'پس نمی‌شود روی آن سرشانه و حلقه را دوباره برید.';
+            }
+        }
+
+        return $this->supportsSleeve($pieces, $context);
+    }
+
+    /** بررسی ویژه هر سبک؛ پیش‌فرض پذیرش. */
+    protected function supportsSleeve(array $pieces, array $context): true|string
+    {
+        return true;
+    }
+
+    /** نام آستینی که همین حالا در الگو هست (اگر باشد). */
+    protected function existingSleeve(array $pieces): ?string
+    {
+        foreach ($pieces as $piece) {
+            $part = (string) ($piece['meta']['part'] ?? '');
+
+            if ($part === 'sleeve' || str_ends_with($part, '_sleeve')) {
+                return (string) ($piece['name'] ?? 'آستین');
+            }
+        }
+
+        return null;
     }
 
     /** پیام فارسی وقتی بالاتنه‌ای با حلقه آستین در کار نیست. */
@@ -471,6 +511,307 @@ abstract class SleeveBodiceStyle implements StyleModifier
         }
 
         return $piece;
+    }
+
+    /* ---------------------------------------------------------------------
+     |  نقطه‌های تکیه بالاتنه
+     * ------------------------------------------------------------------- */
+
+    /**
+     * چهار نقطه‌ای که هر آستینِ یکی‌بریده به آن‌ها تکیه می‌کند: مرکز یقه، سرگردن،
+     * نوک سرشانه و زیر بغل — به شرطی که لبه‌های یقه، سرشانه و حلقه پشت سر هم باشند.
+     *
+     * @return array<string, mixed>|null
+     */
+    protected function bodiceAnchors(array $piece): ?array
+    {
+        $tags = Geometry::edgeTags($piece);
+        $outline = array_values($piece['outline'] ?? []);
+        $count = count($outline);
+        $neck = null;
+
+        foreach ($tags as $index => $tag) {
+            if ($tag === 'neck' && ($tags[$index + 1] ?? null) === 'shoulder' && ($tags[$index + 2] ?? null) === 'armhole') {
+                $neck = (int) $index;
+
+                break;
+            }
+        }
+
+        // نقطه‌های ۰ تا ۳ پس از لبه یقه باید بدون پیچیدن دور قطعه در دسترس باشند
+        if ($neck === null || $neck + 4 > $count || $count < 5) {
+            return null;
+        }
+
+        return [
+            'side' => $this->isFront($piece) ? 'front' : 'back',
+            'neck_edge' => $neck,
+            'shoulder_edge' => $neck + 1,
+            'armhole_edge' => $neck + 2,
+            'side_edge' => $neck + 3,
+            'cf' => $this->at($outline, $neck),
+            'snp' => $this->at($outline, $neck + 1),
+            'tip' => $this->at($outline, $neck + 2),
+            'underarm' => $this->at($outline, $neck + 3),
+            'neck_length' => round(Geometry::edgeLength($outline, $neck), 3),
+            'shoulder_length' => round(Geometry::edgeLength($outline, $neck + 1), 3),
+            'armhole_length' => round(Geometry::edgeLength($outline, $neck + 2), 3),
+            'side_length' => round(Geometry::edgeLength($outline, $neck + 3), 3),
+            'centroid' => Geometry::centroid($outline),
+        ];
+    }
+
+    /** مختصات ساده یک نقطه مسیر (بدون اطلاعات منحنی). */
+    protected function at(array $outline, int $index): array
+    {
+        $point = array_values($outline)[$index % max(1, count($outline))] ?? ['x' => 0, 'y' => 0];
+
+        return ['x' => (float) $point['x'], 'y' => (float) $point['y']];
+    }
+
+    /* ---------------------------------------------------------------------
+     |  بردار و مثلث‌بندی
+     * ------------------------------------------------------------------- */
+
+    protected function vec(array $from, array $to): array
+    {
+        return ['x' => (float) $to['x'] - (float) $from['x'], 'y' => (float) $to['y'] - (float) $from['y']];
+    }
+
+    protected function len(array $v): float
+    {
+        return sqrt(($v['x'] * $v['x']) + ($v['y'] * $v['y']));
+    }
+
+    protected function unit(array $v): array
+    {
+        $length = $this->len($v);
+
+        return $length < 1e-9 ? ['x' => 1.0, 'y' => 0.0] : ['x' => $v['x'] / $length, 'y' => $v['y'] / $length];
+    }
+
+    protected function dot(array $a, array $b): float
+    {
+        return ($a['x'] * $b['x']) + ($a['y'] * $b['y']);
+    }
+
+    protected function move(array $point, array $direction, float $distance): array
+    {
+        return [
+            'x' => (float) $point['x'] + ($direction['x'] * $distance),
+            'y' => (float) $point['y'] + ($direction['y'] * $distance),
+        ];
+    }
+
+    /** چرخاندن یک بردار به اندازه زاویه (درجه)؛ چون محور y به پایین است، مثبت ساعت‌گرد دیده می‌شود. */
+    protected function rotateVector(array $v, float $degrees): array
+    {
+        $radians = deg2rad($degrees);
+        $cos = cos($radians);
+        $sin = sin($radians);
+
+        return ['x' => ($v['x'] * $cos) - ($v['y'] * $sin), 'y' => ($v['x'] * $sin) + ($v['y'] * $cos)];
+    }
+
+    /** زاویه بین دو بردار، بر حسب درجه و همیشه بین ۰ و ۱۸۰. */
+    protected function angleBetween(array $a, array $b): float
+    {
+        $lengths = $this->len($a) * $this->len($b);
+
+        if ($lengths < 1e-9) {
+            return 0.0;
+        }
+
+        return rad2deg(acos(max(-1.0, min(1.0, $this->dot($a, $b) / $lengths))));
+    }
+
+    /**
+     * نقطه‌ای که از $a به فاصله $ra و از $b به فاصله $rb باشد.
+     *
+     * همان کاری که خیاط با پرگار می‌کند: دو کمان می‌زند و محل برخوردشان را برمی‌دارد.
+     * $toward می‌گوید کدام‌یک از دو جواب را می‌خواهیم (جوابِ نزدیک‌تر به آن نقطه).
+     * اگر دو دایره به هم نرسند، نزدیک‌ترین حالت ممکن روی خط $a$b برگردانده می‌شود و
+     * کلید reached نادرست می‌ماند.
+     *
+     * @return array{x: float, y: float, reached: bool}
+     */
+    protected function triangulate(array $a, float $ra, array $b, float $rb, array $toward): array
+    {
+        $d = $this->len($this->vec($a, $b));
+
+        if ($d < 1e-6) {
+            return ['x' => (float) $a['x'] + $ra, 'y' => (float) $a['y'], 'reached' => false];
+        }
+
+        $u = $this->unit($this->vec($a, $b));
+        $normal = ['x' => -$u['y'], 'y' => $u['x']];
+
+        if ($d > $ra + $rb || $d < abs($ra - $rb)) {
+            // دایره‌ها به هم نمی‌رسند: نقطه را به نسبت شعاع‌ها روی خط می‌گذاریم
+            $ratio = $ra / max(1e-6, $ra + $rb);
+
+            return [
+                'x' => (float) $a['x'] + ($u['x'] * $d * $ratio),
+                'y' => (float) $a['y'] + ($u['y'] * $d * $ratio),
+                'reached' => false,
+            ];
+        }
+
+        $along = ((($d * $d) + ($ra * $ra)) - ($rb * $rb)) / (2 * $d);
+        $height = sqrt(max(0.0, ($ra * $ra) - ($along * $along)));
+        $foot = $this->move($a, $u, $along);
+
+        $first = $this->move($foot, $normal, $height);
+        $second = $this->move($foot, $normal, -$height);
+
+        $pick = $this->len($this->vec($first, $toward)) <= $this->len($this->vec($second, $toward)) ? $first : $second;
+
+        return ['x' => $pick['x'], 'y' => $pick['y'], 'reached' => true];
+    }
+
+    /**
+     * درزی با طول دقیق که شکمش به سمت یک نقطه معین باد می‌کند.
+     *
+     * @return array<string, mixed> نقطه پایانی مسیر
+     */
+    protected function bowSeam(array $from, array $to, float $target, array $toward): array
+    {
+        $chord = $this->len($this->vec($from, $to));
+
+        if ($target <= $chord + 0.005 || $chord < 1e-6) {
+            return Geometry::point((float) $to['x'], (float) $to['y']);
+        }
+
+        $u = $this->unit($this->vec($from, $to));
+        $normal = ['x' => -$u['y'], 'y' => $u['x']];
+        $mid = ['x' => ((float) $from['x'] + (float) $to['x']) / 2, 'y' => ((float) $from['y'] + (float) $to['y']) / 2];
+        $direction = $this->dot($normal, $this->vec($mid, $toward)) >= 0 ? 1 : -1;
+
+        return $this->seamOfLength($from, $to, $target, $direction);
+    }
+
+    /**
+     * منحنی‌ای با «شکم» به اندازه خواسته‌شده، که به سمت یک نقطه باد می‌کند.
+     *
+     * برخلاف seamOfLength که طول را هدف می‌گیرد، این‌جا عمق خمیدگی داده می‌شود؛
+     * همان کاری که خیاط با خط‌کش منحنی می‌کند: «یک سانت از خط راست بگیر تو».
+     *
+     * @return array<string, mixed> نقطه پایانی با اطلاعات منحنی
+     */
+    protected function curveTo(array $from, array $to, float $depth, array $toward): array
+    {
+        $chord = $this->len($this->vec($from, $to));
+
+        if ($depth < 0.02 || $chord < 0.05) {
+            return Geometry::point((float) $to['x'], (float) $to['y']);
+        }
+
+        $u = $this->unit($this->vec($from, $to));
+        $normal = ['x' => -$u['y'], 'y' => $u['x']];
+        $mid = ['x' => ((float) $from['x'] + (float) $to['x']) / 2, 'y' => ((float) $from['y'] + (float) $to['y']) / 2];
+        $sign = $this->dot($normal, $this->vec($mid, $toward)) >= 0 ? 1 : -1;
+
+        return Geometry::curve(
+            (float) $to['x'],
+            (float) $to['y'],
+            $mid['x'] + (2 * $depth * $normal['x'] * $sign),
+            $mid['y'] + (2 * $depth * $normal['y'] * $sign),
+        );
+    }
+
+    /**
+     * نقطه‌ای روی یک لبه، به فاصله کمانی معین از سر یا ته آن.
+     *
+     * @return array{x: float, y: float, t: float}
+     */
+    protected function alongEdge(array $outline, int $edge, float $distance, bool $fromEnd = false): array
+    {
+        $length = Geometry::edgeLength($outline, $edge);
+        $target = max(0.0, min($length, $fromEnd ? $length - $distance : $distance));
+        $t = $this->tAtLength($outline, $edge, $target);
+        $point = Geometry::pointOnEdge($outline, $edge, $t);
+
+        return ['x' => (float) $point['x'], 'y' => (float) $point['y'], 't' => $t];
+    }
+
+    /**
+     * ساسون: دو پا و یک نوک.
+     *
+     * @return array<string, mixed>
+     */
+    protected function dart(string $type, string $label, ?int $edge, array $legA, array $legB, array $apex, float $intake): array
+    {
+        return [
+            'type' => $type,
+            'label' => $label,
+            'edge' => $edge,
+            'axis' => 'x',
+            'intake' => round($intake, 2),
+            'center' => Geometry::point(
+                ((float) $legA['x'] + (float) $legB['x']) / 2,
+                ((float) $legA['y'] + (float) $legB['y']) / 2,
+            ),
+            'apex' => Geometry::point((float) $apex['x'], (float) $apex['y']),
+            'legs' => [
+                Geometry::point((float) $legA['x'], (float) $legA['y']),
+                Geometry::point((float) $legB['x'], (float) $legB['y']),
+            ],
+        ];
+    }
+
+    /* ---------------------------------------------------------------------
+     |  پارامترها
+     * ------------------------------------------------------------------- */
+
+    /**
+     * پارامترهای پاک‌شده: مقدار کاربر یا پیش‌فرض، در بازه مجاز.
+     *
+     * @return array<string, mixed>
+     */
+    protected function params(array $context): array
+    {
+        $given = is_array($context['params'] ?? null) ? $context['params'] : [];
+        $clean = [];
+
+        foreach ($this->paramsSchema() as $key => $field) {
+            $value = $given[$key] ?? $field['default'];
+            $type = $field['type'] ?? 'number';
+
+            if ($type === 'toggle') {
+                $clean[$key] = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? (bool) $field['default'];
+
+                continue;
+            }
+
+            if ($type === 'select') {
+                $clean[$key] = array_key_exists((string) $value, $field['options'] ?? []) ? (string) $value : $field['default'];
+
+                continue;
+            }
+
+            $number = is_numeric($value) ? (float) $value : (float) $field['default'];
+
+            if (isset($field['min'])) {
+                $number = max((float) $field['min'], $number);
+            }
+
+            if (isset($field['max'])) {
+                $number = min((float) $field['max'], $number);
+            }
+
+            $clean[$key] = $number;
+        }
+
+        return $clean;
+    }
+
+    /** پارامتر مشترک همه آستین‌ها: تغییر بلندی. */
+    protected function lengthField(float $default = 0): array
+    {
+        return [
+            'label' => 'تغییر بلندی آستین', 'min' => -50, 'max' => 12, 'step' => 0.5, 'default' => $default,
+            'unit' => 'سانتی‌متر', 'hint' => 'صفر یعنی تا مچ؛ منفی یعنی کوتاه‌تر.',
+        ];
     }
 
     /** اندازه بدن با پیش‌فرض. */
