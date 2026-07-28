@@ -495,10 +495,17 @@ export default (config = {}) => ({
         const lobes = drape?.lobes ?? 8;
         const phase = drape?.phase ?? 0;
 
+        // موج دوم با نصفِ تعداد چین؛ وگرنه چین‌ها یکنواخت و ماشینی به‌نظر می‌رسند
+        const halfLobes = Math.max(2, Math.round(lobes / 2));
+        const offset = hash(lobes) * Math.PI * 2;
+
         for (let j = 0; j < segments; j++) {
             const angle = (j / segments) * Math.PI * 2;
             // فاز با ارتفاع کمی می‌چرخد تا چین‌ها مثل پارچه‌ی واقعی مورب بیفتند
-            const wave = Math.sin(angle * lobes + spec.y * 6 + phase);
+            const drift = spec.y * 6 + phase;
+            const wave =
+                Math.sin(angle * lobes + drift) * 0.72 +
+                Math.sin(angle * halfLobes + drift * 1.6 + offset) * 0.28;
             const swell = 1 + fold * wave;
 
             points.push(
@@ -611,11 +618,6 @@ export default (config = {}) => ({
         const hipRx = this.bodyAt(level.hip).rx + easeAt(level.hip);
 
         /*
-         * مقطع پوسته‌ی لباس در هر ارتفاع.
-         *   بالاتر از باسن → مقطع بدن + آزادی همان ناحیه (لباس بدن را دنبال می‌کند)
-         *   پایین‌تر از باسن → از خط باسن به سمت گشادی لبه باز (یا تنگ) می‌شود
-         */
-        /*
          * پهنای سرشانه‌ی لباس. لباس روی سرشانه تا نوک شانه می‌رسد و از آنجا آستین
          * شروع می‌شود؛ پس پوسته باید از خط سینه به بالا یکنواخت پهن شود. اگر این
          * کار را نکنیم بین حلقهٔ آستین و سرشانه یک طاقچهٔ افقی می‌ماند که مثل
@@ -624,6 +626,13 @@ export default (config = {}) => ({
         const shoulderRx = r.shoulder * 0.95 + easeAt(level.shoulder);
         const bustRx = this.bodyAt(level.bust).rx + easeAt(level.bust);
 
+        /*
+         * مقطع پوسته‌ی لباس در هر ارتفاع.
+         *   سینه تا سرشانه → آرام‌آرام تا نوک شانه پهن می‌شود
+         *   سینه تا باسن   → مقطع بدن + آزادی همان ناحیه (لباس بدن را دنبال می‌کند)
+         *   پایین‌تر از باسن → از خط باسن به سمت گشادی لبه باز (یا تنگ) می‌شود
+         * در هر حال پارچه دست‌کم به اندازه‌ی SKIN_GAP بیرون از بدن می‌ماند.
+         */
         const shellAt = (y, hemY) => {
             const body = this.bodyAt(y);
             let rx = body.rx + easeAt(y);
