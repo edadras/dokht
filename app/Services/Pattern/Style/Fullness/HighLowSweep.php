@@ -87,16 +87,10 @@ class HighLowSweep extends FullnessStyle
 
         foreach ($hosts as $index) {
             $piece = $pieces[$index];
-            $edge = $this->edgeWithTag($piece, 'hem');
-
-            if ($edge === null) {
-                continue;
-            }
-
             $isBack = ($piece['meta']['side'] ?? 'front') === 'back';
             $delta = $isBack ? $drop : -$rise;
 
-            $piece = $this->shapeHemEnds($piece, $edge, $delta, 0.0, $isBack ? $curve : -$curve);
+            $piece = $this->shapeHem($piece, $delta, 0.0, $isBack ? $curve : -$curve);
             $piece['meta']['fullness_style'] = static::key();
             $piece['meta']['hem_delta'] = round($delta, 2);
             $pieces[$index] = $piece;

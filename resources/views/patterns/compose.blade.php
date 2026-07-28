@@ -58,7 +58,25 @@
         subtitle="یک پایه انتخاب کنید، هر سبکی که می‌خواهید رویش بگذارید و اندازه را بدهید؛ الگوی کامل ساخته می‌شود."
         :back="route('patterns.index')" />
 
-    @if ($reopened)
+    {{-- پس از ساخت: گزارش کارهایی که برای دوختنی‌شدن لباس انجام شد، و راه ورود به الگو --}}
+    @if ($composed = session('composed'))
+        <x-card class="mb-6" icon="check-circle" :title="'ساخته شد: '.$composed['name']"
+            :subtitle="\App\Support\Jalali::digits((string) $composed['pieces']).' قطعه الگو و '.\App\Support\Jalali::digits((string) $composed['cut_pieces']).' برش پارچه؛ هر تغییری خواستید همین‌جا بدهید و دوباره بسازید.'">
+            <x-slot:actions>
+                <x-button :href="$composed['url']" icon="eye" size="sm">باز کردن الگو</x-button>
+            </x-slot:actions>
+
+            <div class="space-y-2">
+                @forelse ($composed['notes'] as $note)
+                    <x-alert :type="in_array($note['type'], ['tip', 'info', 'warning', 'error'], true) ? $note['type'] : 'info'">
+                        {{ $note['text'] }}
+                    </x-alert>
+                @empty
+                    <x-alert type="tip">همه قطعه‌ها بدون هیچ تغییری با هم جور شدند.</x-alert>
+                @endforelse
+            </div>
+        </x-card>
+    @elseif ($reopened)
         <x-alert type="info" class="mb-6">این لباس از روی دستور یک الگوی ساخته‌شده باز شد؛ هر چیزی را عوض کنید و دوباره بسازید.</x-alert>
     @endif
 

@@ -50,7 +50,7 @@ class KimonoSleeveStyle extends GrownOnSleeveStyle
 
     protected function shapeNote(array $p, array $plans): string
     {
-        $angle = (float) $p['sleeve_angle'];
+        $angle = round((float) ($plans['front']['angle'] ?? $p['sleeve_angle']), 1);
 
         if ($this->hasGusset($p)) {
             return 'کیمونو با زاویه '.Format::number($angle).' درجه درفت شد؛ چون لوزی زیربغل کار آزادی '

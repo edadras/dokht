@@ -185,8 +185,9 @@ class PatternComposerTest extends TestCase
         $pattern = Pattern::latest('id')->first();
 
         $this->assertNotNull($pattern);
-        $response->assertRedirect(route('patterns.show', $pattern));
+        $response->assertRedirect(route('patterns.compose', ['pattern' => $pattern->id]));
         $response->assertSessionHas('status');
+        $response->assertSessionHas('composed');
 
         $this->assertSame('پیراهن ترکیبی خانم رضایی', $pattern->name);
         $this->assertSame($this->workshop()->id, $pattern->workshop_id);
@@ -209,6 +210,30 @@ class PatternComposerTest extends TestCase
         $this->assertSame(1, (int) $version->version);
         $this->assertCount(6, $version->snapshot['pieces']);
         $this->assertStringContainsString('ترکیب مدل‌ها', (string) $version->note);
+    }
+
+    public function test_after_composing_the_studio_reports_what_it_did_and_links_to_the_pattern(): void
+    {
+        $this->seed(GarmentTypeSeeder::class);
+        $this->actingAsWorkshopUser();
+
+        $this->post(route('patterns.compose.store'), $this->selection())->assertRedirect();
+        $pattern = Pattern::latest('id')->firstOrFail();
+
+        $response = $this->followingRedirects()->post(route('patterns.compose.store'), $this->selection());
+        $made = Pattern::latest('id')->firstOrFail();
+
+        $response->assertOk()
+            ->assertSee('ساخته شد: '.$made->name)
+            ->assertSee('باز کردن الگو')
+            ->assertSee(route('patterns.show', $made), false);
+
+        // یادداشت‌های جورکردن، به فارسی ساده، همان‌جا زیر گزارش می‌آیند
+        foreach (collect($made->params['compose']['notes'])->take(3) as $note) {
+            $response->assertSee($note['text']);
+        }
+
+        $this->assertNotSame($pattern->id, $made->id);
     }
 
     public function test_the_composed_pattern_opens_in_the_existing_screens(): void
@@ -302,6 +327,11 @@ class PatternComposerTest extends TestCase
         $this->get(route('patterns.show', $mine))->assertNotFound();
         $this->get(route('patterns.index'))->assertOk()->assertDontSee($mine->name);
         $this->assertSame(0, Pattern::count());
+
+        // دستور الگوی کارگاه دیگر هم در کارگاه ترکیب باز نمی‌شود
+        $this->get(route('patterns.compose', ['pattern' => $mine->id]))
+            ->assertOk()
+            ->assertDontSee('از روی دستور یک الگوی ساخته‌شده باز شد');
 
         $this->post(route('patterns.compose.store'), $this->selection())->assertRedirect();
         $this->assertSame($other->id, Pattern::latest('id')->firstOrFail()->workshop_id);
@@ -457,6 +487,9 @@ class PatternComposerTest extends TestCase
         ])->assertRedirect();
 
         $pattern = Pattern::latest('id')->firstOrFail();
+
+        // بعداً، در یک نشست تازه، همان دستور دوباره باز می‌شود
+        $this->flushSession();
 
         $response = $this->get(route('patterns.compose', ['pattern' => $pattern->id]));
 

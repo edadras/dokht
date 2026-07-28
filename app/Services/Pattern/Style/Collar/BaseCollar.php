@@ -254,7 +254,8 @@ abstract class BaseCollar implements StyleModifier
     public function apply(array $pieces, array $context): array
     {
         $p = $this->params($context);
-        $prepared = $this->prepare(array_values($pieces), $p, $context);
+        $pieces = $this->withoutOwnPieces(array_values($pieces));
+        $prepared = $this->prepare($pieces, $p, $context);
         $pieces = array_values($prepared['pieces']);
         $notes = array_values($prepared['notes'] ?? []);
 
@@ -292,6 +293,23 @@ abstract class BaseCollar implements StyleModifier
                 ], $meta),
             ],
         ];
+    }
+
+    /**
+     * برداشتن قطعه‌هایی که همین سبک پیش‌تر ساخته بود.
+     *
+     * اگر کاربر یقه را عوض کند یا دوباره همین یقه را بزند، نباید دو یقه روی هم
+     * بماند؛ درفت تازه جای درفت پیشین را می‌گیرد.
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     * @return array<int, array<string, mixed>>
+     */
+    protected function withoutOwnPieces(array $pieces): array
+    {
+        return array_values(array_filter(
+            $pieces,
+            fn (array $piece) => ($piece['meta']['collar_style'] ?? null) !== static::key(),
+        ));
     }
 
     /**

@@ -52,8 +52,7 @@ class TaperedSweep extends FullnessStyle
 
         foreach ($hosts as $index) {
             $piece = $pieces[$index];
-            $edge = $this->edgeWithTag($piece, 'hem');
-            $hem = $edge === null ? 0.0 : $this->edgeLength($piece, $edge);
+            $hem = $this->hemLength($piece);
 
             if ($hem <= $takeIn + 6) {
                 return 'دم پنل «'.$piece['name'].'» فقط '.Format::cm($hem)
@@ -72,14 +71,7 @@ class TaperedSweep extends FullnessStyle
         $before = $this->rawGirth($pieces, 'hem', $hosts);
 
         foreach ($hosts as $index) {
-            $piece = $pieces[$index];
-            $edge = $this->edgeWithTag($piece, 'hem');
-
-            if ($edge === null) {
-                continue;
-            }
-
-            $piece = $this->moveHemCorner($piece, $edge, $takeIn);
+            $piece = $this->narrowHem($pieces[$index], $takeIn);
             $piece['meta']['fullness_style'] = static::key();
             $piece['meta']['taper'] = round($takeIn, 2);
             $pieces[$index] = $piece;

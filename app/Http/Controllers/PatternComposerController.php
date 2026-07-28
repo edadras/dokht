@@ -34,6 +34,9 @@ class PatternComposerController extends Controller
     /** بندانگشتی‌ها فقط به کد مدل بستگی دارند، پس یک روز کش می‌شوند. */
     protected const THUMBNAIL_VERSION = 'v2';
 
+    /** آیا صفحه از روی دستور یک الگوی ساخته‌شده باز شده است؟ */
+    protected bool $reopened = false;
+
     public function __construct(
         protected PatternComposer $composer,
         protected SvgRenderer $renderer,
@@ -55,7 +58,7 @@ class PatternComposerController extends Controller
             'seamTags' => SeamAllowanceService::TAGS,
             'defaultSeamAllowances' => $this->workshopSeamAllowances(),
             'previewUrl' => route('patterns.compose.preview'),
-            'reopened' => $request->integer('pattern') > 0,
+            'reopened' => $this->reopened,
         ]);
     }
 
@@ -80,9 +83,19 @@ class PatternComposerController extends Controller
             return back()->withInput()->with('error', $exception->getMessage());
         }
 
+        // به کارگاه برمی‌گردیم تا گزارش جورکردن‌ها را ببیند و بتواند همان‌جا
+        // چیزی را عوض کند و دوباره بسازد؛ نشانی خود الگو هم در همان گزارش هست.
         return redirect()
-            ->route('patterns.show', $pattern)
-            ->with('status', 'لباس ترکیبی ساخته شد: '.$pattern->pieces->count().' قطعه آماده است.');
+            ->route('patterns.compose', ['pattern' => $pattern->id])
+            ->with('status', 'لباس ترکیبی ساخته شد: '.$pattern->pieces->count().' قطعه آماده است.')
+            ->with('composed', [
+                'id' => $pattern->id,
+                'name' => $pattern->name,
+                'pieces' => $pattern->pieces->count(),
+                'cut_pieces' => (int) $pattern->pieces->sum('cut_quantity'),
+                'url' => route('patterns.show', $pattern),
+                'notes' => $pattern->params['compose']['notes'] ?? [],
+            ]);
     }
 
     /** پیش‌نمایش زنده: با هر تغییر انتخاب‌ها از صفحه صدا زده می‌شود. */
@@ -215,6 +228,8 @@ class PatternComposerController extends Controller
             $stored = $this->storedRecipe($request->integer('pattern'));
 
             if ($stored !== null) {
+                $this->reopened = true;
+
                 return $stored;
             }
         }

@@ -270,10 +270,16 @@ trait BodiceStyleSupport
                 }
             }
 
-            $ys = array_values(array_unique(array_map(fn ($v) => round($v, 3), $ys)));
             sort($ys);
+            $clean = [];
 
-            return array_map(fn ($y) => ['x' => round($this->interpolateX($keys, $y), 3), 'y' => $y], $ys);
+            foreach ($ys as $y) {
+                if ($clean === [] || $y - $clean[count($clean) - 1] > 0.05) {
+                    $clean[] = round($y, 3);
+                }
+            }
+
+            return array_map(fn ($y) => ['x' => round($this->interpolateX($keys, $y), 3), 'y' => $y], $clean);
         };
 
         $lines = array_map($lineAt, $fractions);
@@ -334,10 +340,10 @@ trait BodiceStyleSupport
                 'fold_edges' => $isCenter && ($o['center_fold'] ?? true) ? [count($edges) - 1] : [],
                 'grainline' => $this->grainline(($left[0]['x'] + $right[0]['x']) / 2, $left[0]['y'] + 2, $bottomY - 2),
                 'notches' => $this->panelWaistNotches($outline, $left, $right, $g['side_waist_y']),
-                'markers' => [
-                    $this->marker('bust', 'خط سینه', $this->interpolateAt($left, $g['bust_y']), $g['bust_y'], $this->interpolateAt($right, $g['bust_y'])),
-                    $this->marker('waist', 'خط کمر', $this->interpolateAt($left, $g['side_waist_y']), $g['side_waist_y'], $this->interpolateAt($right, $g['side_waist_y'])),
-                ],
+                'markers' => $this->panelLineMarkers($left, $right, [
+                    'bust' => ['خط سینه', $g['bust_y']],
+                    'waist' => ['خط کمر', $g['side_waist_y']],
+                ]),
                 'meta' => [
                     'part' => $front ? 'front_panel' : 'back_panel',
                     'side' => $front ? 'front' : 'back',
@@ -351,6 +357,29 @@ trait BodiceStyleSupport
         }
 
         return $pieces;
+    }
+
+    /**
+     * خط‌های نشانه افقی یک پنل، تنها آن‌هایی که واقعاً از دل پنل رد می‌شوند.
+     *
+     * @param  array<string, array{0: string, 1: float}>  $lines
+     * @return array<int, array<string, mixed>>
+     */
+    protected function panelLineMarkers(array $left, array $right, array $lines): array
+    {
+        $markers = [];
+
+        foreach ($lines as $key => [$label, $y]) {
+            foreach ([$left, $right] as $line) {
+                if ($y < $line[0]['y'] - 0.01 || $y > $line[count($line) - 1]['y'] + 0.01) {
+                    continue 2;
+                }
+            }
+
+            $markers[] = $this->marker($key, $label, $this->interpolateAt($left, $y), $y, $this->interpolateAt($right, $y));
+        }
+
+        return $markers;
     }
 
     /**
@@ -556,7 +585,8 @@ trait BodiceStyleSupport
             $pleats[] = [
                 'type' => 'gather',
                 'label' => 'چین لبه بالا',
-                'edge' => $ext > 0 ? 1 : 0,
+                'edge' => null,
+                'edges' => $ext > 0 ? [0, 1] : [0],
                 'intake' => round($gather, 2),
                 'from' => Geometry::point($cf, 0),
                 'to' => Geometry::point($topX, 0),
@@ -647,17 +677,20 @@ trait BodiceStyleSupport
             );
         }
 
+        $onFold = (bool) ($o['on_fold'] ?? true);
+
         return $this->finishPanel([
             'code' => $o['code'] ?? (($o['prefix'] ?? '').($front ? 'skirt-front' : 'skirt-back')),
             'name' => $o['name'] ?? ($front ? 'دامن کلوش جلو' : 'دامن کلوش پشت'),
             'cut' => (int) ($o['cut'] ?? 1),
-            'mirror' => false,
+            'mirror' => ! $onFold,
             'layer' => $o['layer'] ?? 'outer',
             'girth_role' => $o['girth_role'] ?? 'skirt',
         ], $outline, $edges, [
             'girth' => ['waist' => round($waistArc, 3)],
-            'on_fold' => (bool) ($o['on_fold'] ?? true),
-            'fold_edges' => [],
+            'on_fold' => $onFold,
+            // لبه بسته‌شدن، شعاعِ روی خط مرکز است و همان تای پارچه می‌شود
+            'fold_edges' => $onFold ? [count($outline) - 1] : [],
             'grainline' => $this->grainline($radius * 0.3, $radius * 0.75, $outer * 0.9),
             'markers' => [
                 $this->marker('waist', 'کمان کمر', 0, $radius, $radius, 0),
@@ -752,12 +785,13 @@ trait BodiceStyleSupport
     {
         $length = max(2.0, $length);
         $height = max(1.0, $height);
+        $onFold = (bool) ($o['on_fold'] ?? false);
 
         return $this->piece([
             'code' => $code,
             'name' => $name,
             'cut_quantity' => (int) ($o['cut'] ?? 2),
-            'on_fold' => (bool) ($o['on_fold'] ?? false),
+            'on_fold' => $onFold,
             'mirror' => false,
             'layer' => $o['layer'] ?? 'outer',
             'outline' => [
@@ -773,7 +807,8 @@ trait BodiceStyleSupport
             'meta' => array_merge([
                 'part' => $o['part'] ?? 'belt',
                 'edges' => ['default', 'side', 'default', 'side'],
-                'fold_edges' => [],
+                // لبه عمودی سمت چپ همان خط تای پارچه است
+                'fold_edges' => $onFold ? [3] : [],
                 'lengths' => ['default' => round($length, 2)],
                 'girth' => [],
                 'girth_factor' => 0,

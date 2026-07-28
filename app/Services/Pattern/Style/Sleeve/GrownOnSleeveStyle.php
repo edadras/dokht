@@ -81,24 +81,81 @@ abstract class GrownOnSleeveStyle extends SleeveBodiceStyle
                 .'با زاویه خواسته‌شده دم آستین روی خود تنه می‌افتاد و الگو بریدنی نمی‌ماند.';
         }
 
-        // درز سرشانه–بالای آستین و درز زیر آستین باید در جلو و پشت هم‌اندازه دربیایند
+        // درز سرشانه–بالای آستین در جلو و پشت هم‌اندازه می‌شود، و نقطه زیر بغل هم در
+        // دو طرف باید هم‌ارتفاع بیفتد وگرنه درز پهلو بالای زیر بغل جفت نمی‌شود
         $topSeam = max(array_map(fn (array $plan) => $plan['shoulder'] + $plan['length'], $plans));
-        $underarm = 0.0;
-        $ceiling = INF;
+        $drop = min(array_column($plans, 'drop'));
 
         foreach ($plans as $side => $plan) {
-            $plans[$side]['angle'] = $angle;
             $plans[$side]['length'] = $topSeam - $plan['shoulder'];
-            $plans[$side] = $this->placeSleeve($plans[$side], $p);
-            $underarm = max($underarm, $plans[$side]['underarm_seam']);
-            $ceiling = min($ceiling, $plans[$side]['underarm_chord'] * 1.22);
+            $plans[$side]['drop'] = $drop;
         }
 
-        // شکم درز زیر آستین نباید آن‌قدر زیاد شود که درز به خود تنه بزند
-        $underarm = max(max(array_column($plans, 'underarm_chord')), min($underarm, $ceiling));
+        // شکم درز زیر آستین و زاویه آستین آن‌قدر کم می‌شوند تا قطعه از روی خودش رد نشود؛
+        // همان کاری که خیاط با خط‌کش منحنی می‌کند وقتی می‌بیند خط برش خودش را قطع کرده
+        $block = $pieces;
+        $grown = [];
+        $underarm = 0.0;
+        $softened = 0.0;
+        $flattened = 0.0;
+        $raised = 0.0;
+
+        for ($round = 0; $round < 22; $round++) {
+            $underarm = 0.0;
+            $chords = [];
+
+            foreach ($plans as $side => $plan) {
+                $plans[$side]['angle'] = $angle;
+                $plans[$side] = $this->placeSleeve($plans[$side], $p);
+                $underarm = max($underarm, $plans[$side]['underarm_seam'] - $softened);
+                $chords[] = $plans[$side]['underarm_chord'];
+            }
+
+            $underarm = max(max($chords), $underarm);
+            $grown = [];
+
+            foreach ($plans as $side => $plan) {
+                $grown[$side] = $this->growSleeve($block[$plan['index']], $plan, $underarm, $p);
+            }
+
+            if (Geometry::isValidPiece($grown['front']) && Geometry::isValidPiece($grown['back'])) {
+                break;
+            }
+
+            $floor = max(array_column($plans, 'shoulder_angle')) + 1.0;
+
+            if ($underarm > max($chords) + 0.05) {
+                $softened += ($underarm - max($chords)) * 0.4;
+            } elseif ($angle > $floor + 0.5) {
+                $flattened += 4.0;
+                $angle = max($floor, $angle - 4.0);
+            } else {
+                $raised += $drop * 0.2;
+                $drop *= 0.8;
+
+                foreach ($plans as $side => $plan) {
+                    $plans[$side]['drop'] = $drop;
+                }
+            }
+        }
+
+        if ($softened > 0.05) {
+            $notes[] = 'گودی درز زیر آستین '.Format::cm($softened, 1).' کم شد، چون با گودی خواسته‌شده '
+                .'خط برش از روی خودِ آستین رد می‌شد.';
+        }
+
+        if ($flattened > 0.5) {
+            $notes[] = 'زاویه آستین '.Format::number($flattened).' درجه دیگر هم کم شد تا مسیر قطعه سالم بماند.';
+        }
+
+        if ($raised > 0.05) {
+            $notes[] = 'زیر بغل '.Format::cm($raised, 1).' بالاتر آمد؛ پایین‌تر از این، درز زیر آستین به '
+                .'درز پهلو می‌خورد و قطعه بریدنی نمی‌ماند.';
+        }
 
         foreach ($plans as $side => $plan) {
-            $pieces[$plan['index']] = $this->growSleeve($pieces[$plan['index']], $plan, $underarm, $p);
+            $plans[$side]['underarm_final'] = $underarm;
+            $pieces[$plan['index']] = $grown[$side];
             $label = $side === 'front' ? 'جلو' : 'پشت';
             $notes[] = 'حلقه آستین '.$label.' برداشته شد و آستین از خود تنه درآمد؛ درز سرشانه تا سر '
                 .'آستین '.Format::cm($topSeam, 1).' و درز زیر آستین '.Format::cm($underarm, 1)
@@ -124,7 +181,7 @@ abstract class GrownOnSleeveStyle extends SleeveBodiceStyle
                 .'بغل یک چاک به همان اندازه ضلع زده می‌شود و دو ضلع لوزی در آن می‌نشیند؛ دو ضلع دیگر در '
                 .'قطعه روبه‌رو. با همین لوزی دست بدون بالا کشیدن لباس بالا می‌رود.';
         } elseif (array_key_exists('gusset', $this->paramsSchema())) {
-            $notes[] = 'این آستین لوزی زیربغل ندارد؛ با زاویه '.Format::number($p['sleeve_angle'])
+            $notes[] = 'این آستین لوزی زیربغل ندارد؛ با زاویه '.Format::number($angle)
                 .' درجه، بالا بردن دست کل لباس را از پهلو بالا می‌کشد و زیر بغل چین می‌افتد. اگر آزادی '
                 .'حرکت مهم است یا آستین را تنگ‌تر می‌خواهید، لوزی زیربغل بگذارید یا زاویه آستین را به افق نزدیک‌تر کنید.';
         }
@@ -137,7 +194,8 @@ abstract class GrownOnSleeveStyle extends SleeveBodiceStyle
             'meta' => [
                 'sleeve' => [
                     'style' => static::key(),
-                    'angle' => round((float) $p['sleeve_angle'], 1),
+                    'angle' => round($angle, 1),
+                    'angle_asked' => round((float) $p['sleeve_angle'], 1),
                     'top_seam' => round($topSeam, 2),
                     'underarm_seam' => round($underarm, 2),
                     'underarm_matched' => abs($walk['difference']) <= 0.1,
@@ -171,11 +229,11 @@ abstract class GrownOnSleeveStyle extends SleeveBodiceStyle
         $drop = max(0.5, min($a['side_length'] * 0.8, (float) $p['underarm_drop']));
 
         $outline = array_values($piece['outline']);
-        $tSide = $this->tAtLength($outline, $a['side_edge'], $drop);
-        $under = Geometry::pointOnEdge($outline, $a['side_edge'], $tSide);
+        $under = $this->alongEdge($outline, $a['side_edge'], $drop);
 
         $length = max(10.0, $arm + (float) $p['length_extra']);
-        $hemHalf = max(3.5, min($bicep * 0.7, ($wrist + (float) $p['hem_ease']) / 2));
+        // آستین کوتاه نمی‌تواند به پهنای بازو باشد، وگرنه دم آستین روی خود تنه می‌افتد
+        $hemHalf = max(3.5, min($bicep * 0.7, $length * 0.8, ($wrist + (float) $p['hem_ease']) / 2));
 
         // آستین نباید آن‌قدر تند بیفتد که دم آستین روی خود تنه بنشیند: گوشه پایینی دم
         // آستین باید دست‌کم دو سانت بیرون‌تر از درز پهلو بماند
@@ -192,7 +250,9 @@ abstract class GrownOnSleeveStyle extends SleeveBodiceStyle
             'length' => $length,
             'hem_half' => $hemHalf,
             'drop' => $drop,
-            'underarm' => ['x' => (float) $under['x'], 'y' => (float) $under['y']],
+            'max_drop' => $a['side_length'] * 0.8,
+            'outline' => $outline,
+            'side_edge' => $a['side_edge'],
         ];
     }
 
@@ -206,16 +266,18 @@ abstract class GrownOnSleeveStyle extends SleeveBodiceStyle
         $axis = ['x' => cos(deg2rad($plan['angle'])), 'y' => sin(deg2rad($plan['angle']))];
         $tip = $this->move($plan['anchors']['tip'], $axis, $plan['length']);
         $hem = $this->move($tip, $this->rotateVector($axis, 90.0), $plan['hem_half']);
+        $under = $this->alongEdge($plan['outline'], $plan['side_edge'], $plan['drop']);
+        $underarm = ['x' => $under['x'], 'y' => $under['y']];
+        $chord = $this->len($this->vec($hem, $underarm));
 
-        $chord = $this->len($this->vec($hem, $plan['underarm']));
-
-        return $plan + [
+        return array_merge($plan, [
             'axis' => $axis,
             'sleeve_tip' => $tip,
             'sleeve_hem' => $hem,
+            'underarm' => $underarm,
             'underarm_chord' => $chord,
             'underarm_seam' => $chord + $this->curveExtra($p),
-        ];
+        ]);
     }
 
     /** درز زیر آستین چقدر بلندتر از خط راست کشیده می‌شود. */

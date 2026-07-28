@@ -282,8 +282,9 @@ class DropShoulderSleeveStyle extends SleeveBodiceStyle
         $height = max(2.0, (float) $p['cap_softness'] * $setInHeight);
         $width = $this->fitCapWidth($height, $target, $setInWidth);
 
-        $length = max(10.0, ($arm - (float) $p['shoulder_extension']) + (float) $p['length_extra']);
-        $hemHalf = max(4.0, min($width / 2 - 0.5, ($wrist + (float) $p['hem_ease']) / 2));
+        // آستین باید به‌اندازه کافی پایین‌تر از خط بازو تمام شود وگرنه دم آستین به سرآستین می‌خورد
+        $length = max($height + 9.0, ($arm - (float) $p['shoulder_extension']) + (float) $p['length_extra']);
+        $hemHalf = max(4.0, min($width / 2 - 1.0, ($wrist + (float) $p['hem_ease']) / 2));
         $centre = $width / 2;
 
         $outline = $this->capOutline($width, $height);

@@ -443,6 +443,8 @@ trait PantsBlock
         $add(Geometry::curve($hipX, $y($hipY), $sideWaistX + ($side * 0.62), $y($hipY * 0.42)), 'side');
         $add(Geometry::curve($crotchX, $y($crotchY), $hipX + ($adjust * 0.4), $y($hipY + (($crotchY - $hipY) * 0.5))), 'side');
 
+        // برچسبی که با هر نقطه ثبت می‌شود، برچسب لبه‌ای است که از همان نقطه بیرون
+        // می‌رود؛ پس برچسب «دم» روی نقطه بیرونیِ دم می‌نشیند نه روی نقطه درونی.
         if ($hasKnee) {
             $add(Geometry::curve(
                 $kneeOut,
@@ -452,25 +454,25 @@ trait PantsBlock
             ), 'side');
             $add(abs($flare) > 0.05
                 ? Geometry::curve($hemOut, $y($hemY), $kneeOut + (($hemOut - $kneeOut) * 0.25) - $flare, $y($kneeY + (($hemY - $kneeY) * 0.5)))
-                : Geometry::point($hemOut, $y($hemY)), 'side');
+                : Geometry::point($hemOut, $y($hemY)), 'hem');
         } else {
             $add(Geometry::curve(
                 $hemOut,
                 $y($hemY),
                 $crotchX + (($hemOut - $crotchX) * 0.35),
                 $y($crotchY + (($hemY - $crotchY) * 0.55)),
-            ), 'side');
+            ), 'hem');
         }
 
-        $add(Geometry::point($hemIn, $y($hemY)), 'hem');
+        $add(Geometry::point($hemIn, $y($hemY)), 'side');
 
         if ($hasKnee) {
             $add(abs($flare) > 0.05
                 ? Geometry::curve($kneeIn, $y($kneeY), $hemIn + (($kneeIn - $hemIn) * 0.25) + $flare, $y($kneeY + (($hemY - $kneeY) * 0.5)))
                 : Geometry::point($kneeIn, $y($kneeY)), 'side');
-            $add(Geometry::curve(0, $y($crotchY), $kneeIn * 0.55, $y($crotchY + (($kneeY - $crotchY) * 0.45))), 'side');
+            $add(Geometry::curve(0, $y($crotchY), $kneeIn * 0.55, $y($crotchY + (($kneeY - $crotchY) * 0.45))), 'default');
         } else {
-            $add(Geometry::curve(0, $y($crotchY), $hemIn * 0.6, $y($crotchY + (($hemY - $crotchY) * 0.45))), 'side');
+            $add(Geometry::curve(0, $y($crotchY), $hemIn * 0.6, $y($crotchY + (($hemY - $crotchY) * 0.45))), 'default');
         }
 
         // منحنی فاق: دو پاره منحنی؛ پشت گودتر و قلاب‌دارتر از جلو

@@ -50,6 +50,12 @@ abstract class BaseLapel extends BaseCollar
         }
 
         foreach ($this->frontIndexes($pieces) as $index) {
+            if (! empty($pieces[$index]['meta']['lapel'])) {
+                return 'برگردان یک بار روی «'.$pieces[$index]['name'].'» بریده شده است؛'
+                    .' اگر دوباره بریده شود، تنه جلو از خط گلو به بالا دو بار کوتاه می‌شود.'
+                    .' اول سبک یقه را بردارید و بعد یقه تازه بگذارید.';
+            }
+
             if (! empty($pieces[$index]['on_fold'])) {
                 return 'تنه جلو («'.$pieces[$index]['name'].'») هنوز روی تای پارچه بریده می‌شود، پس مرکز جلو تا است نه چاک؛'
                     .' '.$this->label().' جایی برای برگشتن ندارد. اول بست جلو را بگذارید تا تنه دو تکه شود.';

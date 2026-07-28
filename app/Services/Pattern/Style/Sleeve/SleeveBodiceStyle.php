@@ -22,9 +22,6 @@ use App\Services\Pattern\Style\StyleModifier;
  */
 abstract class SleeveBodiceStyle implements StyleModifier
 {
-    /** قطعه‌هایی که می‌توانند بالاتنه باشند. */
-    public const BODICE_PARTS = ['front_bodice', 'back_bodice'];
-
     public static function group(): string
     {
         return 'sleeve';

@@ -273,63 +273,154 @@ abstract class FullnessStyle extends DetailStyle
     }
 
     /**
-     * جابه‌جا کردن سر «پهلو»ی یک لبه دم روی خودش (باریک یا پهن کردن دم).
+     * لبه‌های دم یک قطعه.
+     *
+     * بعد از برش و باز کردن، دم به چند لبه شکسته می‌شود؛ همه‌شان لازم‌اند.
+     *
+     * @return array<int, int>
+     */
+    protected function hemEdges(array $piece): array
+    {
+        $tagged = $this->edgesWithTag($piece, 'hem');
+
+        if ($tagged !== []) {
+            return $tagged;
+        }
+
+        $known = $piece['meta']['hem_edges'] ?? null;
+
+        return is_array($known) ? array_values(array_map('intval', $known)) : [];
+    }
+
+    /** طول کل دم یک قطعه، حتی اگر چند لبه شده باشد. */
+    protected function hemLength(array $piece): float
+    {
+        $total = 0.0;
+
+        foreach ($this->hemEdges($piece) as $edge) {
+            $total += $this->edgeLength($piece, $edge);
+        }
+
+        return round($total, 3);
+    }
+
+    /**
+     * دو سرِ دم: رأس نزدیک به خط مرکز و رأس روی درز پهلو.
+     *
+     * @return array{center: int, side: int}|null
+     */
+    protected function hemCorners(array $piece): ?array
+    {
+        $edges = $this->hemEdges($piece);
+
+        if ($edges === []) {
+            return null;
+        }
+
+        $outline = array_values($piece['outline']);
+        $count = count($outline);
+        $vertices = [];
+
+        foreach ($edges as $edge) {
+            $vertices[$edge % $count] = true;
+            $vertices[($edge + 1) % $count] = true;
+        }
+
+        $center = null;
+        $side = null;
+
+        foreach (array_keys($vertices) as $index) {
+            $x = (float) $outline[$index]['x'];
+
+            if ($center === null || $x < (float) $outline[$center]['x']) {
+                $center = $index;
+            }
+
+            if ($side === null || $x > (float) $outline[$side]['x']) {
+                $side = $index;
+            }
+        }
+
+        return ['center' => (int) $center, 'side' => (int) $side];
+    }
+
+    /**
+     * جابه‌جا کردن یک رأس روی خط راستِ رأس همسایه‌اش.
+     *
+     * @param  array<int, array<string, mixed>>  $outline
+     * @return array<int, array<string, mixed>>
+     */
+    protected function slideAlong(array $outline, int $index, int $towards, float $amount): array
+    {
+        $from = ['x' => (float) $outline[$index]['x'], 'y' => (float) $outline[$index]['y']];
+        $to = ['x' => (float) $outline[$towards]['x'], 'y' => (float) $outline[$towards]['y']];
+        $span = Geometry::distance($from, $to);
+
+        if ($span < 0.05) {
+            return $outline;
+        }
+
+        $moved = Geometry::lerp($from, $to, max(-0.9, min(0.9, $amount / $span)));
+        $outline[$index]['x'] = round($moved['x'], 3);
+        $outline[$index]['y'] = round($moved['y'], 3);
+
+        if (isset($outline[$index]['cx'], $outline[$index]['cy'])) {
+            $outline[$index]['cx'] = round(((float) $outline[$index]['cx']) + (($moved['x'] - $from['x']) * 0.5), 3);
+            $outline[$index]['cy'] = round(((float) $outline[$index]['cy']) + (($moved['y'] - $from['y']) * 0.5), 3);
+        }
+
+        return $outline;
+    }
+
+    /**
+     * تو بردن سرِ پهلوی دم روی خودِ لبه دم (باریک کردن).
      *
      * @param  array<string, mixed>  $piece
      * @return array<string, mixed>
      */
-    protected function moveHemCorner(array $piece, int $edge, float $amount): array
+    protected function narrowHem(array $piece, float $amount): array
     {
-        $outline = array_values($piece['outline']);
-        $count = count($outline);
-        $a = $edge % $count;
-        $b = ($edge + 1) % $count;
+        $corners = $this->hemCorners($piece);
 
-        // سرِ پهلو همان سرِ دورتر از خط مرکز (بیشترین x) است
-        $side = ((float) $outline[$a]['x']) >= ((float) $outline[$b]['x']) ? $a : $b;
-        $inner = $side === $a ? $b : $a;
-
-        $from = ['x' => (float) $outline[$side]['x'], 'y' => (float) $outline[$side]['y']];
-        $to = ['x' => (float) $outline[$inner]['x'], 'y' => (float) $outline[$inner]['y']];
-        $span = Geometry::distance($from, $to);
-
-        if ($span < 0.05) {
+        if ($corners === null || abs($amount) < 0.01) {
             return $piece;
         }
 
-        $moved = Geometry::lerp($from, $to, max(-0.9, min(0.9, $amount / $span)));
-        $outline[$side]['x'] = round($moved['x'], 3);
-        $outline[$side]['y'] = round($moved['y'], 3);
+        $outline = array_values($piece['outline']);
+        $count = count($outline);
+        $side = $corners['side'];
 
-        if (isset($outline[$side]['cx'], $outline[$side]['cy'])) {
-            $outline[$side]['cx'] = round(((float) $outline[$side]['cx']) + (($moved['x'] - $from['x']) * 0.5), 3);
-            $outline[$side]['cy'] = round(((float) $outline[$side]['cy']) + (($moved['y'] - $from['y']) * 0.5), 3);
-        }
+        // همسایه‌ای که روی خود لبه دم است، نه روی درز پهلو
+        $edges = $this->hemEdges($piece);
+        $towards = in_array($side, array_map(fn ($edge) => $edge % $count, $edges), true)
+            ? ($side + 1) % $count
+            : ($side - 1 + $count) % $count;
 
-        $piece['outline'] = $outline;
+        $piece['outline'] = $this->slideAlong($outline, $side, $towards, $amount);
 
         return $this->reindexAnchors(Geometry::normalizePiece($piece));
     }
 
     /**
-     * بالا و پایین بردن دو سر لبه دم و کشیدن منحنی بینشان.
+     * بالا و پایین بردن دو سر دم و کشیدن منحنی بینشان.
      *
-     * مقدار مثبت یعنی بلندتر (پایین‌تر). سرِ «مرکز» همان سرِ نزدیک به خط مرکز
-     * (کمترین x) و سرِ «پهلو» سرِ دیگر است.
+     * مقدار مثبت یعنی بلندتر (پایین‌تر). اگر دم یک لبه باشد، منحنی هم روی همان
+     * لبه نشانده می‌شود.
      *
      * @param  array<string, mixed>  $piece
      * @return array<string, mixed>
      */
-    protected function shapeHemEnds(array $piece, int $edge, float $centerDelta, float $sideDelta, float $curve = 0.0): array
+    protected function shapeHem(array $piece, float $centerDelta, float $sideDelta, float $curve = 0.0): array
     {
-        $outline = array_values($piece['outline']);
-        $count = count($outline);
-        $a = $edge % $count;
-        $b = ($edge + 1) % $count;
-        $center = ((float) $outline[$a]['x']) <= ((float) $outline[$b]['x']) ? $a : $b;
-        $side = $center === $a ? $b : $a;
+        $corners = $this->hemCorners($piece);
 
-        foreach ([$center => $centerDelta, $side => $sideDelta] as $index => $delta) {
+        if ($corners === null) {
+            return $piece;
+        }
+
+        $outline = array_values($piece['outline']);
+
+        foreach ([$corners['center'] => $centerDelta, $corners['side'] => $sideDelta] as $index => $delta) {
             if (abs($delta) < 0.01) {
                 continue;
             }
@@ -341,7 +432,12 @@ abstract class FullnessStyle extends DetailStyle
             }
         }
 
-        if (abs($curve) > 0.01) {
+        $edges = $this->hemEdges($piece);
+
+        if (abs($curve) > 0.01 && count($edges) === 1) {
+            $count = count($outline);
+            $a = $edges[0] % $count;
+            $b = ($edges[0] + 1) % $count;
             $middle = Geometry::lerp(
                 ['x' => (float) $outline[$a]['x'], 'y' => (float) $outline[$a]['y']],
                 ['x' => (float) $outline[$b]['x'], 'y' => (float) $outline[$b]['y']],

@@ -64,8 +64,7 @@ class CuffedSweep extends FullnessStyle
 
         foreach ($hosts as $index) {
             $piece = $pieces[$index];
-            $edge = $this->edgeWithTag($piece, 'hem');
-            $width = $edge === null ? 0.0 : $this->edgeLength($piece, $edge);
+            $width = $this->hemLength($piece);
 
             if ($width < $depth + 4) {
                 return 'دم پنل «'.$piece['name'].'» فقط '.Format::cm($width)
@@ -89,7 +88,7 @@ class CuffedSweep extends FullnessStyle
 
         foreach ($hosts as $index) {
             $piece = $pieces[$index];
-            $edges = $this->edgesWithTag($piece, 'hem');
+            $edges = $this->hemEdges($piece);
 
             if ($edges === []) {
                 continue;

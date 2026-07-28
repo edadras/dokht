@@ -577,6 +577,7 @@ abstract class BodiceGarmentBase extends BodiceBaseGenerator
         $flare = (float) ($o['hem_flare'] ?? $this->param($params, 'hem_flare', 0));
         $backSeam = (bool) ($o['back_seam'] ?? false);
         $closed = $opening === 'closed';
+        $collar = (string) ($o['collar'] ?? $this->param($params, 'collar', 'none'));
 
         $shared = array_merge([
             'shape' => $shape,
@@ -628,9 +629,10 @@ abstract class BodiceGarmentBase extends BodiceBaseGenerator
             $o['sleeve'] ?? [],
         )));
 
-        $pieces = array_merge($pieces, $this->collarSet($g, $halfNeck, $params, $o));
+        $pieces = array_merge($pieces, $this->collarSet($g, $halfNeck, $params, array_merge($o, ['collar' => $collar])));
 
-        if (($o['facing'] ?? ! $closed) && ($o['collar'] ?? 'none') !== 'shawl') {
+        // یقه شالی خودش سجاف جلو و سجاف یقه پشت را می‌سازد، پس دوباره ساخته نمی‌شود
+        if (($o['facing'] ?? ! $closed) && $collar !== 'shawl') {
             $pieces = array_merge($pieces, $this->facingSet($g, $stand, $g['front_waist_y'] + $length, array_merge([
                 'prefix' => $prefix,
                 'width' => (float) ($o['facing_width'] ?? 8),

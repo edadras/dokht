@@ -37,9 +37,12 @@ class DolmanSleeveStyle extends GrownOnSleeveStyle
 
     protected function shapeNote(array $p, array $plans): string
     {
-        return 'دولمان: زیر بغل '.Format::cm($p['underarm_drop'], 1).' پایین‌تر از حلقه بلوک نشست و درز '
-            .'زیر آستین '.Format::cm($p['underarm_curve'], 1).' بلندتر از خط راست کشیده شد تا زیر بازو '
-            .'نرم بیفتد. با زاویه '.Format::number($p['sleeve_angle']).' درجه، آستین همراه بالا رفتن دست '
-            .'بالا می‌آید و لباس از پهلو کشیده نمی‌شود؛ به همین دلیل دولمان لوزی زیربغل نمی‌خواهد.';
+        $front = $plans['front'] ?? reset($plans);
+        $curve = $front['underarm_final'] - $front['underarm_chord'];
+
+        return 'دولمان: زیر بغل '.Format::cm($front['drop'], 1).' پایین‌تر از حلقه بلوک نشست و درز '
+            .'زیر آستین '.Format::cm($curve, 1).' بلندتر از خط راست کشیده شد تا زیر بازو نرم بیفتد. '
+            .'با زاویه '.Format::number($front['angle']).' درجه، آستین همراه بالا رفتن دست بالا می‌آید و '
+            .'لباس از پهلو کشیده نمی‌شود؛ به همین دلیل دولمان لوزی زیربغل نمی‌خواهد.';
     }
 }

@@ -41,7 +41,7 @@ class SleeveStyleTest extends TestCase
     /** @return array<int, array<string, mixed>> */
     protected function bodice(string $size): array
     {
-        return (new BodiceBlockGenerator())->generate($size === '' ? [] : Measurements::fromSize($size), $this->ease(), []);
+        return (new BodiceBlockGenerator)->generate($size === '' ? [] : Measurements::fromSize($size), $this->ease(), []);
     }
 
     /** @return array<string, float> */
@@ -173,6 +173,46 @@ class SleeveStyleTest extends TestCase
                     $this->assertSewable($piece, "{$key} سایز {$size}:");
                 }
             }
+        }
+    }
+
+    public function test_the_edges_of_every_setting_still_give_a_sewable_pattern(): void
+    {
+        foreach (static::KEYS as $key) {
+            $schema = StyleRegistry::make($key)->paramsSchema();
+
+            foreach (['min', 'max'] as $end) {
+                $params = [];
+
+                foreach ($schema as $name => $field) {
+                    $params[$name] = match ($field['type'] ?? 'number') {
+                        'toggle' => $end === 'max',
+                        'select' => array_key_last($field['options']),
+                        default => $field[$end] ?? $field['default'],
+                    };
+                }
+
+                foreach (static::SIZES as $size) {
+                    foreach ($this->apply($key, $size, $params)['pieces'] as $piece) {
+                        $this->assertSewable($piece, "{$key} سایز {$size} با همه پارامترهای {$end}:");
+                    }
+                }
+            }
+        }
+    }
+
+    public function test_a_grown_on_sleeve_says_so_when_it_has_to_soften_the_settings(): void
+    {
+        // زاویه ۷۵ درجه با آستین بلند یعنی آستین روی خود تنه می‌افتد؛ سبک باید زاویه
+        // را کم کند و همان را بگوید، نه اینکه بی‌صدا الگوی نادرست بدهد
+        $result = $this->apply('sleeve_kimono', '40', ['sleeve_angle' => 75, 'underarm_curve' => 20]);
+        $notes = implode(' | ', $result['notes']);
+
+        $this->assertStringContainsString('زاویه آستین', $notes);
+        $this->assertLessThan(75, $result['meta']['sleeve']['angle'] + 0.0);
+
+        foreach ($result['pieces'] as $piece) {
+            $this->assertSewable($piece, 'کیمونوی تند:');
         }
     }
 
@@ -511,7 +551,7 @@ class SleeveStyleTest extends TestCase
     {
         foreach (static::SIZES as $size) {
             $measurements = Measurements::fromSize($size);
-            $setIn = (new SleeveGenerator())->generate($measurements, $this->ease(), []);
+            $setIn = (new SleeveGenerator)->generate($measurements, $this->ease(), []);
             $reference = $setIn[0]['meta']['cap_height'] / $setIn[0]['meta']['bicep_width'];
 
             $result = $this->apply('sleeve_drop_shoulder', $size);
@@ -590,7 +630,7 @@ class SleeveStyleTest extends TestCase
     {
         $pieces = array_merge(
             $this->bodice('40'),
-            (new SleeveGenerator())->generate(Measurements::fromSize('40'), $this->ease(), []),
+            (new SleeveGenerator)->generate(Measurements::fromSize('40'), $this->ease(), []),
         );
 
         foreach (static::KEYS as $key) {
