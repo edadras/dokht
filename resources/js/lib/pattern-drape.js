@@ -1213,6 +1213,124 @@ const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 
  */
 
 /*
+ * خم کردنِ نوار روی خطِ دوختش — به‌جای جابه‌جا کردنش.
+ *
+ * یقه و نوارها با جابه‌جایی و چرخش سر جایشان نمی‌آیند و دلیلش هندسی است: خط
+ * یقه‌ی لباس دایره نیست، در جلو گود می‌شود. نوارِ یقه ۵۴ سانتی‌متر است و دورِ
+ * گردن ۳۷؛ هیچ چرخش و جابه‌جایی‌ای نوارِ ۵۴ را روی دایره‌ی ۳۷ نمی‌نشاند. ولی
+ * روی خودِ خط یقه — که همان ۵۴ سانتی‌متر است — عیناً می‌نشیند.
+ *
+ * پس نوار را خم می‌کنیم: هر رأس نوار نسبت به نزدیک‌ترین رأسِ درزش (روی الگوی
+ * تخت) یک فاصله دارد؛ همان فاصله را در دستگاهِ محلیِ همان نقطه روی خط دوخت
+ * می‌گذاریم. راستای «طول» همان مسیرِ خط دوخت است و راستای «پهنا» عمود بر آن.
+ *
+ * چرا این کار پارچه را خراب نمی‌کند؟ چون طولِ دو لبه با هم برابر است (خودِ
+ * الگو این را تضمین کرده) و نگاشت در راستای طول، طول را حفظ می‌کند. نوار
+ * فقط خم می‌شود، کشیده نمی‌شود.
+ */
+const bendStrips = (patches, seams) => {
+    const at = new Map();
+
+    patches.forEach((entry, index) => at.set(entry.patch, index));
+
+    let bent = 0;
+
+    for (const entry of patches) {
+        if (! isStrip(entry.piece)) {
+            continue;
+        }
+
+        /* جفت‌رأس‌های همه‌ی درزهای این نوار: رأس خودی ⇒ نقطه‌ی هدف */
+        const own = [];
+        const goal = [];
+
+        for (const seam of seams) {
+            if (! seam.b || seam.b === seam.a) {
+                continue;
+            }
+
+            const mineFirst = seam.a === entry.patch;
+
+            if (! mineFirst && seam.b !== entry.patch) {
+                continue;
+            }
+
+            const mine = mineFirst ? seam.a : seam.b;
+            const theirs = mineFirst ? seam.b : seam.a;
+
+            if (at.get(theirs) === undefined) {
+                continue;
+            }
+
+            for (let i = 0; i < seam.count; i++) {
+                const v = seam.pairs[i * 2 + (mineFirst ? 0 : 1)];
+                const to = seam.pairs[i * 2 + (mineFirst ? 1 : 0)] * 3;
+
+                own.push(v);
+                goal.push(theirs.positions[to], theirs.positions[to + 1], theirs.positions[to + 2]);
+            }
+        }
+
+        if (own.length < 3) {
+            continue;
+        }
+
+        /* مرتب کردن روی طولِ خودِ نوار تا مسیر هدف پیوسته شود */
+        const grain = entry.mesh.grain;
+        const order = own.map((v, i) => i).sort((a, b) => grain[own[a] * 2] - grain[own[b] * 2]);
+        const path = order.map((i) => [goal[i * 3], goal[i * 3 + 1], goal[i * 3 + 2]]);
+        const anchors = order.map((i) => own[i]);
+        const positions = entry.patch.positions;
+
+        for (let v = 0; v < entry.patch.count; v++) {
+            /* نزدیک‌ترین رأسِ درز روی الگوی تخت */
+            let best = 0;
+            let bestGap = Infinity;
+
+            for (let k = 0; k < anchors.length; k++) {
+                const gap = Math.abs(grain[anchors[k] * 2] - grain[v * 2]);
+
+                if (gap < bestGap) {
+                    bestGap = gap;
+                    best = k;
+                }
+            }
+
+            const next = Math.min(anchors.length - 1, best + 1);
+            const prev = Math.max(0, best - 1);
+            let tx = path[next][0] - path[prev][0];
+            let tz = path[next][2] - path[prev][2];
+            const ty = path[next][1] - path[prev][1];
+            const span = Math.hypot(tx, ty, tz) || 1;
+
+            tx /= span;
+            tz /= span;
+
+            const along = grain[v * 2] - grain[anchors[best] * 2];
+            const across = grain[v * 2 + 1] - grain[anchors[best] * 2 + 1];
+
+            positions[v * 3] = path[best][0] + tx * along;
+            positions[v * 3 + 1] = path[best][1] + (ty / span) * along - across;
+            positions[v * 3 + 2] = path[best][2] + tz * along;
+        }
+
+        entry.patch.remember();
+        bent++;
+    }
+
+    return bent;
+};
+
+/* آیا این قطعه یک نوار است؟ باریک و بلند، و دور چیزی می‌پیچد */
+const isStrip = (piece) => {
+    if ((piece.placement?.zone || '') === 'collar') {
+        return true;
+    }
+
+    return !! piece.placement?.radius && (piece.role === 'detail' || piece.role === 'collar');
+};
+
+/*
  * چیدن از روی گرافِ دوخت، نه با حدسِ مستقل هر قطعه.
  *
  * چیدن اولیه تا اینجا برای هر قطعه جدا حساب می‌شد: ارتفاع، شعاع و بازه‌ی
@@ -1938,6 +2056,7 @@ export const buildDrape = (payload, body, options = {}) => {
      * باید پارچه را بنشاند، نه اینکه قطعه‌ها را از این سر بدن به آن سر بکشد.
      */
     stats.seeded = seedPlacement(patches, seams);
+    stats.bent = bendStrips(patches, seams);
     alignPatches(patches, seams, settings.alignRounds ?? 60);
 
     stats.presettle = Math.ceil(settings.seamDuration * 60) + 140;
