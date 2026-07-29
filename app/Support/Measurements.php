@@ -32,6 +32,13 @@ class Measurements
         'front_length' => ['label' => 'قد بالاتنه جلو', 'min' => 25, 'max' => 65, 'derive' => 'height*0.255'],
         'shoulder_to_bust' => ['label' => 'سرشانه تا سینه', 'min' => 15, 'max' => 45, 'derive' => 'height*0.155'],
         'waist_to_hip' => ['label' => 'کمر تا باسن', 'min' => 12, 'max' => 35, 'derive' => 'height*0.125'],
+        // اصلاح پوسچر — پیش‌فرض صفر است، پس بدنِ راست هیچ تغییری نمی‌بیند و
+        // کاربر ساده هرگز با این دو رو‌به‌رو نمی‌شود.
+        'back_curve' => ['label' => 'قوز پشت', 'min' => 0, 'max' => 6, 'default' => 0, 'posture' => true,
+            'hint' => 'اگر پشت مشتری گرد است، مرکز پشت باید همین‌قدر بلندتر بریده شود.'],
+        'sway_back' => ['label' => 'گودی کمر', 'min' => 0, 'max' => 6, 'default' => 0, 'posture' => true,
+            'hint' => 'اگر زیر کمر چین افقی می‌افتد، مرکز پشت باید همین‌قدر کوتاه‌تر شود.'],
+
         'inseam' => ['label' => 'قد داخل پا', 'min' => 40, 'max' => 110, 'derive' => 'height*0.45'],
         'outseam' => ['label' => 'قد بیرون پا', 'min' => 50, 'max' => 130, 'derive' => 'height*0.62'],
         'thigh' => ['label' => 'دور ران', 'min' => 30, 'max' => 110, 'derive' => 'hip*0.58'],

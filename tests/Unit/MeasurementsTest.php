@@ -28,9 +28,17 @@ class MeasurementsTest extends TestCase
             'arm_length' => 58,
         ]);
 
-        // هیچ اندازه‌ای خالی نمی‌ماند
-        foreach (array_keys(Measurements::FIELDS) as $key) {
+        // هیچ اندازه‌ای خالی نمی‌ماند. اصلاح‌های پوسچر از این قاعده بیرون‌اند:
+        // مقدارشان روی بدنِ راست درست همان صفر است، نه یک اندازه تخمینی.
+        foreach (Measurements::FIELDS as $key => $field) {
             $this->assertArrayHasKey($key, $completed);
+
+            if (! empty($field['posture'])) {
+                $this->assertSame(0.0, (float) $completed[$key], "پیش‌فرض «{$key}» باید صفر باشد.");
+
+                continue;
+            }
+
             $this->assertGreaterThan(0, $completed[$key]);
         }
 

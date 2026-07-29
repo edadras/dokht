@@ -50,7 +50,7 @@ trait DraftsBodice
 
         // تراز کمر روی درز پهلو، مشترک میان جلو و پشت (قانون ۱ بالای همین فایل).
         // «افت جلو» همان اختلاف بلندی جلو و پشت است که روی مرکز جلو می‌ماند.
-        $sideWaistY = min($g['front_waist_y'], $g['back_waist_y']);
+        $sideWaistY = (float) ($g['side_waist_base'] ?? min($g['front_waist_y'], $g['back_waist_y']));
         $frontRise = round($waistY - $sideWaistY, 3);
 
         $shoulderDrop = $g['shoulder_drop'] + ($isFront ? 0 : 0.5);

@@ -260,7 +260,9 @@ class BillOfMaterialsBuilder
             try {
                 $result = $this->nesting->nest($project->pattern, $project->fabric);
 
-                return round($result['required_meters'] * 1.05, 2);
+                // buy_meters آب‌رفتِ پارچه را در خود دارد؛ پنج درصد هم برای خطای
+                // برش و کج‌شدن لبه پارچه روی آن می‌گذاریم.
+                return round($result['buy_meters'] * 1.05, 2);
             } catch (Throwable) {
                 // برآورد ممکن نشد
             }

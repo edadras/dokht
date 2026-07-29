@@ -44,7 +44,12 @@ trait BodiceCatalogSupport
 
         // پهنای جلو و پشت سینه؛ پهنای حلقه آستین از همین‌جا درمی‌آید و باید ≈ یک‌هشتم دور سینه بماند
         $g['across_chest'] = round(max(6.0, min($g['quarter_bust'] - 3.2, ($body / 8) + 4.6)), 3);
-        $g['across_back'] = round(max(6.5, min($g['quarter_bust'] - 2.6, ($body / 8) + 5.4)), 3);
+        // پشتِ گرد پهنای بیشتری لازم دارد؛ همان اصلاحی که در bodiceMetrics روی
+        // پهنای پشت نشسته بود اینجا هم نگه داشته می‌شود.
+        $g['across_back'] = round(
+            max(6.5, min($g['quarter_bust'] - 2.6, ($body / 8) + 5.4)) + ((float) ($g['back_curve'] ?? 0) * 0.5),
+            3,
+        );
 
         $intake = max(0.0, $g['quarter_bust'] - $g['quarter_waist']);
         $share = min(0.9, max(0.0, (float) $this->param($params, 'waist_dart_share', 0.6)));
@@ -53,7 +58,7 @@ trait BodiceCatalogSupport
         $g['dart_intake'] = round($intake * $share, 3);
         $g['side_intake'] = round($intake - ($intake * $share), 3);
 
-        $g['side_waist_y'] = round(min($g['front_waist_y'], $g['back_waist_y']), 3);
+        $g['side_waist_y'] = round((float) ($g['side_waist_base'] ?? min($g['front_waist_y'], $g['back_waist_y'])), 3);
         $g['front_drop'] = round($g['front_waist_y'] - $g['side_waist_y'], 3);
         $g['back_drop'] = round($g['back_waist_y'] - $g['side_waist_y'], 3);
         $g['hip_y'] = round($g['side_waist_y'] + $g['hip_drop'], 3);

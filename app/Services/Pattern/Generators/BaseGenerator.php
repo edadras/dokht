@@ -89,6 +89,17 @@ abstract class BaseGenerator implements PatternGenerator
         $backWaistY = $this->m($m, 'back_length', 41) + $lengthExtra;
         $frontWaistY = $this->m($m, 'front_length', 43) + $lengthExtra;
 
+        // تراز کمر روی درز پهلو پیش از اصلاح پوسچر گرفته می‌شود، چون اصلاح پوسچر
+        // روی مرکز پشت می‌نشیند نه روی پهلو؛ وگرنه کوتاه‌کردن مرکز پشت، درز پهلوی
+        // جلو را هم کوتاه می‌کرد و کل لباس بالا می‌آمد.
+        $sideWaistBase = min($frontWaistY, $backWaistY);
+
+        // قوز پشت: مرکز پشت بلندتر می‌شود و پهنای پشت سینه هم کمی بازتر
+        // گودی کمر: مرکز پشت کوتاه‌تر می‌شود تا چین افقی زیر کمر نیفتد
+        $backCurve = max(0.0, (float) ($m['back_curve'] ?? 0));
+        $swayBack = max(0.0, (float) ($m['sway_back'] ?? 0));
+        $backWaistY = max($sideWaistBase * 0.6, $backWaistY + $backCurve - $swayBack);
+
         // گودی حلقه آستین از دور سینه درمی‌آید ولی روی بالاتنه جای عمودی می‌گیرد.
         // در بدنی با تنه کوتاه و سینه بسیار درشت (اندازه سفارشی، نه سایز جدولی)
         // این عدد از خط کمر پایین‌تر می‌افتد و مسیر قطعه خودش را قطع می‌کند.
@@ -114,8 +125,11 @@ abstract class BaseGenerator implements PatternGenerator
             'front_waist_y' => round($frontWaistY, 2),
             'back_waist_y' => round($backWaistY, 2),
             'hip_drop' => round($this->m($m, 'waist_to_hip', 21), 2),
+            'side_waist_base' => round($sideWaistBase, 2),
+            'back_curve' => round($backCurve, 2),
+            'sway_back' => round($swayBack, 2),
             'across_chest' => round($quarterBust - 3.5, 2),
-            'across_back' => round($quarterBust - 2.6, 2),
+            'across_back' => round($quarterBust - 2.6 + ($backCurve * 0.5), 2),
             'waist_intake' => round($intake, 2),
             'dart_intake' => round($intake * $dartShare, 2),
             'side_intake' => round($intake * (1 - $dartShare), 2),

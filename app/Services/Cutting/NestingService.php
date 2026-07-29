@@ -88,12 +88,21 @@ class NestingService
         $fabricArea = $usable * $length;
         $efficiency = $fabricArea > 0 ? min(100, round($used / $fabricArea * 100, 2)) : 0.0;
 
+        // پارچه‌ای که آب می‌رود باید بیشتر خرید: طول چیدمان همان طول برش است، ولی
+        // طول خرید باید آب‌رفتِ همان پارچه را هم در خود داشته باشد، وگرنه بعد از
+        // شست‌وشوی اول قطعه‌ها کم می‌آیند.
+        $shrinkage = max(0.0, (float) ($fabric?->profile()->get('shrinkage') ?? 0));
+        $buyLength = round($length * (1 + ($shrinkage / 100)), 1);
+
         return [
             'placements' => $run['placements'],
             'fabric_width_cm' => round($resolved['fabric_width_cm'], 1),
             'usable_width_cm' => round($usable, 1),
             'required_length_cm' => round($length, 1),
             'required_meters' => round($length / 100, 2),
+            'shrinkage_percent' => round($shrinkage, 1),
+            'buy_length_cm' => $buyLength,
+            'buy_meters' => round($buyLength / 100, 2),
             'used_area_cm2' => $used,
             'waste_percent' => round(max(0, 100 - $efficiency), 2),
             'efficiency' => $efficiency,
@@ -291,6 +300,12 @@ class NestingService
             $quantity = max(1, (int) $piece->cut_quantity);
             $onFold = (bool) $piece->on_fold;
 
+            // قطعه اریب (زیریقه، نوار دور یقه، پاپیون) باید ۴۵ درجه روی پارچه
+            // بنشیند؛ همان چیزی که به آن کشسانی و خوابِ دور گردن می‌دهد. کادر
+            // دربرگیرنده‌اش پس از چرخش، مربعی به ضلع (پهنا + بلندی) ÷ √۲ است.
+            $bias = (bool) ($piece->meta['bias'] ?? false);
+            $biasSide = $bias ? round(($width + $height) * M_SQRT1_2, 2) : 0.0;
+
             // روی پارچه تاشده، یک بار بریدن قطعه قرینه دو قطعه می‌دهد
             $pairs = $piece->mirror && ($options['folded'] ?? true) && ! $onFold;
             $count = $pairs ? (int) ceil($quantity / 2) : $quantity;
@@ -310,6 +325,8 @@ class NestingService
                     'origin_y' => round($minY - $allowance, 2),
                     'w' => $width,
                     'h' => $height,
+                    'bias' => $bias,
+                    'bias_side' => $biasSide,
                     'area_cm2' => $piece->area(),
                     'on_fold' => $onFold,
                     'mirrored' => $pairs || ($piece->mirror && $i % 2 === 0),
@@ -767,6 +784,14 @@ class NestingService
         $w = (float) $instance['w'];
         $h = (float) $instance['h'];
 
+        // قطعه اریب تنها یک جهت دارد و آن هم ۴۵ درجه است؛ روی راستای پارچه
+        // بریدنش یعنی همان قطعه‌ای که باید نرم بخوابد، سفت و شکسته دربیاید.
+        if (! empty($instance['bias'])) {
+            $side = (float) $instance['bias_side'];
+
+            return [['rotation' => 45, 'w' => $side, 'h' => $side]];
+        }
+
         if ($matching) {
             // روی پارچه راه‌راه یا چهارخانه همه قطعه‌ها یک‌جهت بریده می‌شوند؛ چرخاندن
             // یا سر‌به‌پا کردن قطعه، طرح را در درزها به هم می‌ریزد
@@ -858,6 +883,12 @@ class NestingService
         }
 
         $matrix = match ((int) $orientation['rotation']) {
+            // چرخش ۴۵ درجه: گوشه (۰، بلندی) چپ‌ترین نقطه می‌شود، پس همان اندازه
+            // به راست برده می‌شود تا قطعه توی کادر خودش بنشیند
+            45 => $this->multiply(
+                [M_SQRT1_2, M_SQRT1_2, -M_SQRT1_2, M_SQRT1_2, $h * M_SQRT1_2, 0],
+                $matrix,
+            ),
             90 => $this->multiply([0, 1, -1, 0, $h, 0], $matrix),
             180 => $this->multiply([-1, 0, 0, -1, $w, $h], $matrix),
             default => $matrix,
