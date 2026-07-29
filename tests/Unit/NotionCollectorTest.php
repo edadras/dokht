@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Services\Pattern\GeneratorRegistry;
 use App\Services\Pattern\NotionCollector;
+use App\Services\Pattern\Style\StyleRegistry;
 use App\Support\Measurements;
 use Tests\TestCase;
 
@@ -172,7 +173,7 @@ class NotionCollectorTest extends TestCase
             'closure_hook_eye' => 'hook',
             'closure_snap' => 'snap',
         ] as $key => $type) {
-            $style = \App\Services\Pattern\Style\StyleRegistry::make($key);
+            $style = StyleRegistry::make($key);
             $result = $style->apply($pieces, ['params' => $style->defaultParams(), 'measurements' => Measurements::complete([])]);
 
             $rows = $this->notionsOf($result['pieces']);
@@ -273,7 +274,15 @@ class NotionCollectorTest extends TestCase
                     $problems[] = "{$key}: تعداد «{$row['label']}» برابر {$row['count']} است";
                 }
 
-                if ($row['length'] !== null && ($row['length'] <= 0 || $row['length'] > 400)) {
+                // سقف چهار متر برای یراقی است که دور یک لبه می‌پیچد (زیپ، کش،
+                // بند). نوار مو و بند دور دم لباس عروس روی کل دور دم می‌نشینند و
+                // دم یک دامن پرحجم خودش چهار متر می‌شود؛ برای این‌ها سقف دوازده متر
+                // است که همچنان جلوی عدد بی‌معنا را می‌گیرد.
+                $ceiling = str_contains($row['label'], 'کرینولین') || str_contains($row['label'], 'نوار مو')
+                    ? 1200
+                    : 400;
+
+                if ($row['length'] !== null && ($row['length'] <= 0 || $row['length'] > $ceiling)) {
                     $problems[] = "{$key}: طول «{$row['label']}» برابر {$row['length']} سانتی‌متر است";
                 }
 
