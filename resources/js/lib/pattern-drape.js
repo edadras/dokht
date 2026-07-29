@@ -803,7 +803,13 @@ const placePiece = (piece, flat, body, options) => {
     const side =
         piece.side === 'right' ? -1 : piece.side === 'left' ? 1 : placement.flip || piece.instance % 2 ? -1 : 1;
     const legs = zone.startsWith('leg') ? legTable(body) : null;
-    const hint = body.radii?.[placement.radius_hint];
+    /*
+     * اگر بسته شعاع خودش را گفته باشد، همان حرف آخر است.
+     *
+     * قطعه‌ای که از دور بدن بلندتر است (نوار یقه، کمربند بلند، دامن کلوش) روی
+     * دایره‌ی خودش می‌نشیند تا فشرده نشود؛ درزها بعد آن را روی بدن می‌کشند.
+     */
+    const hint = placement.radius ? placement.radius * scale : body.radii?.[placement.radius_hint];
 
     for (let i = 0; i < count; i++) {
         const x = flat.positions[i * 2];
@@ -1205,6 +1211,109 @@ const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 
  * @param {object} [options]
  * @returns {{patches: object[], seams: SeamSet[], meshes: object[], stats: object}}
  */
+
+/*
+ * جابه‌جایی صُلبِ قطعه‌ها تا درزها روی هم بیفتند.
+ *
+ * هر دور، برای هر درز میانگین بردارِ اختلافِ جفت‌رأس‌ها حساب می‌شود و نیمی از آن
+ * به هر سر داده می‌شود؛ بعد هر قطعه یکپارچه با میانگینِ وزنیِ خواسته‌ها جابه‌جا
+ * می‌شود. چون هیچ رأسی مستقل حرکت نمی‌کند، شکلِ تخت قطعه دست‌نخورده می‌ماند.
+ *
+ * ساسون (دو کمان از یک قطعه) کنار گذاشته می‌شود: جابه‌جایی صُلب ساسون را نمی‌بندد
+ * و فقط کل قطعه را بی‌دلیل می‌کشد.
+ */
+const alignPatches = (patches, seams, rounds) => {
+    if (! patches.length || ! seams.length) {
+        return;
+    }
+
+    const index = new Map();
+
+    patches.forEach((entry, at) => index.set(entry.patch, at));
+
+    const want = new Float64Array(patches.length * 3);
+    const weight = new Float64Array(patches.length);
+
+    for (let round = 0; round < rounds; round++) {
+        want.fill(0);
+        weight.fill(0);
+
+        for (const seam of seams) {
+            if (! seam.b || seam.b === seam.a) {
+                continue;
+            }
+
+            const ia = index.get(seam.a);
+            const ib = index.get(seam.b);
+
+            if (ia === undefined || ib === undefined) {
+                continue;
+            }
+
+            const pa = seam.a.positions;
+            const pb = seam.b.positions;
+            let dx = 0;
+            let dy = 0;
+            let dz = 0;
+
+            for (let i = 0; i < seam.count; i++) {
+                const at = seam.pairs[i * 2] * 3;
+                const to = seam.pairs[i * 2 + 1] * 3;
+
+                dx += pb[to] - pa[at];
+                dy += pb[to + 1] - pa[at + 1];
+                dz += pb[to + 2] - pa[at + 2];
+            }
+
+            const n = Math.max(1, seam.count);
+
+            dx /= n;
+            dy /= n;
+            dz /= n;
+
+            want[ia * 3] += dx * seam.count;
+            want[ia * 3 + 1] += dy * seam.count;
+            want[ia * 3 + 2] += dz * seam.count;
+            weight[ia] += seam.count;
+
+            want[ib * 3] -= dx * seam.count;
+            want[ib * 3 + 1] -= dy * seam.count;
+            want[ib * 3 + 2] -= dz * seam.count;
+            weight[ib] += seam.count;
+        }
+
+        let moved = 0;
+
+        for (let p = 0; p < patches.length; p++) {
+            if (weight[p] === 0) {
+                continue;
+            }
+
+            // نیمی از خواسته در هر دور: هر دو سرِ درز هم‌زمان حرکت می‌کنند
+            const dx = (want[p * 3] / weight[p]) * 0.5;
+            const dy = (want[p * 3 + 1] / weight[p]) * 0.5;
+            const dz = (want[p * 3 + 2] / weight[p]) * 0.5;
+
+            moved = Math.max(moved, Math.abs(dx) + Math.abs(dy) + Math.abs(dz));
+
+            const patch = patches[p].patch;
+            const positions = patch.positions;
+
+            for (let i = 0; i < positions.length; i += 3) {
+                positions[i] += dx;
+                positions[i + 1] += dy;
+                positions[i + 2] += dz;
+            }
+
+            patch.remember();
+        }
+
+        if (moved < 0.0005) {
+            break; // نشست
+        }
+    }
+};
+
 export const buildDrape = (payload, body, options = {}) => {
     const settings = { ...DEFAULTS, ...options };
     const law = settings.law || fabricLaw(settings.fabric || payload.fabric || {});
@@ -1614,6 +1723,23 @@ export const buildDrape = (payload, body, options = {}) => {
         stats.pieces = patches.length;
         stats.vertices = patches.reduce((sum, entry) => sum + entry.patch.count, 0);
     }
+
+    /*
+     * پارک کردنِ قطعه‌ها کنار هم، پیش از هر شبیه‌سازی.
+     *
+     * این جواب همان پرسش است: الگو درست است، برش درست است، جفتِ درزها هم درست
+     * است — پس چرا لباس روی مانکن به‌هم می‌ریزد؟ چون «جای شروع» هر قطعه حدسی
+     * است. اندازه گرفتم: روی پیراهن کلاسیک، دو سرِ یک درز تا ۳۸ سانتی‌متر از
+     * هم دور شروع می‌کردند. قید درز در خط راست می‌کشد؛ با چنین فاصله‌ای، پارچه
+     * از روی بدن کشیده می‌شود و گره می‌خورد — نه به‌خاطر غلط بودن دوخت، به‌خاطر
+     * غلط بودن نقطه‌ی شروع.
+     *
+     * درمانش جابه‌جایی صُلبِ کل قطعه است: هر قطعه یکپارچه آن‌قدر جابه‌جا می‌شود
+     * که دو سرِ درزهایش روی هم بیفتند. جابه‌جایی صُلب نه پارچه را می‌کشد نه
+     * می‌پیچاند، فقط قطعه را می‌برد کنار همسایه‌اش. بعد از این، حل‌کننده فقط
+     * باید پارچه را بنشاند، نه اینکه قطعه‌ها را از این سر بدن به آن سر بکشد.
+     */
+    alignPatches(patches, seams, settings.alignRounds ?? 60);
 
     stats.presettle = Math.ceil(settings.seamDuration * 60) + 140;
 

@@ -319,7 +319,7 @@ class DrapePayloadService
             'edges' => array_values($edges),
             'darts' => $darts['darts'],
             'placement' => array_intersect_key($placement, array_flip([
-                'zone', 'u0', 'u1', 'y_top', 'radius_hint', 'flip',
+                'zone', 'u0', 'u1', 'y_top', 'radius_hint', 'radius', 'flip',
             ])),
         ];
 
@@ -565,7 +565,32 @@ class DrapePayloadService
         $hint = $this->radiusHint($role, $middle, $body, $instance);
         $radius = max(2.0, $body->radii[$hint] ?? $body->radii['bust']);
 
-        $span = $width / $radius;
+        /*
+         * پهنای کادر برای قطعه‌ی خمیده کم است.
+         *
+         * نوار یقه مثل موز خمیده است: کادرش ۳۵ سانتی‌متر ولی خودِ لبه‌ی گردنش
+         * ۵۴. پیچاندن با پهنای کادر یعنی همان لبه‌ی ۵۴ سانتی‌متری روی ۳۵
+         * سانتی‌متر جمع شود. برای قطعه‌ای که دور چیزی می‌پیچد، طولِ بلندترین
+         * لبه‌اش ملاک است، نه کادرش.
+         */
+        $wrap = $this->wrapsAround($role, $model) ? max($width, $this->wrapLength($instance)) : $width;
+        $span = $wrap / $radius;
+
+        /*
+         * قطعه‌ای که از دور بدن بلندتر است، روی دایره‌ی خودش می‌نشیند.
+         *
+         * نوار یقه‌ی پیراهن ۵۴ سانتی‌متر است و دور گردن ۳۷؛ اگر همان‌جا دور
+         * گردن پیچانده شود، یک‌سوم طولش فشرده می‌شود و روی خودش می‌افتد —
+         * ناحیه‌ی گردن و سرشانه به‌هم می‌ریزد و درزها هیچ‌وقت جا نمی‌افتند.
+         * پس شعاع از خودِ قطعه گرفته می‌شود و درزها آن را روی بدن می‌کشند،
+         * نه برعکس. همین برای دامن کلوش و کمربند بلند هم درست است.
+         */
+        $ownRadius = null;
+
+        if ($span > 2 * M_PI) {
+            $ownRadius = round($wrap / (2 * M_PI), 2);
+            $span = 2 * M_PI;
+        }
         $center = $side === 'back' ? M_PI : 0.0;
         $symmetric = $instance['unfolded'] || ! $model->mirror;
 
@@ -604,6 +629,7 @@ class DrapePayloadService
             'u1' => round($u1, 4),
             'y_top' => round($yTop, 4),
             'radius_hint' => $hint,
+            'radius' => $ownRadius,
             'flip' => $instance['mirrored'],
             // برای چیدن گروهی (فقط سمت سرور؛ در بسته نمی‌آید)
             'center' => $center,
@@ -781,6 +807,34 @@ class DrapePayloadService
             'panty' => $body->level('hip'),
             default => null,
         };
+    }
+
+    /** آیا این قطعه دور چیزی می‌پیچد (یقه، کمربند، نوار، مچ‌بند)؟ */
+    protected function wrapsAround(string $role, PatternPiece $model): bool
+    {
+        return $role === 'collar' || in_array($model->meta['part'] ?? null, [
+            'waistband', 'band', 'binding', 'cuff', 'collar',
+        ], true);
+    }
+
+    /**
+     * طولِ پیچیدنِ یک نوار: نصف محیط منهای پهنای نوار.
+     *
+     * نوار یقه از چند لبه‌ی پشت‌سرهم ساخته شده و هیچ‌کدام به‌تنهایی طولش را
+     * نمی‌گویند؛ ولی هر نواری دو ضلع بلند دارد و دو ضلع کوتاه، پس نصف محیط
+     * منهای بلندی، همان ضلع بلند است.
+     */
+    protected function wrapLength(array $instance): float
+    {
+        $perimeter = 0.0;
+
+        foreach ($instance['edges'] as $info) {
+            $perimeter += (float) $info['length'];
+        }
+
+        [, $minY, , $maxY] = $instance['bounds'];
+
+        return max(0.0, ($perimeter / 2) - ($maxY - $minY));
     }
 
     /** ارتفاع ترازی که یک برچسب لبه به آن اشاره می‌کند. */
