@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToWorkshop;
+use App\Models\Concerns\RecordsActivity;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['workshop_id', 'order_id', 'amount', 'method', 'paid_at', 'note'])]
 class Payment extends Model
 {
-    use BelongsToWorkshop, HasFactory;
+    use BelongsToWorkshop, HasFactory, RecordsActivity;
 
     public const METHODS = [
         'cash' => 'نقدی',

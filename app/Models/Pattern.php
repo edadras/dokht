@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToWorkshop;
+use App\Models\Concerns\RecordsActivity;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -19,7 +20,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 ])]
 class Pattern extends Model
 {
-    use BelongsToWorkshop, HasFactory, SoftDeletes;
+    use BelongsToWorkshop, HasFactory, RecordsActivity, SoftDeletes;
 
     protected function casts(): array
     {

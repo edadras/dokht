@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToWorkshop;
+use App\Models\Concerns\RecordsActivity;
 use App\Support\Jalali;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -19,7 +20,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 ])]
 class Order extends Model
 {
-    use BelongsToWorkshop, HasFactory, SoftDeletes;
+    use BelongsToWorkshop, HasFactory, RecordsActivity, SoftDeletes;
 
     /** مراحل کار روی تخته سفارش‌ها، به ترتیب. */
     public const STATUSES = [

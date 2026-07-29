@@ -5,12 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\Workshop;
 use App\Models\WorkshopInvite;
+use App\Services\Export\WorkshopBackupService;
 use App\Support\Jalali;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * تنظیمات کارگاه و مدیریت اعضا.
@@ -132,6 +134,12 @@ class WorkshopController extends Controller
         $workshop->update($attributes);
 
         return back()->with('status', 'تنظیمات کارگاه ذخیره شد.');
+    }
+
+    /** پشتیبان کامل کارگاه در یک فایل زیپ. */
+    public function backup(Request $request, WorkshopBackupService $backup): StreamedResponse
+    {
+        return $backup->download($this->workshop($request));
     }
 
     public function members(Request $request): View

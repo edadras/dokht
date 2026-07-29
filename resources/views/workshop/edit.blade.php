@@ -166,6 +166,22 @@
                 </div>
             </x-card>
 
+            <x-card title="پشتیبان و ردّ کار" icon="download"
+                subtitle="دادهٔ کارگاه سرمایه شماست؛ هم می‌توانید کاملش را بردارید، هم ببینید چه کسی چه کرد.">
+                <div class="space-y-2">
+                    <x-button :href="route('workshop.backup')" variant="secondary" icon="download" class="w-full">
+                        گرفتن پشتیبان کامل (زیپ)
+                    </x-button>
+                    <x-button :href="route('workshop.activity')" variant="secondary" icon="clock" class="w-full">
+                        ردّ کار کارگاه
+                    </x-button>
+                </div>
+                <p class="mt-3 text-xs text-stone-500">
+                    پشتیبان شامل مشتری‌ها، پارچه‌ها، متعلقات، الگوها، پروژه‌ها، پروها و سفارش‌هاست —
+                    هم به صورت JSON خام و هم CSV خواندنی.
+                </p>
+            </x-card>
+
             <x-card title="حذف کارگاه" icon="alert">
                 <p class="text-sm text-stone-600">
                     حذف کارگاه از این صفحه انجام نمی‌شود و این کار عمدی است: با حذف کارگاه، همه مشتری‌ها، سفارش‌ها،

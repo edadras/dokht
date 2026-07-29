@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToWorkshop;
+use App\Models\Concerns\RecordsActivity;
 use App\Support\Measurements;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,7 +27,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 ])]
 class Project extends Model
 {
-    use BelongsToWorkshop, HasFactory, SoftDeletes;
+    use BelongsToWorkshop, HasFactory, RecordsActivity, SoftDeletes;
 
     public const STATUSES = [
         'draft' => 'پیش‌نویس',

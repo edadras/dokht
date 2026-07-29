@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToWorkshop;
+use App\Models\Concerns\RecordsActivity;
 use App\Support\FabricProfile;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -20,7 +21,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 ])]
 class Fabric extends Model
 {
-    use BelongsToWorkshop, HasFactory, SoftDeletes;
+    use BelongsToWorkshop, HasFactory, RecordsActivity, SoftDeletes;
 
     public const SURFACE_PATTERNS = [
         'plain' => 'ساده',

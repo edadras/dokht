@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\FabricTypeController as AdminFabricTypeController;
 use App\Http\Controllers\Admin\GarmentTypeController as AdminGarmentTypeController;
@@ -17,6 +18,7 @@ use App\Http\Controllers\DesignImportController;
 use App\Http\Controllers\DesignRuleController;
 use App\Http\Controllers\FabricBankController;
 use App\Http\Controllers\FabricController;
+use App\Http\Controllers\FittingController;
 use App\Http\Controllers\GuideController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\LibraryController;
@@ -36,7 +38,6 @@ use App\Http\Controllers\ProjectStepController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SimulationController;
-use App\Http\Controllers\FittingController;
 use App\Http\Controllers\TechPackController;
 use App\Http\Controllers\WorkshopController;
 use Illuminate\Support\Facades\Route;
@@ -201,6 +202,10 @@ Route::middleware(['auth', 'workshop'])->group(function () {
 
     // تنظیمات کارگاه و اعضا
     Route::middleware('can:administer-workshop')->group(function () {
+        // پشتیبان کامل کارگاه؛ دادهٔ این سامانه سرمایه یک کسب‌وکار است
+        Route::get('workshop/backup', [WorkshopController::class, 'backup'])->name('workshop.backup');
+        Route::get('workshop/activity', [ActivityController::class, 'index'])->name('workshop.activity');
+
         Route::get('workshop/settings', [WorkshopController::class, 'edit'])->name('workshop.edit');
         Route::patch('workshop/settings', [WorkshopController::class, 'update'])->name('workshop.update');
         Route::get('workshop/members', [WorkshopController::class, 'members'])->name('workshop.members');

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToWorkshop;
+use App\Models\Concerns\RecordsActivity;
 use App\Support\Jalali;
 use App\Support\Measurements;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['workshop_id', 'customer_id', 'title', 'unit', 'base_size', 'values', 'is_default', 'notes'])]
 class MeasurementSet extends Model
 {
-    use BelongsToWorkshop, HasFactory;
+    use BelongsToWorkshop, HasFactory, RecordsActivity;
 
     protected function casts(): array
     {

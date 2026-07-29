@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToWorkshop;
+use App\Models\Concerns\RecordsActivity;
 use App\Support\Alterations;
 use App\Support\Jalali;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -23,7 +24,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 class Fitting extends Model
 {
-    use BelongsToWorkshop, HasFactory;
+    use BelongsToWorkshop, HasFactory, RecordsActivity;
 
     protected function casts(): array
     {
