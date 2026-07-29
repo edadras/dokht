@@ -99,6 +99,12 @@ class Project extends Model
         return $this->hasOne(Simulation::class)->latestOfMany();
     }
 
+    /** نوبت‌های پرو روی تن مشتری. */
+    public function fittings(): HasMany
+    {
+        return $this->hasMany(Fitting::class);
+    }
+
     public function cuttingLayouts(): HasMany
     {
         return $this->hasMany(CuttingLayout::class)->latest('id');

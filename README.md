@@ -20,6 +20,8 @@
   پارچه به ارث می‌رسد و در صورت نیاز قابل بازنویسی است.
 - هر تنظیم حرفه‌ای پشت یک بخش بازشو (`<x-advanced-section>`) با مقدار پیش‌فرض درست قرار دارد.
 - کار روی هر لباس در قالب **پروژه** و در ۱۱ گام پیش می‌رود؛ در هر گام یک پرسش ساده پرسیده می‌شود.
+- پس از دوخت، **پرو** روی تن مشتری ثبت می‌شود و همان‌جا به اصلاح الگو تبدیل می‌گردد؛
+  پیش از هر اصلاح یک نسخه ثبت می‌شود، پس برگشت‌پذیر است.
 
 ---
 
@@ -87,6 +89,7 @@ php artisan test
 | تولید (Production) | `App\Services\TechPack\TechPackBuilder`، `App\Services\Export\*` |
 | ترکیب و استودیوی طراحی | `App\Services\Pattern\PatternComposer` + `/compose` |
 | بازرسی الگو (هر الگویی، نه فقط کاتالوگ) | `App\Services\Pattern\PatternInspector` |
+| پرو و اصلاح الگو | `App\Support\Alterations`، `App\Services\Fit\AlterationService` + `/projects/{id}/fittings` |
 | دگرگونی الگو (چرخاندن ساسون، برش و باز کردن) | `App\Services\Pattern\Transform\*` |
 | ساخت الگو از عکس و طرح دستی | `App\Services\Vision\*` + `/design-import` |
 | بازارچه الگو | `App\Services\Marketplace\*` + `/market` |

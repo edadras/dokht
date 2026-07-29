@@ -156,6 +156,20 @@
                     @endif
                 </x-card>
 
+                <x-card title="پرو روی تن مشتری" icon="ruler"
+                    subtitle="آنچه در پرو دیدید را ثبت کنید تا روی الگو بنشیند.">
+                    @php $fittingCount = $project->fittings()->count(); @endphp
+                    @if ($fittingCount > 0)
+                        <p class="text-sm text-stone-600">
+                            {{ Jalali::digits((string) $fittingCount) }} نوبت پرو ثبت شده است.
+                        </p>
+                    @else
+                        <p class="text-sm text-stone-500">هنوز پرویی ثبت نشده است.</p>
+                    @endif
+                    <x-button :href="route('projects.fittings', $project)" variant="secondary" size="sm"
+                        icon="ruler" class="mt-4 w-full">ثبت و اعمال پرو</x-button>
+                </x-card>
+
                 <x-card title="کارت فنی" icon="file">
                     @if ($techPack = $project->techPacks->first())
                         <p class="text-sm text-stone-600">

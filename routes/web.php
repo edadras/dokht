@@ -35,6 +35,7 @@ use App\Http\Controllers\ProjectStepController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SimulationController;
+use App\Http\Controllers\FittingController;
 use App\Http\Controllers\TechPackController;
 use App\Http\Controllers\WorkshopController;
 use Illuminate\Support\Facades\Route;
@@ -172,6 +173,14 @@ Route::middleware(['auth', 'workshop'])->group(function () {
         ->name('cutting-layouts.show');
     Route::get('cutting-layouts/{cuttingLayout}/print', [CuttingLayoutController::class, 'print'])
         ->name('cutting-layouts.print');
+    // پرو: ثبت آنچه روی تن مشتری دیده شد و برگرداندنش به الگو
+    Route::get('projects/{project}/fittings', [FittingController::class, 'index'])->name('projects.fittings');
+    Route::post('projects/{project}/fittings', [FittingController::class, 'store'])->name('projects.fittings.store');
+    Route::post('projects/{project}/fittings/{fitting}/apply', [FittingController::class, 'apply'])
+        ->name('projects.fittings.apply');
+    Route::delete('projects/{project}/fittings/{fitting}', [FittingController::class, 'destroy'])
+        ->name('projects.fittings.destroy');
+
     Route::get('projects/{project}/tech-pack', [TechPackController::class, 'show'])->name('tech-packs.show');
     Route::post('projects/{project}/tech-pack', [TechPackController::class, 'store'])->name('tech-packs.store');
     Route::get('projects/{project}/tech-pack/print', [TechPackController::class, 'print'])->name('tech-packs.print');
