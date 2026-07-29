@@ -134,8 +134,6 @@ class SewingCompletionTest extends TestCase
             $this->assertSame([], $armholes, "«{$key}» آستین ندارد؛ حلقه‌اش نباید به چیزی دوخته شود.");
         }
 
-        $checked = 0;
-
         foreach (array_keys(GeneratorRegistry::all()) as $key) {
             $pattern = $this->pattern($key);
             $parts = $pattern->pieces->mapWithKeys(
@@ -147,7 +145,6 @@ class SewingCompletionTest extends TestCase
                     continue;
                 }
 
-                $checked++;
                 $sleeves = array_filter(
                     [$parts[$relation['from']['piece']] ?? '', $parts[$relation['to']['piece']] ?? ''],
                     fn (string $part) => $part === 'sleeve',
@@ -161,8 +158,79 @@ class SewingCompletionTest extends TestCase
                 );
             }
         }
+    }
 
-        $this->assertGreaterThan(30, $checked, 'باید دوخت حلقهٔ واقعی سنجیده شده باشد، نه هیچ.');
+    /**
+     * سرآستین باید تمامش دوخته شود، نه دو سرش.
+     *
+     * پیش‌تر فقط نخستین و آخرین لبهٔ سرآستین به حلقه می‌رفت و میانهٔ کمان
+     * بی‌دوخت می‌ماند؛ روی پیراهن کلاسیک یعنی کمانِ ۹٫۶ سانتی‌متری به حلقهٔ ۱۷
+     * سانتی‌متری، و آستینی که روی مانکن مچاله می‌شد.
+     */
+    public function test_the_whole_sleeve_cap_is_sewn_into_the_armhole(): void
+    {
+        $checked = 0;
+
+        foreach (array_keys(GeneratorRegistry::all()) as $key) {
+            $pattern = $this->pattern($key);
+            $relations = SewingRelationBuilder::suggest($pattern);
+
+            $covered = [];
+
+            foreach ($relations as $relation) {
+                foreach (['from', 'to'] as $side) {
+                    $piece = $relation[$side]['piece'];
+
+                    foreach ((array) ($relation[$side]['edges'] ?? [$relation[$side]['edge']]) as $edge) {
+                        $covered[$piece.'|'.(int) $edge] = true;
+                    }
+                }
+            }
+
+            $service = new SeamAllowanceService;
+
+            $torso = $pattern->pieces->contains(
+                fn (PatternPiece $piece) => in_array($piece->meta['part'] ?? '', ['front_bodice', 'back_bodice', 'yoke'], true),
+            );
+
+            if (! $torso) {
+                continue; // بلوک آستینِ تنها، حلقه‌ای ندارد که به آن دوخته شود
+            }
+
+            foreach ($pattern->pieces as $piece) {
+                if (($piece->meta['part'] ?? '') !== 'sleeve') {
+                    continue;
+                }
+
+                $cap = [];
+
+                foreach ($service->edgeTags($piece) as $edge => $tag) {
+                    if ($tag === 'armhole') {
+                        $cap[] = $edge;
+                    }
+                }
+
+                if (count($cap) < 2) {
+                    continue; // سرآستینِ یک‌لبه‌ای چیزی برای جا ماندن ندارد
+                }
+
+                $loose = array_values(array_filter(
+                    $cap,
+                    fn (int $edge) => ! isset($covered[$piece->code.'|'.$edge]),
+                ));
+
+                $checked++;
+
+                $this->assertSame(
+                    [],
+                    $loose,
+                    "«{$key}»: لبه‌های سرآستینِ «{$piece->code}» شمارهٔ "
+                        .implode('، ', $loose).' به حلقه دوخته نشدند.',
+                );
+            }
+        }
+
+        $this->assertGreaterThan(20, $checked, 'باید سرآستین‌های واقعی سنجیده شده باشند.');
     }
 
     public function test_shell_is_never_sewn_to_lining(): void

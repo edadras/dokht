@@ -65,20 +65,31 @@ class SewingRelationBuilder
                 continue;
             }
 
-            if ($front && ($frontArmhole = static::edgesWithTag($front, 'armhole')) !== []) {
-                $relations[] = static::relation($entry, $capEdges[0], $front, $frontArmhole[0], 'دوخت آستین به حلقه جلو');
-            }
-
+            /*
+             * سرآستین یک کمان است، نه دو لبه.
+             *
+             * پیش‌تر فقط نخستین و آخرین لبهٔ سرآستین به حلقه بسته می‌شد و هرچه
+             * میانشان بود بی‌دوخت می‌ماند؛ روی پیراهن کلاسیک یعنی کمانِ ۹٫۶
+             * سانتی‌متری به حلقهٔ ۱۷ سانتی‌متری، و آستینی که در نمای سه‌بعدی
+             * روی سرشانه مچاله می‌شد. حالا کل سرآستین به نسبتِ طولِ حلقهٔ جلو و
+             * پشت بین آن دو تقسیم می‌شود — همان کاری که با نشانهٔ سرشانه
+             * می‌کنند.
+             */
+            $frontArmhole = $front ? static::edgesWithTag($front, 'armhole') : [];
             $backArmhole = $back ? static::edgesWithTag($back, 'armhole') : [];
 
-            if ($backArmhole !== []) {
-                $relations[] = static::relation(
-                    $entry,
-                    $capEdges[count($capEdges) - 1],
-                    $back,
-                    $backArmhole[0],
-                    'دوخت آستین به حلقه پشت',
-                );
+            $frontLength = static::runLength($front, $frontArmhole);
+            $backLength = static::runLength($back, $backArmhole);
+            $share = ($frontLength + $backLength) > 0.01 ? $frontLength / ($frontLength + $backLength) : 0.5;
+
+            [$capFront, $capBack] = static::splitRun($entry, $capEdges, $share);
+
+            if ($frontArmhole !== [] && $capFront !== []) {
+                $relations[] = static::run($entry, $capFront, $front, $frontArmhole, 'دوخت آستین به حلقه جلو');
+            }
+
+            if ($backArmhole !== [] && $capBack !== []) {
+                $relations[] = static::run($entry, $capBack, $back, $backArmhole, 'دوخت آستین به حلقه پشت');
             }
         }
 
@@ -94,6 +105,15 @@ class SewingRelationBuilder
                 continue;
             }
 
+            /*
+             * خط یقهٔ یقه هم یک کمان است.
+             *
+             * با بستن یک لبه به یک لبه، کمانِ ۵۴ سانتی‌متری یقه به لبهٔ ۱۴
+             * سانتی‌متریِ گردنِ جلو می‌رفت و یقه در نمای سه‌بعدی سر جایش
+             * نمی‌نشست. کمانِ یقه به نسبت طول خط یقهٔ جلو و پشت تقسیم می‌شود.
+             */
+            $targets = [];
+
             foreach ([[$front, 'یقه به خط یقه جلو'], [$shoulderSource, 'یقه به خط یقه پشت']] as [$target, $label]) {
                 if (! $target) {
                     continue;
@@ -102,8 +122,27 @@ class SewingRelationBuilder
                 $neckEdges = static::edgesWithTag($target, 'neck');
 
                 if ($neckEdges !== []) {
-                    $relations[] = static::relation($entry, $collarEdges[0], $target, $neckEdges[0], $label);
+                    $targets[] = ['entry' => $target, 'edges' => $neckEdges, 'label' => $label];
                 }
+            }
+
+            if (count($targets) === 2) {
+                $frontNeck = static::runLength($targets[0]['entry'], $targets[0]['edges']);
+                $backNeck = static::runLength($targets[1]['entry'], $targets[1]['edges']);
+                $share = ($frontNeck + $backNeck) > 0.01 ? $frontNeck / ($frontNeck + $backNeck) : 0.5;
+                [$collarFront, $collarBack] = static::splitRun($entry, $collarEdges, $share);
+
+                foreach ([[$collarFront, $targets[0]], [$collarBack, $targets[1]]] as [$run, $target]) {
+                    if ($run !== []) {
+                        $relations[] = static::run($entry, $run, $target['entry'], $target['edges'], $target['label']);
+                    }
+                }
+
+                continue;
+            }
+
+            foreach ($targets as $target) {
+                $relations[] = static::run($entry, $collarEdges, $target['entry'], $target['edges'], $target['label']);
             }
         }
 
@@ -572,6 +611,87 @@ class SewingRelationBuilder
             'to' => ['piece' => $to['piece']->code, 'edge' => $toEdge],
             'label' => $label,
         ];
+    }
+
+    /**
+     * رابطه‌ای که هر دو سرش یک کمان است.
+     *
+     * `edge` هم نوشته می‌شود تا هر مصرف‌کننده‌ای که فقط یک لبه می‌فهمد
+     * (ویرایشگر الگو) از کار نیفتد؛ `edges` کمان کامل را می‌دهد.
+     *
+     * @param  array<int, int>  $fromEdges
+     * @param  array<int, int>  $toEdges
+     * @return array<string, mixed>
+     */
+    protected static function run(array $from, array $fromEdges, array $to, array $toEdges, string $label): array
+    {
+        return [
+            'from' => ['piece' => $from['piece']->code, 'edge' => $fromEdges[0], 'edges' => array_values($fromEdges)],
+            'to' => ['piece' => $to['piece']->code, 'edge' => $toEdges[0], 'edges' => array_values($toEdges)],
+            'label' => $label,
+        ];
+    }
+
+    /** طول یک کمان روی یک قطعه. */
+    protected static function runLength(?array $entry, array $edges): float
+    {
+        if ($entry === null || $edges === []) {
+            return 0.0;
+        }
+
+        $points = $entry['piece']->points();
+        $total = 0.0;
+
+        foreach ($edges as $edge) {
+            $total += Geometry::edgeLength($points, (int) $edge);
+        }
+
+        return $total;
+    }
+
+    /**
+     * شکستن یک کمان به دو کمان، به نسبت خواسته‌شده از طول.
+     *
+     * برش روی مرز لبه‌ها می‌افتد، نه وسط یک لبه: شمارهٔ لبه واحدِ این فهرست است
+     * و نصفِ یک لبه در آن بیان نمی‌شود.
+     *
+     * @param  array<int, int>  $edges
+     * @return array{0: array<int, int>, 1: array<int, int>}
+     */
+    protected static function splitRun(array $entry, array $edges, float $share): array
+    {
+        $edges = array_values($edges);
+
+        if (count($edges) < 2) {
+            return [$edges, $edges];
+        }
+
+        $points = $entry['piece']->points();
+        $lengths = array_map(fn (int $edge) => Geometry::edgeLength($points, $edge), $edges);
+        $total = array_sum($lengths);
+
+        if ($total < 0.01) {
+            return [$edges, $edges];
+        }
+
+        $target = $total * min(0.95, max(0.05, $share));
+        $walked = 0.0;
+        $cut = 1;
+
+        foreach ($lengths as $index => $length) {
+            if ($walked + ($length / 2) > $target) {
+                $cut = max(1, $index);
+
+                break;
+            }
+
+            $walked += $length;
+            $cut = $index + 1;
+        }
+
+        $cut = min(count($edges) - 1, $cut);
+
+        return [array_slice($edges, 0, $cut), array_slice($edges, $cut)];
     }
 
     /** @return array<int, int> */
