@@ -857,11 +857,11 @@ class DrapePayloadService
     protected function seams(array $relations, array $instances, array $byCode, array &$unmatched): array
     {
         $seams = [];
+        $resolved = [];
 
         foreach ($relations as $index => $relation) {
             $from = $this->relationSide($relation['from'] ?? []);
             $to = $this->relationSide($relation['to'] ?? []);
-            $label = (string) ($relation['label'] ?? 'درز');
 
             if ($from === null || $to === null) {
                 $unmatched[] = $this->unmatched($relation, $index, 'رابطه دوخت سرِ درستی ندارد.');
@@ -879,7 +879,16 @@ class DrapePayloadService
                 continue;
             }
 
-            [$left, $right] = $this->balance($left, $right);
+            $resolved[$index] = ['left' => $left, 'right' => $right, 'relation' => $relation];
+        }
+
+        $resolved = $this->share($resolved);
+
+        foreach ($resolved as $index => $entry) {
+            $relation = $entry['relation'];
+            $label = (string) ($relation['label'] ?? 'درز');
+
+            [$left, $right] = $this->balance($entry['left'], $entry['right']);
 
             $pairs = $this->pairArcs($left, $right);
 
@@ -1133,6 +1142,83 @@ class DrapePayloadService
         }
 
         return $best;
+    }
+
+    /**
+     * کمانی که چند رابطه سراغش را می‌گیرند، میانشان تقسیم می‌شود.
+     *
+     * کمربندِ دامن کلوش یک نوارِ بلند است و خط کمرِ دامن چند کمان؛ سازنده‌ی
+     * رابطه‌ها برای هر کمانِ کمر یک رابطه می‌نویسد و در همه‌شان همان یک نوار را
+     * می‌گذارد. اگر هر رابطه کلِ نوار را بردارد، نوار از چند جا هم‌زمان کشیده
+     * می‌شود و لباس روی مانکن مچاله می‌شود؛ اندازه‌گیری روی کاتالوگ: نودتا از
+     * ۲۳۶ مدل دست‌کم یک درز با بیش از ۲۵٪ اختلاف طول داشتند و بدترینشان ۹۲٪.
+     *
+     * پس نوار به نسبت طولِ سرِ مقابلِ هر رابطه بریده می‌شود و تکه‌ها به ترتیبِ
+     * جایی که روی بدن می‌نشینند پخش می‌شوند — همان کاری که خیاط با نشانه‌گذاری
+     * کمربند می‌کند.
+     *
+     * @param  array<int, array{left: array, right: array, relation: array}>  $resolved
+     * @return array<int, array{left: array, right: array, relation: array}>
+     */
+    protected function share(array $resolved): array
+    {
+        foreach (['left', 'right'] as $side) {
+            $users = [];
+
+            foreach ($resolved as $index => $entry) {
+                $key = implode('+', array_map(
+                    fn (array $arc) => $arc['piece'].'|'.$arc['from'].'|'.$arc['to'],
+                    $entry[$side],
+                ));
+
+                $users[$key][] = $index;
+            }
+
+            foreach ($users as $indexes) {
+                if (count($indexes) < 2) {
+                    continue;
+                }
+
+                $other = $side === 'left' ? 'right' : 'left';
+
+                // ترتیب روی بدن، نه ترتیب فهرست؛ وگرنه تکه‌ی کمر جلو به پشت می‌رود
+                usort($indexes, fn (int $a, int $b) => $this->arcAnchor($resolved[$a][$other])
+                    <=> $this->arcAnchor($resolved[$b][$other]));
+
+                $shares = array_map(
+                    fn (int $index) => max(0.01, array_sum(array_column($resolved[$index][$other], 'length'))),
+                    $indexes,
+                );
+                $total = array_sum($shares);
+                $ratios = array_map(fn (float $share) => $share / $total, $shares);
+
+                // هر کمانِ این سمت به همان نسبت‌ها بریده می‌شود؛ کمربندِ دوتکه
+                // هم دو کمان دارد و هر دو باید میان همان رابطه‌ها پخش شوند
+                foreach ($resolved[$indexes[0]][$side] as $position => $arc) {
+                    $pieces = $this->splitArc($arc, $ratios);
+
+                    if (count($pieces) !== count($indexes)) {
+                        continue;
+                    }
+
+                    foreach ($indexes as $order => $index) {
+                        $resolved[$index][$side][$position] = $pieces[$order];
+                    }
+                }
+            }
+        }
+
+        return $resolved;
+    }
+
+    /** جای یک سرِ رابطه روی بدن، برای مرتب کردن تکه‌های یک کمانِ مشترک. */
+    protected function arcAnchor(array $arcs): float
+    {
+        if ($arcs === []) {
+            return 0.0;
+        }
+
+        return array_sum(array_map(fn (array $arc) => (float) ($arc['at']['u'] ?? 0), $arcs)) / count($arcs);
     }
 
     /**
