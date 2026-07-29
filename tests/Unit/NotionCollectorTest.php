@@ -199,6 +199,66 @@ class NotionCollectorTest extends TestCase
         }
     }
 
+    public function test_a_fitted_skirt_gets_a_zip_that_clears_the_hip_and_can_be_turned_off(): void
+    {
+        $pieces = $this->build('skirt_straight');
+        $zips = array_values(array_filter($this->notionsOf($pieces), fn (array $row) => $row['type'] === 'zip'));
+
+        $this->assertCount(1, $zips, 'دامن راسته با کمربند دوخته باید زیپ داشته باشد.');
+
+        $hipY = null;
+
+        foreach ($pieces as $piece) {
+            $hipY ??= $piece['meta']['hip_y'] ?? null;
+        }
+
+        $this->assertNotNull($hipY);
+        $this->assertGreaterThan(
+            (float) $hipY,
+            $zips[0]['length'],
+            'زیپ دامن باید از خط باسن رد شود، وگرنه دامن پوشیده نمی‌شود.',
+        );
+
+        $off = $this->notionsOf($this->build('skirt_straight', ['zip' => 'none']));
+        $this->assertSame(
+            [],
+            array_values(array_filter($off, fn (array $row) => $row['type'] === 'zip')),
+            'با خاموش‌کردن گزینه زیپ نباید زیپی در فهرست بماند.',
+        );
+    }
+
+    public function test_a_center_back_skirt_zip_opens_the_back_panel_off_the_fold(): void
+    {
+        $onFold = null;
+
+        foreach ($this->build('skirt_straight', ['zip' => 'back']) as $piece) {
+            if (($piece['meta']['part'] ?? null) === 'skirt_back') {
+                $onFold = (bool) ($piece['on_fold'] ?? false);
+            }
+        }
+
+        $this->assertNotNull($onFold);
+        $this->assertFalse($onFold, 'زیپ مرکز پشت بدون درز مرکزی جایی برای نشستن ندارد.');
+    }
+
+    public function test_trousers_with_a_sewn_waistband_get_a_fly_but_elastic_ones_do_not(): void
+    {
+        $withFly = $this->notionsOf($this->build('pants_cigarette'));
+        $zips = array_values(array_filter($withFly, fn (array $row) => $row['type'] === 'zip'));
+        $hooks = array_values(array_filter($withFly, fn (array $row) => $row['type'] === 'hook'));
+
+        $this->assertCount(1, $zips, 'شلوار با کمربند دوخته باید زیپ جلو داشته باشد.');
+        $this->assertGreaterThan(8.0, $zips[0]['length']);
+        $this->assertNotEmpty($hooks, 'کمربند شلوار با قزن بسته می‌شود.');
+
+        $elastic = $this->notionsOf($this->build('pants_elastic_waist'));
+        $this->assertSame(
+            [],
+            array_values(array_filter($elastic, fn (array $row) => $row['type'] === 'zip')),
+            'شلوار کمرکشی زیپ نمی‌خواهد؛ خود کش بستِ لباس است.',
+        );
+    }
+
     public function test_every_declared_notion_in_the_catalogue_is_sane(): void
     {
         $problems = [];

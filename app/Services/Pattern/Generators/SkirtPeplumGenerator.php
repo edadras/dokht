@@ -43,7 +43,8 @@ class SkirtPeplumGenerator extends SkirtCircleBase
             $this->waistParams(0.5, 4, false),
         );
 
-        unset($schema['waist_drop']);
+        // پپلوم به بالاتنه دوخته می‌شود و بستِ خودش را ندارد
+        unset($schema['waist_drop'], $schema['zip']);
 
         return $schema;
     }
@@ -73,6 +74,6 @@ class SkirtPeplumGenerator extends SkirtCircleBase
             ]);
         }
 
-        return $this->finish($pieces);
+        return $this->finishSkirt($pieces, $params);
     }
 }

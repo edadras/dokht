@@ -35,6 +35,15 @@ class PencilSkirtGenerator extends BaseGenerator
             'waistband' => [
                 'label' => 'کمربند داشته باشد', 'type' => 'toggle', 'default' => true,
             ],
+            'zip' => [
+                'label' => 'زیپ', 'type' => 'select', 'default' => 'back',
+                'options' => [
+                    'side' => 'زیپ مخفی روی درز پهلوی چپ',
+                    'back' => 'زیپ مرکز پشت',
+                    'none' => 'بدون زیپ (کمر کشی یا رویهم)',
+                ],
+                'hint' => 'دامن کمرگرفته بدون زیپ از باسن رد نمی‌شود.',
+            ],
             'waistband_height' => [
                 'label' => 'بلندی کمربند', 'min' => 2, 'max' => 10, 'step' => 0.5, 'default' => 4, 'unit' => 'سانتی‌متر',
             ],
@@ -64,6 +73,6 @@ class PencilSkirtGenerator extends BaseGenerator
             $pieces[] = $this->waistbandPiece($measurements, $ease, $params);
         }
 
-        return $this->finish($pieces);
+        return $this->finishSkirt($pieces, $params);
     }
 }

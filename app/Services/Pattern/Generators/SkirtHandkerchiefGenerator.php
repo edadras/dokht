@@ -55,7 +55,7 @@ class SkirtHandkerchiefGenerator extends SkirtBaseGenerator
             ]);
         }
 
-        return $this->finish($pieces);
+        return $this->finishSkirt($pieces, $params);
     }
 
     /** نیمِ جلو یا پشت: یک‌چهارم مربع با کمانِ کمر در گوشه آن. */

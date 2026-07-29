@@ -53,7 +53,7 @@ abstract class SkirtCircleBase extends SkirtBaseGenerator
             ]);
         }
 
-        return $this->finish($pieces);
+        return $this->finishSkirt($pieces, $params);
     }
 
     /**

@@ -84,6 +84,6 @@ class SkirtSunburstGenerator extends SkirtCircleBase
             ]);
         }
 
-        return $this->finish($pieces);
+        return $this->finishSkirt($pieces, $params);
     }
 }

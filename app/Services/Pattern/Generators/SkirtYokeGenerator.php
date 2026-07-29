@@ -69,7 +69,7 @@ class SkirtYokeGenerator extends SkirtBaseGenerator
             $pieces[] = $this->lowerPiece($mx, $yokeX, $depth, $length, $flare, $style === 'gather' ? $ratio : 1.0, $side);
         }
 
-        return $this->finish(array_merge($pieces, $this->bandPieces($mx, $params)));
+        return $this->finishSkirt(array_merge($pieces, $this->bandPieces($mx, $params)), $params);
     }
 
     /** پهنای نیم‌پنل روی عمق دلخواه، از روی منحنی پهلوی بلوک. */

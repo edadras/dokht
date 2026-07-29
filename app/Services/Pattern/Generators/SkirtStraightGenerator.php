@@ -61,6 +61,6 @@ class SkirtStraightGenerator extends SkirtBaseGenerator
             ]),
         ];
 
-        return $this->finish(array_merge($pieces, $this->bandPieces($mx, $params)));
+        return $this->finishSkirt(array_merge($pieces, $this->bandPieces($mx, $params)), $params);
     }
 }

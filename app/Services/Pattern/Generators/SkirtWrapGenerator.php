@@ -45,7 +45,8 @@ class SkirtWrapGenerator extends SkirtBaseGenerator
                     'unit' => 'سانتی‌متر',
                 ],
             ],
-            $this->waistParams(0.5, 4),
+            // دامن پاکتی با رویهم‌آمدن و بند بسته می‌شود، پس زیپ نمی‌خواهد
+            $this->waistParams(0.5, 4, true, 'none'),
         );
     }
 
@@ -80,10 +81,10 @@ class SkirtWrapGenerator extends SkirtBaseGenerator
             ),
         ];
 
-        return $this->finish(array_merge($pieces, $this->bandPieces($mx, $params, [
+        return $this->finishSkirt(array_merge($pieces, $this->bandPieces($mx, $params, [
             'overlap' => $overlap / 2,
             'notes' => ['کمربند به اندازه دور کمر به‌علاوه نیمِ هم‌پوشانی بریده می‌شود تا سر آن از جلو رد شود.'],
-        ])));
+        ])), $params);
     }
 
     /** بند کمر: نوار دولا. */

@@ -39,9 +39,9 @@ abstract class SkirtBaseGenerator extends BaseGenerator
      *
      * @return array<string, array<string, mixed>>
      */
-    protected function waistParams(float $dartShare = 0.5, float $bandHeight = 4, bool $band = true): array
+    protected function waistParams(float $dartShare = 0.5, float $bandHeight = 4, bool $band = true, string $zip = 'side'): array
     {
-        return [
+        return array_merge($this->zipParam($zip), [
             'dart_share' => [
                 'label' => 'سهم ساسون از کاهش کمر', 'min' => 0, 'max' => 0.9, 'step' => 0.05,
                 'default' => $dartShare,
@@ -54,7 +54,7 @@ abstract class SkirtBaseGenerator extends BaseGenerator
                 'label' => 'بلندی کمربند', 'min' => 2, 'max' => 12, 'step' => 0.5,
                 'default' => $bandHeight, 'unit' => 'سانتی‌متر',
             ],
-        ];
+        ]);
     }
 
     /**

@@ -2,6 +2,8 @@
 
 namespace App\Services\Pattern\Generators;
 
+use App\Services\Pattern\Geometry;
+
 /**
  * پایه مشترک همه شلوارها و شلوارک‌های کاتالوگ.
  *
@@ -27,10 +29,76 @@ abstract class PantsBaseGenerator extends BaseGenerator
         $shape = $this->shape($params, $measurements);
         $mx = $this->pantsMetrics($measurements, $ease, $params, $shape);
 
-        return $this->finish(array_merge(
+        $pieces = array_merge(
             $this->legPieces($mx, $shape),
             $this->closurePieces($mx, $params, $shape),
-        ));
+        );
+
+        return $this->finish($this->markFly($pieces, $params, $shape));
+    }
+
+    /**
+     * زیپ جلوی شلوار (فلای).
+     *
+     * شلواری که کمربند دوخته دارد باید از جایی باز شود؛ همان زیپ مرکز جلو است که
+     * از خط کمر تا چند سانتی‌متر بالای خط فاق می‌آید. شلوار کمرکشی این را لازم
+     * ندارد، چون خود کش بستِ لباس است.
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     * @return array<int, array<string, mixed>>
+     */
+    protected function markFly(array $pieces, array $params, array $shape): array
+    {
+        if ((string) ($shape['band'] ?? 'waistband') !== 'waistband') {
+            return $pieces;
+        }
+
+        if ((string) $this->param($params, 'fly', 'zip') !== 'zip') {
+            return $pieces;
+        }
+
+        foreach ($pieces as $index => $piece) {
+            if (($piece['meta']['part'] ?? null) !== 'front_leg') {
+                continue;
+            }
+
+            [, $minY, , $maxY] = Geometry::bounds($piece['outline']);
+            $crotchY = null;
+
+            foreach ($piece['markers'] ?? [] as $marker) {
+                if (($marker['key'] ?? null) === 'crotch') {
+                    $crotchY = (float) $marker['from']['y'];
+                }
+            }
+
+            $crotchY ??= $minY + (($maxY - $minY) * 0.3);
+            $end = $crotchY - 4;
+            $length = round($end - $minY, 1);
+
+            if ($length < 8) {
+                return $pieces;
+            }
+
+            $piece['markers'][] = $this->marker('zip', 'زیپ جلو (فلای)', 0, $minY, 0, $end);
+            $piece['meta']['zip_length'] = $length;
+            $piece['meta']['notions'][] = [
+                'type' => 'zip',
+                'label' => 'زیپ شلوار (فلای)',
+                'count' => 1,
+                'length' => $length,
+            ];
+            $piece['meta']['notions'][] = [
+                'type' => 'hook',
+                'label' => 'قزن کمربند شلوار',
+                'count' => 1,
+            ];
+
+            $pieces[$index] = $piece;
+
+            return $pieces;
+        }
+
+        return $pieces;
     }
 
     /**
@@ -124,6 +192,14 @@ abstract class PantsBaseGenerator extends BaseGenerator
     protected function bandParams(float $height = 4, bool $on = true): array
     {
         return [
+            'fly' => [
+                'label' => 'زیپ جلو', 'type' => 'select', 'default' => 'zip',
+                'options' => [
+                    'zip' => 'زیپ جلو (فلای)',
+                    'none' => 'بدون زیپ',
+                ],
+                'hint' => 'شلوار کمرکشی زیپ نمی‌خواهد؛ این گزینه فقط روی کمربند دوخته اثر دارد.',
+            ],
             'waistband' => [
                 'label' => 'کمربند داشته باشد', 'type' => 'toggle', 'default' => $on,
             ],

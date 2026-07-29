@@ -56,7 +56,7 @@ class SkirtAsymmetricGenerator extends SkirtBaseGenerator
             $this->asymPanel($mx, ['side' => 'back', 'short' => $short, 'long' => $long, 'flare' => $flare, 'dart_count' => 2]),
         ];
 
-        return $this->finish(array_merge($pieces, $this->bandPieces($mx, $params)));
+        return $this->finishSkirt(array_merge($pieces, $this->bandPieces($mx, $params)), $params);
     }
 
     /** یک قطعه کامل (نه روی تا) با دو قد متفاوت در دو پهلو. */

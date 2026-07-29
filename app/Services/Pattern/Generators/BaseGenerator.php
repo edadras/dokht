@@ -170,6 +170,120 @@ abstract class BaseGenerator implements PatternGenerator
     }
 
     /**
+     * بستن کار دامن: زیپ خواسته‌شده علامت می‌خورد و بعد قطعه‌ها مرتب می‌شوند.
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     * @return array<int, array<string, mixed>>
+     */
+    protected function finishSkirt(array $pieces, array $params): array
+    {
+        return $this->finish($this->markSkirtZip($pieces, (string) $this->param($params, 'zip', 'none')));
+    }
+
+    /**
+     * پارامتر زیپ دامن.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    protected function zipParam(string $default = 'side'): array
+    {
+        return [
+            'zip' => [
+                'label' => 'زیپ', 'type' => 'select', 'default' => $default,
+                'options' => [
+                    'side' => 'زیپ مخفی روی درز پهلوی چپ',
+                    'back' => 'زیپ مرکز پشت',
+                    'none' => 'بدون زیپ (کمر کشی یا رویهم)',
+                ],
+                'hint' => 'دامن کمرگرفته بدون زیپ از باسن رد نمی‌شود.',
+            ],
+        ];
+    }
+
+    /**
+     * علامت‌زدن زیپ روی پنل‌های دامن.
+     *
+     * زیپ دامن از خط کمر شروع می‌شود و باید از خط باسن رد شود، وگرنه دامن پوشیده
+     * نمی‌شود؛ سه سانتی‌متر زیر باسن ته زیپ است. برای زیپ مرکز پشت، پنل پشت اگر
+     * روی تای پارچه بود باز می‌شود تا درز مرکزی داشته باشد.
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     * @return array<int, array<string, mixed>>
+     */
+    protected function markSkirtZip(array $pieces, string $where): array
+    {
+        if (! in_array($where, ['side', 'back'], true)) {
+            return $pieces;
+        }
+
+        $target = null;
+
+        foreach ($pieces as $index => $piece) {
+            $part = $piece['meta']['part'] ?? null;
+
+            if ($where === 'back' && $part === 'skirt_back') {
+                $target = $index;
+                break;
+            }
+
+            if ($where === 'side' && $part === 'skirt_front') {
+                $target = $index;
+                break;
+            }
+        }
+
+        // دامن‌هایی که پنل جلو و پشت جدا ندارند (طبقه‌ای، ترک‌های هم‌شکل)
+        if ($target === null) {
+            foreach ($pieces as $index => $piece) {
+                if (str_starts_with((string) ($piece['meta']['part'] ?? ''), 'skirt_')) {
+                    $target = $index;
+                    break;
+                }
+            }
+        }
+
+        if ($target === null) {
+            return $pieces;
+        }
+
+        $piece = $pieces[$target];
+        $hipY = (float) ($piece['meta']['hip_y'] ?? 20);
+        $end = min($hipY + 3, Geometry::bounds($piece['outline'])[3] - 1);
+        $length = round($end, 1);
+
+        if ($length < 10) {
+            return $pieces;
+        }
+
+        if ($where === 'back') {
+            // درز مرکز پشت لازم است تا زیپ جایی برای نشستن داشته باشد
+            $piece['on_fold'] = false;
+            $piece['mirror'] = true;
+            $piece['cut_quantity'] = 2;
+            $piece['meta']['fold_edges'] = [];
+            $piece['meta']['opened_center'] = true;
+            $x = 0.0;
+            $label = 'زیپ مخفی مرکز پشت';
+        } else {
+            $x = Geometry::bounds($piece['outline'])[2];
+            $label = 'زیپ مخفی درز پهلوی چپ';
+        }
+
+        $piece['markers'][] = $this->marker('zip', $label, $x, 0, $x, $end);
+        $piece['meta']['zip_length'] = $length;
+        $piece['meta']['notions'][] = [
+            'type' => 'zip',
+            'label' => $label,
+            'count' => 1,
+            'length' => $length,
+        ];
+
+        $pieces[$target] = $piece;
+
+        return $pieces;
+    }
+
+    /**
      * ساخت یک قطعه با کلیدهای کامل و مرتب.
      *
      * @param  array<string, mixed>  $attributes

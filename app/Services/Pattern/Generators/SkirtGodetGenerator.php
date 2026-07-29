@@ -106,6 +106,6 @@ class SkirtGodetGenerator extends SkirtBaseGenerator
             'name' => 'گودت دم دامن',
         ]);
 
-        return $this->finish(array_merge($pieces, $this->bandPieces($mx, $params)));
+        return $this->finishSkirt(array_merge($pieces, $this->bandPieces($mx, $params)), $params);
     }
 }
