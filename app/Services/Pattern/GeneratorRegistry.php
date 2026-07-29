@@ -44,6 +44,7 @@ class GeneratorRegistry
     /** گروه‌های مدل به ترتیب نمایش. */
     public const GROUPS = [
         'bodice' => 'بالاتنه',
+        'top' => 'تاپ',
         'sleeve' => 'آستین',
         'skirt' => 'دامن',
         'pants' => 'پایین‌تنه',

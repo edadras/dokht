@@ -35,6 +35,7 @@ class PatternBuilder
         'side' => 1.5,
         'armhole' => 1.0,
         'waist' => 1.0,
+        'strap' => 0.7,
     ];
 
     /**

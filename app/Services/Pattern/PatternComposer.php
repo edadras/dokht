@@ -60,7 +60,7 @@ class PatternComposer
     public const PANTS_BLOCKS = ['pants_straight', 'pants_wide_leg'];
 
     /** گروه‌های رجیستری که می‌توانند نقش «بالاتنه» را بازی کنند. */
-    public const BODICE_GROUPS = ['bodice', 'garment'];
+    public const BODICE_GROUPS = ['bodice', 'top', 'garment'];
 
     /** گروه‌های رجیستری که می‌توانند نقش «پایین‌تنه» را بازی کنند. */
     public const LOWER_GROUPS = ['skirt', 'pants'];

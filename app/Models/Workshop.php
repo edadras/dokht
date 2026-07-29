@@ -105,6 +105,7 @@ class Workshop extends Model
             'side' => 1.5,
             'armhole' => 1.0,
             'waist' => 1.0,
+            'strap' => 0.7,
         ], (array) $this->setting('seam_allowances', []));
     }
 

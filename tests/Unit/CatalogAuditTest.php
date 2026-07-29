@@ -49,7 +49,7 @@ class CatalogAuditTest extends TestCase
     ];
 
     /** برچسب‌های مجاز لبه. */
-    protected const EDGE_TAGS = ['neck', 'shoulder', 'armhole', 'side', 'hem', 'waist', 'default'];
+    protected const EDGE_TAGS = ['neck', 'shoulder', 'armhole', 'side', 'hem', 'waist', 'strap', 'default'];
 
     /**
      * رواداری «روی لبه بودن» یک نقطه (سانتی‌متر).
@@ -556,6 +556,12 @@ class CatalogAuditTest extends TestCase
                 $holders = array_merge($bodices, $this->partsLike($pieces, ['yoke']));
 
                 foreach ($bodices as $bodice) {
+                    // تاپ استرپلس و آفشولدر عمداً حلقه ندارند و خودشان می‌گویند؛
+                    // بقیه اگر حلقه نداشته باشند یعنی چیزی خراب شده
+                    if (! empty($bodice['meta']['sleeveless'])) {
+                        continue;
+                    }
+
                     if (Geometry::edgesWithTag($bodice, 'armhole') === []) {
                         $problems[] = "{$key}|{$size}|{$bodice['code']} بالاتنه است ولی حلقه آستین ندارد.";
                     }
