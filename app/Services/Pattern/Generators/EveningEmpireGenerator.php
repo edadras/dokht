@@ -65,12 +65,12 @@ class EveningEmpireGenerator extends EveningBaseGenerator
             'waist' => max(0.0, $waist - ((float) ($measurements['waist'] ?? 74))),
         ]);
 
-        // دامن خط A با پُری خواسته‌شده روی دم؛ اضافهٔ کمر را joinWaist چین می‌دهد
+        // دامن چین‌دار: پارچه به نسبت پُری بریده و روی نوار زیرسینه چین می‌خورد
         $fullness = max(1.0, (float) $this->param($params, 'skirt_fullness', 1.5));
 
-        $skirt = $this->gownSkirt('skirt_a_line', $measurements, $skirtEase, [
+        $skirt = $this->gownSkirt('skirt_gathered', $measurements, $skirtEase, [
             'length' => (float) $this->param($params, 'skirt_length', 120),
-            'hem_flare' => round(($waist * ($fullness - 1)) + 25, 1),
+            'fullness' => $fullness,
             'dart_share' => 0,
         ], 'empire');
 

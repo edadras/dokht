@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Services\Pattern\GeneratorRegistry;
 use App\Services\Pattern\Geometry;
+use App\Services\Pattern\Transform\PieceOps;
 use App\Support\Measurements;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -132,6 +133,56 @@ class SkirtCatalogTest extends TestCase
                 $fullness['finished'],
                 $fullness['fabric'],
                 "«{$key}»: پارچه باید از اندازهٔ تمام‌شده بیشتر باشد.",
+            );
+        }
+    }
+
+    /**
+     * چینِ ثبت‌شده باید در اندازه‌گیری هم دیده شود.
+     *
+     * meta.fullness را فقط رندر و برگه فنی می‌خوانند؛ هر اندازه‌گیر دیگری در
+     * سامانه (PieceOps::seamLength، دوختن دامن به بالاتنه، ممیزی) meta.gathers
+     * را می‌بیند. اگر این دو یکی نباشند، دامن چین‌دار پهنای خام پارچه‌اش را
+     * اندازهٔ کمر گزارش می‌کند — همان ایرادی که کمر دیرندل را دو برابر نشان می‌داد.
+     */
+    public function test_a_gathered_waist_measures_the_finished_size_not_the_raw_fabric(): void
+    {
+        foreach (['skirt_gathered', 'skirt_bubble', 'skirt_tiered', 'skirt_pleat_sunburst'] as $key) {
+            $pieces = $this->build($key);
+            $raw = 0.0;
+            $sewn = 0.0;
+            $target = null;
+
+            foreach ($pieces as $piece) {
+                if (! in_array($piece['meta']['part'] ?? '', ['skirt_front', 'skirt_back', 'skirt_panel'], true)) {
+                    continue;
+                }
+
+                $repeats = ! empty($piece['on_fold']) ? 2 : max(1, (int) ($piece['cut_quantity'] ?? 1));
+                $edges = Geometry::edgesWithTag($piece, 'waist');
+
+                if ($edges === []) {
+                    continue;
+                }
+
+                foreach ($edges as $edge) {
+                    $raw += Geometry::edgeLength($piece['outline'], $edge) * $repeats;
+                }
+
+                $sewn += PieceOps::seamLength($piece, $edges) * $repeats;
+                $target ??= (float) ($piece['meta']['waist_target'] ?? 0);
+            }
+
+            if ($target === null || $target < 1.0) {
+                continue; // طبقه‌ای و آفتابی کمرشان را از پنل بالایی می‌دهند
+            }
+
+            $this->assertGreaterThan($target, $raw, "«{$key}» باید پارچهٔ بیشتر از کمر ببرد.");
+            $this->assertEqualsWithDelta(
+                $target,
+                $sewn,
+                max(1.0, $target * 0.02),
+                "«{$key}»: کمر خام {$raw} است و باید بعد از چین {$target} اندازه گرفته شود، نه {$sewn}.",
             );
         }
     }

@@ -3,6 +3,7 @@
 namespace App\Services\Pattern\Generators;
 
 use App\Services\Pattern\Geometry;
+use App\Services\Pattern\Transform\FullnessRecorder;
 
 /**
  * درفت پایه همه دامن‌ها.
@@ -239,7 +240,7 @@ trait SkirtBlock
             $meta['vent'] = round($vent, 2);
         }
 
-        return $this->piece([
+        return $this->syncFullness($this->piece([
             'code' => $o['code'] ?? ($isFront ? 'skirt-front' : 'skirt-back'),
             'name' => $o['name'] ?? ($isFront ? 'دامن جلو' : 'دامن پشت'),
             'layer' => $o['layer'] ?? (($o['count_waist'] ?? true) === false ? 'lining' : 'outer'),
@@ -255,7 +256,7 @@ trait SkirtBlock
             ],
             'markers' => $markers,
             'meta' => $meta,
-        ]);
+        ]));
     }
 
     /**
@@ -297,7 +298,7 @@ trait SkirtBlock
             }
         }
 
-        return $this->piece([
+        return $this->syncFullness($this->piece([
             'code' => $o['code'] ?? 'panel',
             'name' => $o['name'] ?? 'پنل دامن',
             'cut_quantity' => (int) ($o['cut_quantity'] ?? 1),
@@ -311,7 +312,7 @@ trait SkirtBlock
                 $this->marker('grain_top', 'خط کمر', 0, 0, $width),
             ], $o['markers'] ?? []),
             'meta' => $meta,
-        ]);
+        ]));
     }
 
     /**
@@ -471,7 +472,7 @@ trait SkirtBlock
         $hemEdges = range($arcEdges + 1, ($arcEdges * 2));
         $count = count($outline);
 
-        return $this->piece([
+        return $this->syncFullness($this->piece([
             'code' => $o['code'] ?? ($isFront ? 'skirt-front' : 'skirt-back'),
             'name' => $o['name'] ?? ($isFront ? 'دامن جلو' : 'دامن پشت'),
             'cut_quantity' => 1,
@@ -504,7 +505,7 @@ trait SkirtBlock
                         .' سانتی‌متر = '.$this->fa(round($waist, 1)).' ÷ (۲π × '.$this->fa($fraction).').',
                 ], $o['notes'] ?? []),
             ], $o['meta'] ?? []),
-        ]);
+        ]));
     }
 
     /**
@@ -708,6 +709,95 @@ trait SkirtBlock
             'takeup' => round($fabric - $finished, 2),
             'ratio' => $finished > 0.01 ? round($fabric / $finished, 3) : 0.0,
         ], $extra);
+    }
+
+    /**
+     * ترجمه meta.fullness به زبان مشترک قطعه‌ها.
+     *
+     * meta.fullness زبان خودِ دامن است و رندر و برگه فنی آن را می‌خوانند، اما
+     * هر اندازه‌گیر عمومیِ دیگری در سامانه — PieceOps::seamLength، سازنده روابط
+     * دوخت، ممیزی کاتالوگ، دوختن دامن به بالاتنه — فقط meta.gathers و meta.pleats
+     * را می‌بیند. تا وقتی این دو یکی نشوند، یک پنل چین‌دار پهنای خام پارچه‌اش را
+     * اندازه کمر تمام‌شده گزارش می‌کند؛ همان چیزی که کمر دامن چین‌دار (دیرندل) را
+     * دو برابر و کمر لباس امپایر را جفت‌وجور نشدنی نشان می‌داد.
+     *
+     * «هم‌پوشانی» عمداً ترجمه نمی‌شود: پارچه‌اش در درز خورده نمی‌شود، روی پنل
+     * روبه‌رو می‌افتد.
+     *
+     * @param  array<string, mixed>  $piece
+     * @return array<string, mixed>
+     */
+    protected function syncFullness(array $piece): array
+    {
+        foreach ($piece['meta']['fullness'] ?? [] as $entry) {
+            $type = (string) ($entry['type'] ?? '');
+            $takeup = round((float) ($entry['takeup'] ?? 0), 3);
+            $edge = (int) ($entry['edge'] ?? 0);
+
+            if ($takeup <= 0.01 || ! in_array($type, ['gather', 'pleat'], true)) {
+                continue;
+            }
+
+            $kind = $type === 'pleat' ? 'pleats' : 'gathers';
+
+            // اگر خود مدل قبلاً ثبتش کرده، دوباره حساب نمی‌کنیم
+            if (FullnessRecorder::amountOn($piece, $edge, $kind) > 0.01) {
+                continue;
+            }
+
+            $label = (string) ($entry['label'] ?? ($kind === 'pleats' ? 'پیلی' : 'چین'));
+            $style = (string) ($entry['style'] ?? 'knife');
+            $count = max(1, (int) ($entry['count'] ?? 1));
+
+            // روی دامن کلوش، کمر یک لبه نیست؛ کمانی است از چند لبه. سهم هر لبه
+            // به نسبت بلندی خودش کم می‌شود، وگرنه همه چین روی یک تکه کمان می‌افتد.
+            $edges = $this->fullnessEdges($piece, $edge);
+            $span = 0.0;
+
+            foreach ($edges as $index) {
+                $span += Geometry::edgeLength($piece['outline'], $index);
+            }
+
+            if ($span <= 0.01) {
+                continue;
+            }
+
+            foreach ($edges as $index) {
+                $share = $takeup * (Geometry::edgeLength($piece['outline'], $index) / $span);
+
+                $piece = $kind === 'gathers'
+                    ? FullnessRecorder::gathers($piece, $index, $share, ['label' => $label])
+                    : FullnessRecorder::pleats($piece, $index, $share, [
+                        'label' => $label,
+                        'type' => in_array($style, FullnessRecorder::PLEAT_TYPES, true) ? $style : 'knife',
+                        'count' => max(1, (int) round($count / count($edges))),
+                    ]);
+            }
+        }
+
+        return $piece;
+    }
+
+    /**
+     * لبه‌هایی که یک گشادی روی آن‌ها پخش می‌شود.
+     *
+     * اگر لبه ثبت‌شده عضو یک گروه لبه (کمر، دم، پهلو) باشد، گشادی مال کل آن درز
+     * است نه یک تکه‌اش.
+     *
+     * @param  array<string, mixed>  $piece
+     * @return array<int, int>
+     */
+    protected function fullnessEdges(array $piece, int $edge): array
+    {
+        foreach (['waist_edges', 'hem_edges', 'side_edges'] as $group) {
+            $edges = array_map('intval', $piece['meta'][$group] ?? []);
+
+            if (count($edges) > 1 && in_array($edge, $edges, true)) {
+                return $edges;
+            }
+        }
+
+        return [$edge];
     }
 
     /**
