@@ -9,6 +9,7 @@ use App\Models\Pattern;
 use App\Models\PatternTemplate;
 use App\Services\Pattern\GradingService;
 use App\Services\Pattern\PatternBuilder;
+use App\Services\Pattern\PatternInspector;
 use App\Services\Pattern\PatternVersionService;
 use App\Services\Pattern\SeamAllowanceService;
 use App\Services\Pattern\SewingRelationBuilder;
@@ -35,6 +36,7 @@ class PatternController extends Controller
         protected SeamAllowanceService $seams,
         protected GradingService $grading,
         protected PatternVersionService $versions,
+        protected PatternInspector $inspector = new PatternInspector,
     ) {}
 
     public function index(Request $request): View
@@ -127,6 +129,7 @@ class PatternController extends Controller
                 'labels' => true,
             ]),
             'seamSummary' => $this->seams->summary($pattern),
+            'inspection' => $this->inspector->inspect($pattern),
             'relations' => $pattern->sewing_relations ?: SewingRelationBuilder::suggest($pattern),
             'versionCount' => $pattern->versions()->count(),
             'sizes' => Measurements::sizes(),
@@ -305,10 +308,15 @@ class PatternController extends Controller
             $saved++;
         }
 
+        // ویرایش دستی می‌تواند مسیر قطعه را خراب کند؛ نتیجه بازرسی همان‌جا
+        // برمی‌گردد تا کاربر پیش از رفتن سراغ برش بداند چه چیزی به هم ریخته.
+        $pattern->load('pieces');
+
         return response()->json([
             'status' => 'ok',
             'version' => (int) $pattern->fresh()->version,
             'pieces' => $saved,
+            'inspection' => $this->inspector->inspect($pattern),
         ]);
     }
 

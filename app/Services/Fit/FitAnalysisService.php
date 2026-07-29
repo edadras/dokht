@@ -7,6 +7,7 @@ use App\Models\Pattern;
 use App\Models\PatternPiece;
 use App\Models\Project;
 use App\Models\Simulation;
+use App\Services\Pattern\PatternInspector;
 use App\Support\FabricProfile;
 use App\Support\Jalali;
 use App\Support\Measurements;
@@ -22,6 +23,8 @@ use App\Support\Measurements;
  */
 class FitAnalysisService
 {
+    public function __construct(protected PatternInspector $inspector = new PatternInspector) {}
+
     /**
      * نواحی سنجش تناسب.
      *
@@ -673,33 +676,21 @@ class FitAnalysisService
             return 0;
         }
 
-        $pieces = $pattern->pieces()->get();
-
-        if ($pieces->isEmpty()) {
+        if ($pattern->pieces()->count() === 0) {
             return 15;
         }
 
-        $score = 45;
-        $valid = $pieces->filter(fn (PatternPiece $p) => count($p->points()) >= 3 && $p->area() > 1);
-        $score += (int) round(25 * ($valid->count() / max(1, $pieces->count())));
-
-        if ($pieces->every(fn (PatternPiece $p) => ! empty($p->grainline))) {
-            $score += 10;
-        }
+        // امتیاز از بازرسی واقعی الگو می‌آید، نه از یک سیاهه‌ی سطحی: الگویی که
+        // مسیرش خودش را قطع کند یا درزهایش روی هم پیاده نشوند، هرچقدر هم راستای
+        // پارچه و نشانه داشته باشد، الگوی خوبی نیست.
+        $report = $this->inspector->inspect($pattern);
+        $score = $report['score'];
 
         if (! empty($pattern->seam_allowances)) {
-            $score += 10;
+            $score = min(100, $score + 2);
         }
 
-        if ($pieces->contains(fn (PatternPiece $p) => ! empty($p->notches))) {
-            $score += 5;
-        }
-
-        if (! empty($pattern->sewing_relations)) {
-            $score += 5;
-        }
-
-        return (int) min(100, $score);
+        return (int) max(0, min(100, $score));
     }
 
     /** سازگاری پارچه با نوع لباس؛ از ماژول پارچه اگر در دسترس باشد. */

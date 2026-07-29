@@ -84,6 +84,7 @@ php artisan test
 | برش و چیدمان (Cutting) | `App\Services\Cutting\NestingService`، `LayoutRenderer` |
 | تولید (Production) | `App\Services\TechPack\TechPackBuilder`، `App\Services\Export\*` |
 | ترکیب و استودیوی طراحی | `App\Services\Pattern\PatternComposer` + `/compose` |
+| بازرسی الگو (هر الگویی، نه فقط کاتالوگ) | `App\Services\Pattern\PatternInspector` |
 | دگرگونی الگو (چرخاندن ساسون، برش و باز کردن) | `App\Services\Pattern\Transform\*` |
 | ساخت الگو از عکس و طرح دستی | `App\Services\Vision\*` + `/design-import` |
 | بازارچه الگو | `App\Services\Marketplace\*` + `/market` |

@@ -76,6 +76,43 @@
                 </div>
             </x-card>
 
+            <x-card title="بررسی الگو" icon="check-circle"
+                subtitle="همان بررسی‌هایی که روی الگوهای کاتالوگ اجرا می‌شود، روی این الگو هم اجرا شد.">
+                <div class="flex items-center gap-3">
+                    <span @class([
+                        'flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-lg font-bold',
+                        'bg-emerald-50 text-emerald-700' => $inspection['errors'] === 0 && $inspection['warnings'] === 0,
+                        'bg-amber-50 text-amber-700' => $inspection['errors'] === 0 && $inspection['warnings'] > 0,
+                        'bg-rose-50 text-rose-700' => $inspection['errors'] > 0,
+                    ])>{{ $digits($inspection['score']) }}</span>
+                    <p class="text-sm text-stone-600">
+                        @if ($inspection['errors'] > 0)
+                            {{ $digits($inspection['errors']) }} ایراد جدی دارد؛ این الگو با این وضع بریده نمی‌شود.
+                        @elseif ($inspection['warnings'] > 0)
+                            بریدنی است، ولی {{ $digits($inspection['warnings']) }} نکته باید بررسی شود.
+                        @else
+                            هندسه و درزهای این الگو سالم است.
+                        @endif
+                    </p>
+                </div>
+
+                @if (! empty($inspection['findings']))
+                    <ul class="mt-4 space-y-2">
+                        @foreach ($inspection['findings'] as $finding)
+                            <li @class([
+                                'flex items-start gap-2 rounded-xl px-3 py-2 text-sm',
+                                'bg-rose-50 text-rose-800' => $finding['level'] === 'error',
+                                'bg-amber-50 text-amber-800' => $finding['level'] === 'warning',
+                                'bg-stone-50 text-stone-600' => $finding['level'] === 'info',
+                            ])>
+                                <x-icon name="{{ $finding['level'] === 'info' ? 'info' : 'alert' }}" class="mt-0.5 h-4 w-4 shrink-0" />
+                                <span>{{ $finding['message'] }}</span>
+                            </li>
+                        @endforeach
+                    </ul>
+                @endif
+            </x-card>
+
             <x-card title="دوخت مجازی" icon="check-circle"
                 subtitle="کدام لبه به کدام لبه دوخته می‌شود؛ نمای سه‌بعدی از همین فهرست استفاده می‌کند.">
                 @if (empty($relations))
