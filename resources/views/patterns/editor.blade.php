@@ -44,6 +44,15 @@
                 <x-icon name="arrow-left" class="h-5 w-5" />
             </button>
 
+            <span class="mx-1 h-6 w-px bg-stone-200"></span>
+
+            <button type="button" x-on:click="toggleCut()"
+                x-bind:class="cutting ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-200' : 'text-stone-500 hover:bg-stone-100'"
+                class="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold" title="برش دلخواه">
+                <x-icon name="scissors" class="h-5 w-5" />
+                <span x-text="cutting ? 'بی‌خیال برش' : 'برش دلخواه'"></span>
+            </button>
+
             <div class="ms-auto flex items-center gap-2">
                 <span class="text-xs text-stone-500">نسخه <span x-text="version"></span></span>
                 <span x-show="dirty" x-cloak class="text-xs font-semibold text-amber-600">ذخیره نشده</span>
@@ -66,9 +75,25 @@
                     </svg>
                 </div>
 
-                <p class="mt-2 text-xs text-stone-500">
+                <p class="mt-2 text-xs text-stone-500" x-show="! cutting">
                     برای جابه‌جایی نقشه، روی فضای خالی بکشید. نقطه‌ها با گام نیم سانتی‌متر جابه‌جا می‌شوند.
                 </p>
+
+                <div x-show="cutting" x-cloak
+                    class="mt-2 flex flex-wrap items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-3">
+                    <p class="flex-1 text-xs text-rose-800">
+                        روی قطعهٔ انتخاب‌شده کلیک کنید تا خط برش ساخته شود. نقطهٔ اول و آخر روی لبهٔ قطعه می‌نشینند
+                        (اگر دقیق روی لبه نزنید، به نزدیک‌ترین جای لبه چسبانده می‌شوند). نقطه‌های میانی شکل برش را می‌سازند.
+                        <span class="font-semibold" x-text="cutPath.length + ' نقطه'"></span>
+                    </p>
+                    <button type="button" x-on:click="undoCutPoint()" x-bind:disabled="! cutPath.length"
+                        class="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 disabled:opacity-40">
+                        نقطهٔ آخر را بردار
+                    </button>
+                    <x-button type="button" x-on:click="applyCut()" x-bind:disabled="! canCut" icon="scissors">
+                        <span x-text="splitting ? 'در حال برش…' : 'برش بزن'"></span>
+                    </x-button>
+                </div>
             </div>
 
             {{-- ستون کنار --}}
@@ -146,6 +171,12 @@
                 <x-alert type="tip">
                     نقطه‌ها را بکشید تا شکل قطعه تغییر کند؛ نقطه‌های آبی، کنترل منحنی‌اند. هر بار ذخیره، یک نسخه تازه
                     ثبت می‌شود و می‌توانید به عقب برگردید.
+                </x-alert>
+
+                <x-alert type="tip" title="برش دلخواه">
+                    با «برش دلخواه» می‌توانید درزی بگذارید که در هیچ مدلی نیست: یوک، پنل، کالربلاک یا هر خط دیگری.
+                    قطعه به دو قطعهٔ تازه تقسیم می‌شود، روی درز تازه نشانهٔ جفت می‌نشیند و جای دوخت هم گذاشته می‌شود.
+                    پیش از برش یک نسخه ثبت می‌شود، پس راه برگشت هست.
                 </x-alert>
             </div>
         </div>

@@ -126,6 +126,8 @@ Route::middleware(['auth', 'workshop'])->group(function () {
     Route::resource('patterns', PatternController::class);
     Route::get('patterns/{pattern}/editor', [PatternController::class, 'editor'])->name('patterns.editor');
     Route::put('patterns/{pattern}/geometry', [PatternController::class, 'updateGeometry'])->name('patterns.geometry');
+    Route::post('patterns/{pattern}/pieces/{piece}/split', [PatternController::class, 'splitPiece'])
+        ->name('patterns.pieces.split');
     Route::post('patterns/{pattern}/duplicate', [PatternController::class, 'duplicate'])->name('patterns.duplicate');
     Route::post('patterns/{pattern}/grade', [PatternController::class, 'grade'])->name('patterns.grade');
     Route::post('patterns/{pattern}/publish', [PatternController::class, 'publish'])->name('patterns.publish');

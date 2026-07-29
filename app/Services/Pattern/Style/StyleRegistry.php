@@ -22,6 +22,7 @@ class StyleRegistry
         'sleeve' => 'آستین',
         'hem' => 'لبه و دامنه',
         'fullness' => 'چین و گشادی',
+        'seam' => 'برش و درز',
         'pocket' => 'جیب',
         'closure' => 'بست و دکمه',
         'detail' => 'جزئیات',

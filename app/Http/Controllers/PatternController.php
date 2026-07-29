@@ -6,11 +6,13 @@ use App\Models\Customer;
 use App\Models\GarmentType;
 use App\Models\MeasurementSet;
 use App\Models\Pattern;
+use App\Models\PatternPiece;
 use App\Models\PatternTemplate;
 use App\Services\Pattern\GradingService;
 use App\Services\Pattern\PatternBuilder;
 use App\Services\Pattern\PatternInspector;
 use App\Services\Pattern\PatternVersionService;
+use App\Services\Pattern\PieceSplitter;
 use App\Services\Pattern\SeamAllowanceService;
 use App\Services\Pattern\SewingRelationBuilder;
 use App\Services\Pattern\SvgRenderer;
@@ -21,6 +23,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use InvalidArgumentException;
 
 /**
  * الگوها.
@@ -37,6 +40,7 @@ class PatternController extends Controller
         protected GradingService $grading,
         protected PatternVersionService $versions,
         protected PatternInspector $inspector = new PatternInspector,
+        protected PieceSplitter $splitter = new PieceSplitter,
     ) {}
 
     public function index(Request $request): View
@@ -224,6 +228,8 @@ class PatternController extends Controller
             'pattern' => $pattern,
             'config' => [
                 'saveUrl' => route('patterns.geometry', $pattern),
+                // شناسه قطعه در سمت جاوااسکریپت جای «__piece__» می‌نشیند
+                'splitUrl' => route('patterns.pieces.split', [$pattern, '__piece__']),
                 'version' => (int) $pattern->version,
                 'defaultAllowance' => (float) ($pattern->seam_allowances['default'] ?? 1),
                 'pieces' => $pattern->pieces->map(fn ($piece) => [
@@ -316,6 +322,72 @@ class PatternController extends Controller
             'status' => 'ok',
             'version' => (int) $pattern->fresh()->version,
             'pieces' => $saved,
+            'inspection' => $this->inspector->inspect($pattern),
+        ]);
+    }
+
+    /**
+     * برش دلخواه: دو تکه کردن یک قطعه در امتداد خطی که کاربر در ویرایشگر کشیده.
+     *
+     * پیش از برش نسخه گرفته می‌شود، چون برخلاف سبک‌ها این کار پارامتر ندارد که
+     * بعداً عوض شود؛ راه برگشتش همان نسخه است.
+     */
+    public function splitPiece(Request $request, Pattern $pattern, PatternPiece $piece): JsonResponse
+    {
+        // مثل updateGeometry، اعتبارسنجی دستی است تا پاسخ همیشه JSON بماند؛ این
+        // مسیر از جاوااسکریپت صدا زده می‌شود و پیام خطایش باید در همان صفحه بنشیند.
+        $validator = Validator::make($request->all(), [
+            'path' => ['required', 'array', 'min:2', 'max:24'],
+            'path.*.x' => ['required', 'numeric', 'between:-600,600'],
+            'path.*.y' => ['required', 'numeric', 'between:-600,600'],
+            'path.*.curve' => ['nullable', 'boolean'],
+            'path.*.cx' => ['nullable', 'numeric', 'between:-600,600'],
+            'path.*.cy' => ['nullable', 'numeric', 'between:-600,600'],
+            'names' => ['nullable', 'array', 'size:2'],
+            'names.*' => ['nullable', 'string', 'max:120'],
+        ], [], ['path' => 'خط برش', 'names' => 'نام قطعه‌ها']);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'خط برش درست نیست؛ دست‌کم دو نقطه روی لبهٔ قطعه لازم است.',
+                'errors' => $validator->errors()->toArray(),
+            ], 422);
+        }
+
+        $data = $validator->validated();
+
+        if ($piece->pattern_id !== $pattern->id) {
+            abort(404);
+        }
+
+        // اول هندسه ساخته و بررسی می‌شود، بعد نسخه ثبت می‌شود؛ برشی که انجام
+        // نشده نباید نسخه‌ای در تاریخچه جا بگذارد.
+        try {
+            $halves = $this->splitter->prepare($pattern, $piece, $data['path'], [
+                'names' => array_values(array_filter($data['names'] ?? [])) ?: null,
+            ]);
+        } catch (InvalidArgumentException $error) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $error->getMessage(),
+            ], 422);
+        }
+
+        $this->versions->snapshot($pattern, 'پیش از برش دستی «'.$piece->name.'»', bump: true);
+
+        $halves = $this->splitter->persist($pattern, $piece, $halves);
+
+        $pattern->load('pieces');
+
+        return response()->json([
+            'status' => 'ok',
+            'version' => (int) $pattern->fresh()->version,
+            'pieces' => array_map(fn (PatternPiece $half) => [
+                'id' => $half->id,
+                'code' => $half->code,
+                'name' => $half->name,
+            ], $halves),
             'inspection' => $this->inspector->inspect($pattern),
         ]);
     }

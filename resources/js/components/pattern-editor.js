@@ -36,6 +36,12 @@ export default (config = {}) => ({
     toast: null,
     toastType: 'success',
 
+    /* برش دلخواه: خطی که کاربر روی قطعه انتخاب‌شده می‌کشد */
+    splitUrl: config.splitUrl || '',
+    cutting: false,
+    cutPath: [],
+    splitting: false,
+
     init() {
         this.pieces = JSON.parse(JSON.stringify(config.pieces || []));
         this.layout();
@@ -274,7 +280,7 @@ export default (config = {}) => ({
      * داخل بوم گذاشته می‌شوند. تعامل‌ها هم با data-role و واگذاری رویداد انجام می‌شود.
      */
     markup() {
-        return this.pieces.map((piece, index) => this.pieceMarkup(piece, index)).join('');
+        return this.pieces.map((piece, index) => this.pieceMarkup(piece, index)).join('') + this.cutMarkup();
     },
 
     pieceMarkup(piece, index) {
@@ -364,6 +370,21 @@ export default (config = {}) => ({
 
     /* روی بوم فقط یک شنونده هست؛ نقش هر عنصر از data-role خوانده می‌شود */
     onPointerDown(event) {
+        // در حالت برش، هر کلیک یک نقطه به خط برش اضافه می‌کند
+        if (this.cutting) {
+            const handle = event.target?.closest?.('[data-role]');
+
+            if (handle && handle.dataset.role === 'outline' && Number(handle.dataset.piece) !== this.selected) {
+                this.notify('برش فقط روی قطعهٔ انتخاب‌شده انجام می‌شود.', 'error');
+
+                return;
+            }
+
+            this.addCutPoint(event);
+
+            return;
+        }
+
         const handle = event.target?.closest?.('[data-role]');
 
         if (handle) {
@@ -628,6 +649,123 @@ export default (config = {}) => ({
             area: Math.round(area),
             points: (piece.outline || []).length,
         };
+    },
+
+    /* ------------------------------------------------------------ برش دلخواه */
+
+    /**
+     * حالت برش.
+     *
+     * برش سمت سرور روی همان چیزی انجام می‌شود که در دیتابیس است، پس اگر ویرایشی
+     * ذخیره نشده باشد کاربر خطی می‌کشد و نتیجه‌اش روی شکل قدیمی می‌افتد. برای
+     * همین ورود به حالت برش با تغییر ذخیره‌نشده اجازه داده نمی‌شود.
+     */
+    toggleCut() {
+        if (this.cutting) {
+            this.cancelCut();
+
+            return;
+        }
+
+        if (!this.piece) {
+            this.notify('اول یک قطعه انتخاب کنید.', 'error');
+
+            return;
+        }
+
+        if (this.dirty) {
+            this.notify('اول تغییرها را ذخیره کنید؛ برش روی شکل ذخیره‌شده انجام می‌شود.', 'error');
+
+            return;
+        }
+
+        this.cutting = true;
+        this.cutPath = [];
+        this.selectedPoint = null;
+    },
+
+    cancelCut() {
+        this.cutting = false;
+        this.cutPath = [];
+    },
+
+    /** نقطهٔ تازه روی خط برش، در مختصات محلی همان قطعه. */
+    addCutPoint(event) {
+        const offset = this.offsets[this.selected] || { x: 0, y: 0 };
+        const cursor = this.toCm(event);
+
+        if (this.cutPath.length >= 24) {
+            this.notify('خط برش بیش از این نقطه نمی‌گیرد.', 'error');
+
+            return;
+        }
+
+        this.cutPath.push({
+            x: this.snap(cursor.x - offset.x),
+            y: this.snap(cursor.y - offset.y),
+        });
+    },
+
+    undoCutPoint() {
+        this.cutPath.pop();
+    },
+
+    get canCut() {
+        return this.cutting && this.cutPath.length >= 2 && !this.splitting;
+    },
+
+    async applyCut() {
+        const piece = this.piece;
+
+        if (!this.canCut || !piece || !this.splitUrl) {
+            return;
+        }
+
+        this.splitting = true;
+        this.toast = null;
+
+        try {
+            const response = await fetch(this.splitUrl.replace('__piece__', piece.id), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({ path: this.cutPath }),
+            });
+
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(data.message || 'برش انجام نشد.');
+            }
+
+            this.notify('قطعه بریده شد؛ صفحه تازه می‌شود…', 'success');
+            setTimeout(() => window.location.reload(), 900);
+        } catch (error) {
+            this.notify(error.message || 'برش انجام نشد.', 'error');
+            this.splitting = false;
+        }
+    },
+
+    /** خط برشی که هنوز اجرا نشده، روی قطعهٔ انتخاب‌شده. */
+    cutMarkup() {
+        if (!this.cutting || !this.cutPath.length) {
+            return '';
+        }
+
+        const offset = this.offsets[this.selected] || { x: 0, y: 0 };
+        const points = this.cutPath.map((point) => `${this.n(point.x)},${this.n(point.y)}`).join(' ');
+
+        const dots = this.cutPath
+            .map((point) => `<circle cx="${this.n(point.x)}" cy="${this.n(point.y)}" r="0.32" fill="#d4573e" />`)
+            .join('');
+
+        return `<g transform="translate(${this.n(offset.x)} ${this.n(offset.y)})">`
+            + `<polyline points="${points}" fill="none" stroke="#d4573e" stroke-width="0.22"`
+            + ` stroke-dasharray="1 0.6" stroke-linejoin="round" />${dots}</g>`;
     },
 
     async save() {
