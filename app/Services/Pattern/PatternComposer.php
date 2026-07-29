@@ -579,15 +579,21 @@ class PatternComposer
             $key = null;
             $params = [];
 
+            $hand = 'both';
+
             if (is_string($value)) {
                 $key = $value;
             } elseif (is_array($value) && isset($value['key']) && is_string($value['key'])) {
                 $key = $value['key'];
                 $params = is_array($value['params'] ?? null) ? $value['params'] : [];
+                $hand = (string) ($value['side'] ?? 'both');
             } elseif (is_string($index)) {
                 $key = $index;
                 $params = is_array($value) ? $value : [];
+                $hand = (string) ($value['side'] ?? 'both');
             }
+
+            $hand = in_array($hand, ['left', 'right'], true) ? $hand : 'both';
 
             if ($key === null || $key === '' || $key === 'none' || isset($out[$key])) {
                 continue;
@@ -595,6 +601,7 @@ class PatternComposer
 
             $out[$key] = [
                 'key' => $key,
+                'side' => $hand,
                 'group' => StyleRegistry::has($key) ? StyleRegistry::make($key)::group() : 'unknown',
                 'params' => $this->cleanStyleParams(array_merge(
                     is_array($extraParams[$key] ?? null) ? $extraParams[$key] : [],
@@ -853,6 +860,17 @@ class PatternComposer
      * @param  array<int, array{key: string, group: string, params: array<string, mixed>}>  $styles
      * @return array{0: array<int, array<string, mixed>>, 1: array<int, array<string, string>>, 2: array<int, array<string, mixed>>}
      */
+    /**
+     * اجزایی که چپ و راست دارند.
+     *
+     * یقه، کمربند، مچ‌بند و نوارها یک تکه‌اند یا قرینه‌شان معنا ندارد، پس در
+     * جداکردن چپ و راست دست نمی‌خورند.
+     */
+    protected const HANDED_PARTS = [
+        'front_bodice', 'back_bodice', 'front_panel', 'back_panel',
+        'front_leg', 'back_leg', 'skirt_front', 'skirt_back', 'sleeve', 'lining',
+    ];
+
     protected function applyStyles(array $pieces, array $styles, array $context): array
     {
         $notes = [];
@@ -891,8 +909,27 @@ class PatternComposer
                 continue;
             }
 
+            $hand = (string) ($entry['side'] ?? 'both');
+
+            if ($hand !== 'both') {
+                $split = $this->splitHands($pieces, $hand);
+
+                if ($split === null) {
+                    $notes[] = $this->note('warning', 'سبک «'.$style->label().'» فقط برای یک سمت خواسته شده بود، '
+                        .'ولی تنه این لباس روی تای پارچه بریده می‌شود و چپ و راستش یک قطعه است. '
+                        .'اول یک بست جلو (دکمه یا زیپ) بگذارید تا مرکز جلو باز شود.');
+                    $report[] = $row + ['status' => 'skipped', 'reason' => 'تنه روی تای پارچه است و چپ و راست ندارد.'];
+
+                    continue;
+                }
+
+                [$pieces, $ctx] = [$split['pieces'], array_merge($ctx, ['hand' => $hand])];
+            }
+
             try {
-                $result = $style->apply($pieces, $ctx);
+                $result = $hand === 'both'
+                    ? $style->apply($pieces, $ctx)
+                    : $this->applyToOneHand($style, $pieces, $ctx, $hand);
             } catch (Throwable $exception) {
                 $notes[] = $this->note('warning', 'سبک «'.$style->label().'» نیمه‌کاره ماند و کنار گذاشته شد: '
                     .$exception->getMessage());
@@ -920,12 +957,198 @@ class PatternComposer
 
             $report[] = $row + [
                 'status' => 'applied',
+                'side' => $hand,
                 'added' => max(0, count($pieces) - $before),
                 'meta' => $result['meta'] ?? [],
             ];
         }
 
         return [$pieces, $notes, $report];
+    }
+
+    /**
+     * جدا کردن چپ و راست لباس.
+     *
+     * تا وقتی همه‌چیز قرینه است، تنه یک بار بریده و آینه می‌شود. برای اینکه یک
+     * سمت با سمت دیگر فرق کند، باید همان قطعه دو قطعه مستقل شود: یکی چپ و یکی
+     * راست، هرکدام یک بار بریده و بدون آینه.
+     *
+     * قطعه‌ای که روی تای پارچه بریده می‌شود اصلاً چپ و راست ندارد — یک تکه است
+     * که وسطش روی تاست. آنجا null برمی‌گردانیم تا کاربر بداند اول باید مرکز جلو
+     * را با یک بست باز کند؛ این همان چیزی است که خیاط هم می‌گوید.
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     * @return array{pieces: array<int, array<string, mixed>>}|null
+     */
+    protected function splitHands(array $pieces, string $hand): ?array
+    {
+        $out = [];
+        $splitAny = false;
+
+        foreach ($pieces as $piece) {
+            $already = $piece['meta']['hand'] ?? null;
+
+            if ($already !== null) {
+                $out[] = $piece;
+                $splitAny = true;
+
+                continue;
+            }
+
+            // قطعه‌ای که روی تای پارچه بریده می‌شود یک تکه است و چپ و راستش از هم
+            // جدا نمی‌شود؛ دست‌نخورده رد می‌شود. اگر هیچ قطعه‌ای جدا نشد، همین را
+            // به کاربر می‌گوییم.
+            if (! $this->hasHands($piece) || ! empty($piece['on_fold'])) {
+                $out[] = $piece;
+
+                continue;
+            }
+
+            foreach (['right' => 'راست', 'left' => 'چپ'] as $key => $label) {
+                $copy = $piece;
+                $copy['code'] = $piece['code'].'-'.$key;
+                $copy['name'] = $piece['name'].' ('.$label.')';
+                $copy['cut_quantity'] = 1;
+                $copy['mirror'] = false;
+                $copy['meta']['hand'] = $key;
+                $copy['meta']['hand_of'] = $piece['code'];
+                $out[] = $copy;
+            }
+
+            $splitAny = true;
+        }
+
+        return $splitAny ? ['pieces' => $out] : null;
+    }
+
+    /** آیا این قطعه چپ و راست دارد؟ (قطعه‌ای که دو بار قرینه بریده می‌شود) */
+    protected function hasHands(array $piece): bool
+    {
+        return ! empty($piece['mirror'])
+            && (int) ($piece['cut_quantity'] ?? 1) >= 2
+            && in_array((string) ($piece['meta']['part'] ?? ''), static::HANDED_PARTS, true);
+    }
+
+    /**
+     * اجرای یک سبک تنها روی یک سمت لباس.
+     *
+     * سبک را با مجموعه‌ای صدا می‌زنیم که فقط قطعه‌های همان سمت (به‌علاوه قطعه‌های
+     * بی‌سمت مثل یقه و کمربند) در آن است، پس خودِ سبک لازم نیست چیزی از چپ و راست
+     * بداند. هر قطعه تازه‌ای که ساخت هم مهر همان سمت را می‌گیرد.
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     * @return array{pieces: array<int, array<string, mixed>>, notes?: array, meta?: array}
+     */
+    protected function applyToOneHand(StyleModifier $style, array $pieces, array $context, string $hand): array
+    {
+        $mine = [];
+        $others = [];
+
+        foreach ($pieces as $piece) {
+            $on = $piece['meta']['hand'] ?? null;
+
+            if ($on === null || $on === $hand) {
+                $mine[] = $piece;
+            } else {
+                $others[] = $piece;
+            }
+        }
+
+        $result = $style->apply($mine, $context);
+        $before = array_column($mine, 'code');
+        $label = $hand === 'left' ? 'چپ' : 'راست';
+        $next = [];
+
+        foreach ($result['pieces'] ?? [] as $piece) {
+            if (! in_array($piece['code'] ?? '', $before, true) && ($piece['meta']['hand'] ?? null) === null) {
+                // قطعه‌ای که همین سبک تازه ساخته (جیب، پاتلت، لت) مهر همین سمت را می‌گیرد
+                $piece['code'] = $piece['code'].'-'.$hand;
+                $piece['name'] = ($piece['name'] ?? '').' ('.$label.')';
+                $piece['meta']['hand'] = $hand;
+            }
+
+            $next[] = $piece;
+        }
+
+        return array_merge($result, [
+            'pieces' => $this->mergeIdenticalHands(array_merge($next, $others)),
+        ]);
+    }
+
+    /**
+     * برگرداندن سمت‌هایی که در عمل فرقی نکردند.
+     *
+     * برای اجرای یک سبک روی یک سمت، همه قطعه‌های چپ‌وراست‌دار جدا می‌شوند — ولی
+     * سبک شاید فقط به تنه دست زده باشد و آستین دست‌نخورده مانده باشد. آستینی که
+     * چپ و راستش مو نمی‌زند، دوباره یک قطعه قرینه می‌شود تا نقشه برش و فهرست
+     * قطعه‌ها بی‌جهت شلوغ نشود.
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     * @return array<int, array<string, mixed>>
+     */
+    protected function mergeIdenticalHands(array $pieces): array
+    {
+        $byOrigin = [];
+
+        foreach ($pieces as $index => $piece) {
+            $origin = $piece['meta']['hand_of'] ?? null;
+
+            if ($origin !== null) {
+                $byOrigin[$origin][$piece['meta']['hand']] = ['index' => $index, 'piece' => $piece];
+            }
+        }
+
+        $drop = [];
+        $restore = [];
+
+        foreach ($byOrigin as $origin => $hands) {
+            if (count($hands) !== 2) {
+                continue;
+            }
+
+            $left = $hands['left']['piece'];
+            $right = $hands['right']['piece'];
+
+            if ($this->handFingerprint($left) !== $this->handFingerprint($right)) {
+                continue;
+            }
+
+            $merged = $right;
+            $merged['code'] = $origin;
+            $merged['name'] = preg_replace('/ \((?:چپ|راست)\)$/u', '', (string) $merged['name']);
+            $merged['cut_quantity'] = 2;
+            $merged['mirror'] = true;
+            unset($merged['meta']['hand'], $merged['meta']['hand_of']);
+
+            $restore[$hands['right']['index']] = $merged;
+            $drop[] = $hands['left']['index'];
+        }
+
+        $out = [];
+
+        foreach ($pieces as $index => $piece) {
+            if (in_array($index, $drop, true)) {
+                continue;
+            }
+
+            $out[] = $restore[$index] ?? $piece;
+        }
+
+        return $out;
+    }
+
+    /** اثر انگشت یک قطعه برای مقایسه دو سمت. */
+    protected function handFingerprint(array $piece): string
+    {
+        return json_encode([
+            $piece['outline'] ?? [],
+            $piece['darts'] ?? [],
+            $piece['notches'] ?? [],
+            $piece['drills'] ?? [],
+            $piece['markers'] ?? [],
+            $piece['pleats'] ?? [],
+            array_diff_key($piece['meta'] ?? [], array_flip(['hand', 'hand_of'])),
+        ]);
     }
 
     /** یادداشت سبک‌ها گاهی رشته است و گاهی ['type' => .., 'text' => ..]. */
@@ -1383,6 +1606,12 @@ class PatternComposer
 
         foreach ($pieces as $piece) {
             if (! $this->cuts($piece)) {
+                continue;
+            }
+
+            // اینجا «یک حلقه» شمرده می‌شود نه دور هر دو حلقه؛ پس وقتی قطعه‌ای برای
+            // نامتقارنی به چپ و راست شکسته شده، تنها یک سمتش حساب می‌شود.
+            if (($piece['meta']['hand'] ?? null) === 'right') {
                 continue;
             }
 

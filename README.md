@@ -90,6 +90,7 @@ php artisan test
 | ترکیب و استودیوی طراحی | `App\Services\Pattern\PatternComposer` + `/compose` |
 | بازرسی الگو (هر الگویی، نه فقط کاتالوگ) | `App\Services\Pattern\PatternInspector` |
 | پرو و اصلاح الگو | `App\Support\Alterations`، `App\Services\Fit\AlterationService` + `/projects/{id}/fittings` |
+| لباس نامتقارن (سبک روی یک سمت) | `PatternComposer::splitHands()` — هر سبک در استودیو گزینه «دو طرف / راست / چپ» دارد |
 | دگرگونی الگو (چرخاندن ساسون، برش و باز کردن) | `App\Services\Pattern\Transform\*` |
 | ساخت الگو از عکس و طرح دستی | `App\Services\Vision\*` + `/design-import` |
 | بازارچه الگو | `App\Services\Marketplace\*` + `/market` |

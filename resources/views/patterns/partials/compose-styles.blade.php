@@ -19,6 +19,14 @@
             <template x-for="(style, index) in ordered()" :key="style.key">
                 <span class="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700">
                     <span x-text="digits(index + 1) + '. ' + styleLabel(style.key)"></span>
+                    {{-- سمت: برای لباس نامتقارن مثل جیب فقط سمت چپ یا یقه یک‌طرفه --}}
+                    <select x-model="style.side" @change="schedule()"
+                        class="rounded-full border-0 bg-transparent py-0 ps-1 pe-4 text-xs text-brand-700 focus:ring-0"
+                        :aria-label="'سمت ' + styleLabel(style.key)">
+                        <option value="both">دو طرف</option>
+                        <option value="right">فقط راست</option>
+                        <option value="left">فقط چپ</option>
+                    </select>
                     <button type="button" @click="toggleStyle(style.key)" class="text-brand-400 transition hover:text-rose-600"
                         :aria-label="'برداشتن ' + styleLabel(style.key)">×</button>
                 </span>
@@ -27,7 +35,10 @@
 
         {{-- ورودی‌های پنهانی که فهرست سبک‌ها را با فرم می‌فرستند --}}
         <template x-for="(style, index) in styles" :key="'key-' + style.key">
-            <input type="hidden" :name="'styles[' + index + '][key]'" :value="style.key">
+            <span>
+                <input type="hidden" :name="'styles[' + index + '][key]'" :value="style.key">
+                <input type="hidden" :name="'styles[' + index + '][side]'" :value="style.side || 'both'">
+            </span>
         </template>
 
         @forelse ($catalogue['styles'] as $group => $row)

@@ -172,6 +172,7 @@ class PatternComposerController extends Controller
             'collar' => ['nullable', 'string', 'max:48'],
             'styles' => ['nullable', 'array', 'max:40'],
             'styles.*.key' => ['nullable', 'string', 'max:48'],
+            'styles.*.side' => ['nullable', 'string', 'in:both,left,right'],
             'styles.*.params' => ['nullable', 'array'],
             'styles.*.params.*' => ['nullable', 'string', 'max:64'],
             'customer_id' => ['nullable', 'integer'],
@@ -257,7 +258,11 @@ class PatternComposerController extends Controller
 
         return array_merge($recipe['base'], [
             'styles' => array_map(
-                fn (array $style) => ['key' => $style['key'], 'params' => $style['params']],
+                fn (array $style) => [
+                    'key' => $style['key'],
+                    'side' => $style['side'] ?? 'both',
+                    'params' => $style['params'],
+                ],
                 $recipe['styles'],
             ),
         ]);
@@ -283,6 +288,8 @@ class PatternComposerController extends Controller
 
             $styles[] = [
                 'key' => $key,
+                // سمت لباس برای سبک‌های یک‌طرفه (جیب فقط سمت چپ، لتِ یک‌طرفه…)
+                'side' => is_array($row) ? (string) ($row['side'] ?? 'both') : 'both',
                 'params' => collect($params)
                     ->reject(fn ($value) => $value === null || $value === '' || is_array($value))
                     ->map(fn ($value) => is_numeric($value) ? (float) $value : $value)

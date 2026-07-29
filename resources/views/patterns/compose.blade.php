@@ -112,6 +112,7 @@
                 this.startBase = this.baseKey();
                 this.styles = (this.data.recipe.styles || []).map(style => ({
                     key: style.key,
+                    side: style.side || 'both',
                     params: Object.assign({}, ((this.schemas.styles || {})[style.key] || {}).defaults || {}, style.params || {}),
                 }));
                 Object.keys(this.data.styleGroups).forEach((group, index) => {
@@ -173,7 +174,7 @@
             toggleStyle(key) {
                 const at = this.styles.findIndex(style => style.key === key);
                 if (at >= 0) { this.styles.splice(at, 1); }
-                else { this.styles.push({ key: key, params: {} }); }
+                else { this.styles.push({ key: key, side: 'both', params: {} }); }
                 this.$nextTick(() => this.schedule());
             },
 
