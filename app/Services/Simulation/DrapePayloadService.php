@@ -77,6 +77,7 @@ class DrapePayloadService
         }
 
         $this->arrange($instances);
+        [$instances, $byCode] = $this->dedupe($instances, $notes);
 
         $relations = [];
         $unmatched = [];
@@ -279,7 +280,7 @@ class DrapePayloadService
         $code = (string) $model->code;
         $id = $code.'#'.$index;
         $role = $this->role($model);
-        $side = $this->side($model, $mirrored, $quantity);
+        $side = $this->side($model, $mirrored, $quantity, $index);
 
         $instance = [
             'id' => $id,
@@ -373,7 +374,7 @@ class DrapePayloadService
     }
 
     /** سمت قطعه: جلو/پشت از خود الگو می‌آید و چپ/راست از جفت آینه‌ای. */
-    protected function side(PatternPiece $piece, bool $mirrored, int $quantity): ?string
+    protected function side(PatternPiece $piece, bool $mirrored, int $quantity, int $index = 0): ?string
     {
         $side = $piece->meta['side'] ?? null;
 
@@ -392,10 +393,11 @@ class DrapePayloadService
             return $mirrored ? 'right' : 'left';
         }
 
-        // مچ‌بند قرینه است، پس ژنراتور آینه‌اش نمی‌کند؛ ولی دو تا که بریده شد،
-        // یکی روی دست چپ می‌رود و یکی روی راست
-        if ($quantity > 1 && ($piece->meta['part'] ?? null) === 'cuff') {
-            return $mirrored ? 'right' : 'left';
+        // قطعه‌ی اندام قرینه است و ژنراتور آینه‌اش نمی‌کند، ولی دو تا که بریده
+        // شد یکی روی دست (یا پای) چپ می‌رود و یکی روی راست. ملاک شماره‌ی نمونه
+        // است نه آینه بودن؛ وگرنه هر دو مچ‌بند روی یک دست می‌نشینند.
+        if ($quantity > 1 && in_array($piece->meta['part'] ?? null, ['cuff', 'sleeve'], true)) {
+            return $index % 2 === 1 ? 'right' : 'left';
         }
 
         return null;
@@ -1030,6 +1032,58 @@ class DrapePayloadService
         }
 
         return $arcs;
+    }
+
+    /**
+     * دو نمونه‌ی دقیقاً هم‌جا، یک لایه‌اند نه دو قطعه.
+     *
+     * یقه و یوک و نوارها دو بار بریده می‌شوند چون دو لایه دارند: رو و زیر.
+     * هر دو لایه یک شکل و یک جا دارند، پس در بسته دو نمونه‌ی هم‌جا می‌شوند و
+     * روی مانکن دو پارچه‌ی هم‌اندازه روی هم می‌افتند و با هم می‌جنگند — همان
+     * توده‌ای که روی سرشانه‌ی پیراهن دیده می‌شد و لباس را نامتقارن نشان می‌داد
+     * (یوک دوم فقط به یقه‌ی دوم دوخته بود و آزاد می‌ماند).
+     *
+     * ملاک هندسه است نه نام: نمونه‌ای که بازه‌ی زاویه‌ای و ارتفاعش دقیقاً با
+     * نمونه‌ی پیش از خودش یکی است، لایه‌ی دوم همان است. لنگه‌ی چپ و راست بازه‌ی
+     * یکسان ندارند (یا سمتشان فرق دارد)، پس دست‌نخورده می‌مانند.
+     *
+     * @param  array<string, array<string, mixed>>  $instances
+     * @param  array<int, string>  $notes
+     * @return array{0: array<string, array<string, mixed>>, 1: array<string, array<int, string>>}
+     */
+    protected function dedupe(array $instances, array &$notes): array
+    {
+        $seen = [];
+        $kept = [];
+        $byCode = [];
+        $dropped = 0;
+
+        foreach ($instances as $id => $instance) {
+            $placement = $instance['placement'];
+            $key = implode('|', [
+                $instance['code'],
+                $instance['side'] ?? '—',
+                round($placement['u0'], 3),
+                round($placement['u1'], 3),
+                round($placement['y_top'], 4),
+            ]);
+
+            if (isset($seen[$key])) {
+                $dropped++;
+
+                continue;
+            }
+
+            $seen[$key] = true;
+            $kept[$id] = $instance;
+            $byCode[$instance['code']][] = $id;
+        }
+
+        if ($dropped > 0) {
+            $notes[] = $dropped.' قطعه‌ی هم‌جا (لایه‌ی دوم یقه، یوک یا نوار) در پیش‌نمایش یک بار نشان داده می‌شود.';
+        }
+
+        return [$kept, $byCode];
     }
 
     /**
