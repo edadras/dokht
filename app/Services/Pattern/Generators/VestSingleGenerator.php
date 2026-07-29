@@ -75,7 +75,8 @@ class VestSingleGenerator extends BodiceGarmentBase
             'back_name' => 'تنه پشت جلیقه',
             'facing_width' => 8,
             'buttons' => (int) $this->param($params, 'buttons', 4),
-            'sleeve' => [],
+            // جلیقه آستین ندارد؛ آرایه خالی یعنی «آستین پیش‌فرض»، نه «بی‌آستین»
+            'sleeve' => ['style' => 'none'],
             'panel' => [
                 'armhole_drop' => -(float) $this->param($params, 'armhole_lift', 2),
                 'shoulder_extra' => -(float) $this->param($params, 'armhole_narrow', 2),

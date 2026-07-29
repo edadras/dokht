@@ -156,6 +156,28 @@ class GarmentCatalogTest extends TestCase
         }
     }
 
+    /**
+     * لباس بی‌آستین نباید آستین بدهد.
+     *
+     * در گزینه‌های `outerGarment`، آرایه خالیِ `sleeve` یعنی «آستین با تنظیمات
+     * پیش‌فرض»، نه «بی‌آستین». جلیقه با همین یک اشتباه هم نوار اریب حلقه می‌گرفت
+     * هم یک جفت آستین — دو راه‌حل متضاد برای یک حلقه.
+     */
+    public function test_a_sleeveless_garment_ships_no_sleeve(): void
+    {
+        $body = Measurements::fromSize('40');
+
+        foreach (['vest_single', 'vest_double'] as $key) {
+            $generator = GeneratorRegistry::make($key);
+            $parts = array_map(
+                fn (array $piece) => (string) ($piece['meta']['part'] ?? ''),
+                $generator->generate($body, $this->ease(), $generator->defaultParams()),
+            );
+
+            $this->assertNotContains('sleeve', $parts, "«{$key}» جلیقه است و آستین ندارد.");
+        }
+    }
+
     public function test_lined_garments_produce_lining_pieces(): void
     {
         $body = Measurements::fromSize('40');
