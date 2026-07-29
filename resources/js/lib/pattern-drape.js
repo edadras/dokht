@@ -1213,6 +1213,164 @@ const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 
  */
 
 /*
+ * چیدن از روی گرافِ دوخت، نه با حدسِ مستقل هر قطعه.
+ *
+ * چیدن اولیه تا اینجا برای هر قطعه جدا حساب می‌شد: ارتفاع، شعاع و بازه‌ی
+ * زاویه‌ای از روی نقش و اندازه‌ی خودش. نتیجه‌اش این بود که دو سرِ یک درز
+ * ده‌ها سانتی‌متر از هم دور شروع می‌کردند و قید درز — که فقط در خط راست
+ * می‌کشد — پارچه را از روی بدن می‌کشید.
+ *
+ * کاری که خیاط می‌کند فرق دارد: یک قطعه را روی مانکن می‌گذارد، بعد قطعه‌ی
+ * بعدی را **کنارِ همان درزی که به آن دوخته می‌شود** می‌گذارد، و همین‌طور تا
+ * آخر. این تابع همان است: بزرگ‌ترین قطعه لنگر می‌شود و بقیه با یک پیمایشِ
+ * سطحی روی گرافِ درزها، هر کدام با یک تبدیلِ صُلبِ بهینه (چرخش دور محور بدن +
+ * جابه‌جایی) روی جای خودشان می‌نشینند.
+ *
+ * تبدیل بهینه از خودِ جفت‌رأس‌های درز درمی‌آید (پروکراستسِ محدود به چرخش
+ * حول محور y). صُلب است، پس نه پارچه را می‌کشد نه می‌پیچاند.
+ */
+const seedPlacement = (patches, seams) => {
+    if (patches.length < 2 || ! seams.length) {
+        return 0;
+    }
+
+    const at = new Map();
+
+    patches.forEach((entry, index) => at.set(entry.patch, index));
+
+    /* گراف: برای هر قطعه، فهرست (همسایه، درز، آیا این قطعه سمت a است) */
+    const links = patches.map(() => []);
+    const load = new Float64Array(patches.length);
+
+    for (const seam of seams) {
+        if (! seam.b || seam.b === seam.a) {
+            continue;
+        }
+
+        const ia = at.get(seam.a);
+        const ib = at.get(seam.b);
+
+        if (ia === undefined || ib === undefined) {
+            continue;
+        }
+
+        links[ia].push({ other: ib, seam, self: 'a' });
+        links[ib].push({ other: ia, seam, self: 'b' });
+        load[ia] += seam.count;
+        load[ib] += seam.count;
+    }
+
+    /* لنگر: قطعه‌ای که بیشترین سوزن روی آن است — تنه، نه نوار */
+    let anchor = 0;
+
+    for (let p = 1; p < patches.length; p++) {
+        if (load[p] > load[anchor]) {
+            anchor = p;
+        }
+    }
+
+    const placed = new Uint8Array(patches.length);
+    const queue = [anchor];
+
+    placed[anchor] = 1;
+
+    let moved = 0;
+
+    while (queue.length) {
+        const here = queue.shift();
+
+        for (const link of links[here]) {
+            if (placed[link.other]) {
+                continue;
+            }
+
+            // همه‌ی درزهایی که این قطعه را به قطعه‌های چیده‌شده وصل می‌کنند
+            const target = [];
+            const source = [];
+
+            for (const edge of links[link.other]) {
+                if (! placed[edge.other]) {
+                    continue;
+                }
+
+                const seam = edge.seam;
+                const mine = edge.self === 'a' ? seam.a : seam.b;
+                const theirs = edge.self === 'a' ? seam.b : seam.a;
+                const mineFirst = edge.self === 'a';
+
+                for (let i = 0; i < seam.count; i++) {
+                    const own = seam.pairs[i * 2 + (mineFirst ? 0 : 1)] * 3;
+                    const to = seam.pairs[i * 2 + (mineFirst ? 1 : 0)] * 3;
+
+                    source.push(mine.positions[own], mine.positions[own + 1], mine.positions[own + 2]);
+                    target.push(theirs.positions[to], theirs.positions[to + 1], theirs.positions[to + 2]);
+                }
+            }
+
+            if (source.length >= 3) {
+                moved += spinFit(patches[link.other].patch, source, target);
+            }
+
+            placed[link.other] = 1;
+            queue.push(link.other);
+        }
+    }
+
+    return moved;
+};
+
+/*
+ * چرخاندن قطعه دورِ مانکن و سُر دادنش بالا و پایین — و نه بیشتر.
+ *
+ * نخستین نسخه‌ی این تابع تبدیلِ صُلبِ کامل می‌داد: چرخش حولِ مرکزِ خودِ قطعه
+ * به‌اضافه‌ی جابه‌جایی در سه جهت. درزها با آن تا چهار سانتی‌متر بسته شدند ولی
+ * لباس از روی مانکن سُر خورد و کنارِ بدن آویزان ماند — قطعه‌ها به هم دوخته
+ * بودند، ولی مجموعه دیگر روی تن نبود.
+ *
+ * دلیلش روشن است: هر قطعه روی استوانه‌ی بدن پیچیده شده. چرخاندنش حولِ مرکزِ
+ * خودش، آن را از استوانه بیرون می‌برد. پس فقط دو درجه‌ی آزادی می‌دهیم که با
+ * «روی تن ماندن» سازگارند: چرخش حولِ محورِ خودِ مانکن، و بالا/پایین. یعنی
+ * قطعه دورِ بدن می‌چرخد و سُر می‌خورد تا نشانه‌هایش روبه‌روی نشانه‌های همسایه
+ * بیاید — دقیقاً کاری که خیاط با قطعه روی مانکن می‌کند.
+ */
+const spinFit = (patch, source, target) => {
+    const n = source.length / 3;
+    let dot = 0;
+    let cross = 0;
+    let rise = 0;
+
+    for (let i = 0; i < n; i++) {
+        const bx = source[i * 3];
+        const bz = source[i * 3 + 2];
+        const ax = target[i * 3];
+        const az = target[i * 3 + 2];
+
+        dot += ax * bx + az * bz;
+        cross += ax * bz - az * bx;
+        rise += target[i * 3 + 1] - source[i * 3 + 1];
+    }
+
+    const theta = Math.abs(dot) + Math.abs(cross) < 1e-9 ? 0 : Math.atan2(cross, dot);
+    const lift = rise / Math.max(1, n);
+    const cos = Math.cos(theta);
+    const sin = Math.sin(theta);
+    const positions = patch.positions;
+
+    for (let i = 0; i < positions.length; i += 3) {
+        const x = positions[i];
+        const z = positions[i + 2];
+
+        positions[i] = x * cos + z * sin;
+        positions[i + 1] += lift;
+        positions[i + 2] = -x * sin + z * cos;
+    }
+
+    patch.remember();
+
+    return Math.abs(theta) + Math.abs(lift);
+};
+
+/*
  * جابه‌جایی صُلبِ قطعه‌ها تا درزها روی هم بیفتند.
  *
  * هر دور، برای هر درز میانگین بردارِ اختلافِ جفت‌رأس‌ها حساب می‌شود و نیمی از آن
@@ -1779,6 +1937,7 @@ export const buildDrape = (payload, body, options = {}) => {
      * می‌پیچاند، فقط قطعه را می‌برد کنار همسایه‌اش. بعد از این، حل‌کننده فقط
      * باید پارچه را بنشاند، نه اینکه قطعه‌ها را از این سر بدن به آن سر بکشد.
      */
+    stats.seeded = seedPlacement(patches, seams);
     alignPatches(patches, seams, settings.alignRounds ?? 60);
 
     stats.presettle = Math.ceil(settings.seamDuration * 60) + 140;
