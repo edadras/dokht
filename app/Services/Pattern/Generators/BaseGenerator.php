@@ -126,6 +126,50 @@ abstract class BaseGenerator implements PatternGenerator
     }
 
     /**
+     * زیپ مرکز پشت روی یک قطعه پشت.
+     *
+     * زیپ پیراهن باید از گودی یقه پشت تا پایین‌تر از پهن‌ترین جای بدن باز شود،
+     * وگرنه لباس از سر رد نمی‌شود؛ پس ته زیپ روی خط باسن می‌نشیند. اگر بالاتنه
+     * در خط کمر تمام شود (پیراهن دوتکه)، زیپ روی دامن ادامه پیدا می‌کند: خط
+     * نشانه تا لبه خود قطعه کشیده می‌شود ولی طولی که برای خرید ثبت می‌شود همان
+     * طول واقعی زیپ است، چون زیپ را با طول می‌خرند نه با تعداد.
+     *
+     * @param  array<string, mixed>  $piece
+     * @param  array<string, float>  $g
+     * @param  float|null  $bottomY  لبه پایین قطعه؛ اگر ندهید از خود مسیر خوانده می‌شود
+     * @param  float  $below  ادامه زیپ زیر لبه این قطعه (روی دامن)
+     * @return array<string, mixed>
+     */
+    protected function markBackZip(
+        array $piece,
+        array $g,
+        ?float $bottomY = null,
+        float $below = 0.0,
+        string $label = 'زیپ مرکز پشت',
+    ): array {
+        $bottomY ??= Geometry::bounds($piece['outline'] ?? [])[3] ?? 0.0;
+        $top = (float) $g['back_neck_depth'];
+        $hipY = $g['back_waist_y'] + $g['hip_drop'];
+        $end = min($bottomY + $below - 2, max($g['back_waist_y'] + 10, $hipY));
+        $length = round($end - $top, 1);
+
+        if ($length < 10) {
+            return $piece;
+        }
+
+        $piece['markers'][] = $this->marker('zip', $label, 0, $top, 0, min($end, $bottomY));
+        $piece['meta']['zip_length'] = $length;
+        $piece['meta']['notions'][] = [
+            'type' => 'zip',
+            'label' => 'زیپ مخفی مرکز پشت',
+            'count' => 1,
+            'length' => $length,
+        ];
+
+        return $piece;
+    }
+
+    /**
      * ساخت یک قطعه با کلیدهای کامل و مرتب.
      *
      * @param  array<string, mixed>  $attributes

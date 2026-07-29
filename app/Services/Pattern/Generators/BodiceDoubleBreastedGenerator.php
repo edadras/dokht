@@ -92,6 +92,11 @@ class BodiceDoubleBreastedGenerator extends BodiceBaseGenerator
 
         $front['markers'][] = $this->marker('button_row', 'رج دکمه', $overlap * 2, $top, $overlap * 2, $top + ($step * max(0, $rows - 1)));
         $front['meta']['buttons'] = $rows * 2;
+        $front['meta']['notions'][] = [
+            'type' => 'button',
+            'label' => 'دکمه دوردیفه',
+            'count' => $rows * 2,
+        ];
 
         $back = $this->bodyPanel($g, [
             'side' => 'back',

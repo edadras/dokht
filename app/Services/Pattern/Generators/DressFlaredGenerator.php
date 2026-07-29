@@ -82,6 +82,12 @@ class DressFlaredGenerator extends BodiceGarmentBase
         ]);
 
         [$front, $back] = $this->walkSideSeams($front, $back);
+
+        if ($zip) {
+            // بالاتنه در خط کمر تمام می‌شود ولی زیپ تا خط باسنِ دامن ادامه دارد
+            $back = $this->markBackZip($back, $g, null, $g['hip_drop']);
+        }
+
         $pieces = [$front, $back];
 
         $pieces = array_merge($pieces, $this->sleeveSet(

@@ -100,15 +100,28 @@ class NotionCollectorTest extends TestCase
         ));
 
         $rows = $this->notionsOf($pieces);
-        $buttons = array_values(array_filter($rows, fn (array $row) => $row['type'] === 'button'));
+        $placketRow = array_values(array_filter(
+            $rows,
+            fn (array $row) => $row['type'] === 'button' && str_contains($row['label'], 'پیراهن'),
+        ));
 
-        $this->assertCount(1, $buttons);
-        $this->assertGreaterThan(2, $buttons[0]['count']);
+        $this->assertCount(1, $placketRow);
+        $this->assertGreaterThan(2, $placketRow[0]['count']);
         $this->assertSame(
             $drills,
-            $buttons[0]['count'],
+            $placketRow[0]['count'],
             'تعداد دکمه در فهرست خرید باید دقیقاً به اندازه نشانه‌های روی پاتلت باشد.',
         );
+
+        // مچ آستین هم دکمه دارد و چون دو بار بریده می‌شود، دو دکمه می‌خواهد
+        $cuffRow = array_values(array_filter(
+            $rows,
+            fn (array $row) => $row['type'] === 'button' && str_contains($row['label'], 'مچ'),
+        ));
+
+        if ($cuffRow !== []) {
+            $this->assertSame(2, $cuffRow[0]['count'], 'دکمه مچ برای دو آستین دو عدد است.');
+        }
     }
 
     public function test_a_zip_front_garment_reports_the_measured_zip_length(): void

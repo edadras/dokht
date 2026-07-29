@@ -78,6 +78,10 @@ class BodicePeplumGenerator extends BodiceBaseGenerator
             ]),
         ];
 
+        if ($zip) {
+            $pieces[1] = $this->markBackZip($pieces[1], $g, null, $g['hip_drop']);
+        }
+
         foreach (['front', 'back'] as $side) {
             $isFront = $side === 'front';
 

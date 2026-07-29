@@ -78,6 +78,10 @@ class DressShortGenerator extends BodiceGarmentBase
             ]);
         }
 
+        if ($zip) {
+            $pieces[1] = $this->markBackZip($pieces[1], $g);
+        }
+
         $pieces[] = $this->backNeckFacingPiece($g, ['prefix' => 'dress-short-', 'width' => 6]);
         $pieces[] = $this->armholeBindingPiece($this->armholeOf([$pieces[0], $pieces[1]]), ['prefix' => 'dress-short-']);
 

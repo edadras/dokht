@@ -28,8 +28,8 @@ class BillOfMaterialsBuilder
     protected const NOTION_KIND = [
         'button' => 'button',
         'zip' => 'zipper',
-        'hook' => 'other',
-        'snap' => 'other',
+        'hook' => 'hook',
+        'snap' => 'snap',
         'elastic' => 'elastic',
         'cord' => 'other',
         'eyelet' => 'other',
@@ -172,15 +172,21 @@ class BillOfMaterialsBuilder
             $kind = static::NOTION_KIND[$notion['type']] ?? 'other';
             $price = (float) ($this->materialPrice($kind) ?? 0);
 
+            // کش و بند را با متر می‌خرند، ولی زیپ را با عدد (در طول مشخص).
+            $byMeter = in_array($notion['type'], ['elastic', 'cord'], true) && $notion['length'] !== null;
+            $quantity = $byMeter
+                ? round(($notion['length'] * $notion['count']) / 100, 2)
+                : $notion['count'];
+
             $rows[] = [
                 'kind' => $kind,
                 'kind_label' => NotionCollector::LABELS[$notion['type']] ?? 'یراق',
                 'label' => $notion['label'],
                 'description' => $this->notionDescription($notion),
-                'quantity' => $notion['count'],
-                'unit' => 'عدد',
+                'quantity' => $quantity,
+                'unit' => $byMeter ? 'متر' : 'عدد',
                 'unit_price' => $price,
-                'total' => round($notion['count'] * $price),
+                'total' => round($quantity * $price),
                 'source' => 'pattern',
             ];
         }
@@ -205,7 +211,8 @@ class BillOfMaterialsBuilder
             ];
         }
 
-        if (! $has('zip') && array_intersect(['waistband', 'skirt_back', 'back_panel'], $parts) !== []) {
+        // کمر کشی خودش بستِ لباس است و زیپ نمی‌خواهد
+        if (! $has('zip') && ! $has('elastic') && array_intersect(['waistband', 'skirt_back', 'back_panel'], $parts) !== []) {
             $price = (float) ($this->materialPrice('zipper') ?? 0);
 
             $rows[] = [

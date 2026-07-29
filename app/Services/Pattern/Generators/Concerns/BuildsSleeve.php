@@ -195,11 +195,26 @@ trait BuildsSleeve
             'markers' => [
                 $this->marker('fold', 'خط تای مچ‌بند', 0, $height, $width),
             ],
+            'drills' => [[
+                'key' => 'button_1',
+                'label' => 'دکمه مچ',
+                'x' => round($width - 2.0, 2),
+                'y' => round($height / 2, 2),
+            ]],
             'meta' => [
                 'part' => 'cuff',
                 'edges' => ['default', 'side', 'hem', 'side'],
                 'fold_edges' => [],
                 'interfacing' => true,
+                // مچ‌بند دور مچ بسته می‌شود و پنج سانتی‌متر رویهم‌آمدن دارد؛ آن
+                // رویهم‌آمدن با یک دکمه بسته می‌شود و چون قطعه دو بار بریده
+                // می‌شود (یک مچ برای هر آستین)، دکمه هم دو تا می‌شود.
+                'notions' => [[
+                    'type' => 'button',
+                    'label' => 'دکمه مچ آستین',
+                    'count' => 1,
+                    'per_cut' => true,
+                ]],
             ],
         ]);
     }

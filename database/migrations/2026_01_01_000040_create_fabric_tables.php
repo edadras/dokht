@@ -38,7 +38,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('workshop_id')->constrained()->cascadeOnDelete();
             $table->string('name');
-            $table->string('kind', 32)->default('other'); // thread|button|zipper|interfacing|lining|elastic|other
+            $table->string('kind', 32)->default('other'); // thread|button|zipper|hook|snap|interfacing|lining|elastic|other
             $table->string('spec')->nullable();
             $table->string('unit', 16)->default('عدد');
             $table->decimal('price', 12, 2)->nullable();

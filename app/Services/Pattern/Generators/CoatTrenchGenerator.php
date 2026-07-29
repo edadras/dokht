@@ -100,6 +100,11 @@ class CoatTrenchGenerator extends BodiceGarmentBase
 
         $pieces[0]['meta']['double_breasted'] = true;
         $pieces[0]['meta']['buttons'] = $rows * 2;
+        $pieces[0]['meta']['notions'][] = [
+            'type' => 'button',
+            'label' => 'دکمه دوردیفه',
+            'count' => $rows * 2,
+        ];
 
         if ($this->flag($params, 'storm_flap', true)) {
             $pieces[] = $this->bandPiece('trench-storm-flap', 'لتِ سینه', $g['quarter_bust'] + $overlap, $g['bust_y'] + 6, [

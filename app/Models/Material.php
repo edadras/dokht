@@ -17,6 +17,8 @@ class Material extends Model
         'thread' => 'نخ',
         'button' => 'دکمه',
         'zipper' => 'زیپ',
+        'hook' => 'قزن',
+        'snap' => 'دکمه فشاری',
         'interfacing' => 'لایی',
         'lining' => 'آستر',
         'elastic' => 'کشی',

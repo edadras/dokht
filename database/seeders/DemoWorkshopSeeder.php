@@ -217,6 +217,8 @@ class DemoWorkshopSeeder extends Seeder
             ['name' => 'دکمه صدفی', 'kind' => 'button', 'spec' => 'قطر ۱۲ میلی‌متر', 'unit' => 'عدد', 'price' => 8000, 'stock' => 220],
             ['name' => 'زیپ مخفی', 'kind' => 'zipper', 'spec' => '۵۰ سانتی‌متر', 'unit' => 'عدد', 'price' => 65000, 'stock' => 25],
             ['name' => 'زیپ فلزی', 'kind' => 'zipper', 'spec' => '۱۸ سانتی‌متر', 'unit' => 'عدد', 'price' => 48000, 'stock' => 30],
+            ['name' => 'قزن‌قفلی فلزی', 'kind' => 'hook', 'spec' => 'شماره ۲', 'unit' => 'عدد', 'price' => 6000, 'stock' => 150],
+            ['name' => 'دکمه فشاری فلزی', 'kind' => 'snap', 'spec' => 'قطر ۱۵ میلی‌متر', 'unit' => 'عدد', 'price' => 9000, 'stock' => 120],
             ['name' => 'لایی چسب نرم', 'kind' => 'interfacing', 'spec' => 'عرض ۹۰', 'unit' => 'متر', 'price' => 95000, 'stock' => 20],
             ['name' => 'کشی کمر', 'kind' => 'elastic', 'spec' => 'عرض ۴ سانتی‌متر', 'unit' => 'متر', 'price' => 38000, 'stock' => 18],
         ];

@@ -91,6 +91,10 @@ class DressGenerator extends BaseGenerator
             'meta' => ['back_zip' => $zip],
         ]);
 
+        if ($zip) {
+            $back = $this->markBackZip($back, $g, $bottom);
+        }
+
         $pieces = [$front, $back];
 
         if ($this->flag($params, 'sleeve', true)) {

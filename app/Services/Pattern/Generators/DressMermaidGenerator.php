@@ -76,6 +76,14 @@ class DressMermaidGenerator extends BodiceGarmentBase
             ]),
         );
 
+        if ($zip) {
+            foreach ($pieces as $index => $piece) {
+                if (($piece['meta']['panel'] ?? null) === 'center' && ($piece['meta']['side'] ?? null) === 'back') {
+                    $pieces[$index] = $this->markBackZip($piece, $g, null, $g['hip_drop']);
+                }
+            }
+        }
+
         foreach (['front', 'back'] as $side) {
             $isFront = $side === 'front';
 

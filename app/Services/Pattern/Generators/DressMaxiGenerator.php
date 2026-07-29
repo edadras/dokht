@@ -72,6 +72,10 @@ class DressMaxiGenerator extends BodiceGarmentBase
         $pieces[0] = $this->markSideVent($pieces[0], $vent);
         $pieces[1] = $this->markSideVent($pieces[1], $vent);
 
+        if ($zip) {
+            $pieces[1] = $this->markBackZip($pieces[1], $g);
+        }
+
         $pieces[] = $this->backNeckFacingPiece($g, ['prefix' => 'dress-maxi-', 'width' => 6]);
         $pieces[] = $this->armholeBindingPiece($this->armholeOf([$pieces[0], $pieces[1]]), ['prefix' => 'dress-maxi-']);
 

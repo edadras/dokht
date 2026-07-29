@@ -83,6 +83,11 @@ class CardiganGenerator extends BodiceGarmentBase
                 'stretch_ratio' => $ratio,
                 'target_length' => round($path, 2),
                 'buttons' => (int) $this->param($params, 'buttons', 5),
+                'notions' => [[
+                    'type' => 'button',
+                    'label' => 'دکمه نوار جلو',
+                    'count' => (int) $this->param($params, 'buttons', 5),
+                ]],
                 'notes' => [
                     'نوار '.$this->fa(round((1 - $ratio) * 100)).' درصد کوتاه‌تر از مسیر لبه جلو و یقه بریده می‌شود و کشیده دوخته می‌گردد.',
                 ],
