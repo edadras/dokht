@@ -205,27 +205,26 @@ const world = [0, 0, 0];
 const section = [0, 0];
 
 /* ---------------------------------------------------------------------------
- * یک تکه پارچه
+ * پایه‌ی مشترک تکه‌های پارچه
  * ---------------------------------------------------------------------------
- * هر قطعه‌ی لباس (بالاتنه، دامن، هر آستین) یک ClothPatch است. موقعیت‌ها همان
- * آرایه‌ی position هندسه‌ی three هستند؛ پس نوشتن نتیجه هزینه‌ی کپی ندارد.
+ * دو جور تکه داریم: شبکه‌ی منظمِ حلقه‌ای (ClothPatch، همان نمای پارامتری) و مشِ
+ * مثلثیِ یک قطعه‌ی واقعی الگو (TriPatch). توپولوژی‌شان هیچ شباهتی به هم ندارد،
+ * ولی چرخه‌ی حل، برخورد با بدن، معیار خواب و یخ‌زدن برای هر دو مو به مو یکی است.
+ * پس همه‌ی آن رفتار اینجا یک بار نوشته شده و هر تکه فقط «قیدهای خودش» را
+ * می‌سازد. هر چه اینجاست دقیقاً همان کدِ پیشین ClothPatch است، فقط یک پله
+ * بالاتر رفته تا مشِ مثلثی هم بی‌کم‌وکاست همان رفتار را داشته باشد.
  */
-export class ClothPatch {
+class PatchBase {
     /**
      * @param {object} options
      * @param {Float32Array} options.positions آرایه‌ی ۳n مختصات جهانی
-     * @param {number} options.rows تعداد حلقه‌ها (از پایین به بالا)
-     * @param {number} options.segments تعداد نقطه در هر حلقه (حلقه بسته است)
-     * @param {Uint8Array} options.pinned ۱ یعنی این رأس به بدن دوخته است
+     * @param {number} options.count تعداد رأس‌ها
+     * @param {Uint8Array} [options.pinned] ۱ یعنی این رأس به بدن دوخته است
      * @param {Float32Array} [options.follow] چسبندگی هر رأس به اندام زیرش (۰ تا ۱)
      * @param {object} options.fabric خروجی fabricLaw()
      */
-    constructor({ positions, rows, segments, pinned, follow = null, fabric }) {
-        const count = rows * segments;
-
+    constructor({ positions, count, pinned = null, follow = null, fabric }) {
         this.positions = positions;
-        this.rows = rows;
-        this.segments = segments;
         this.count = count;
         this.previous = new Float32Array(positions);
         this.velocity = new Float32Array(count * 3);
@@ -262,183 +261,20 @@ export class ClothPatch {
         this.followRest = follow ? new Float32Array(count * 3) : null;
         this.matrix = new Float32Array(16);
 
-        this.groups = this.buildConstraints();
-        this.buildTethers();
-        this.constraintCount =
-            this.groups.reduce((sum, group) => sum + group.rest.length, 0) + this.tetherMax.length;
+        /*
+         * قیدها را سازنده‌ی هر نوع تکه پر می‌کند. تا آن موقع تکه یک ابر ذره‌ی
+         * آزاد است؛ همین باعث می‌شود ساخت تکه هیچ‌وقت با آرایه‌ی تعریف‌نشده
+         * روبه‌رو نشود، حتی اگر ساختِ قید نیمه‌کاره بماند.
+         */
+        this.groups = [];
+        this.tetherIndex = new Uint32Array(0);
+        this.tetherAnchor = new Uint32Array(0);
+        this.tetherMax = new Float32Array(0);
+        this.constraintCount = 0;
 
         // عکس مرجع برای تشخیص نشستن پارچه
         this.snapshot = new Float32Array(positions);
         this.motion = 0;
-    }
-
-    /*
-     * ساخت قیدها از توپولوژی حلقه‌ای.
-     *
-     *   تار (warp)  : عمودی، بین دو حلقه‌ی پشت سر هم — امتداد قد لباس
-     *   پود (weft)  : افقی، دور تا دور حلقه — امتداد دور لباس
-     *   برش (shear) : قطرهای هر خانه — مقاومت پارچه در برابر لوزی شدن
-     *   خمش (bend)  : یکی در میان، هم عمودی هم افقی — مقاومت در برابر تا خوردن
-     *
-     * کشسانی هر خانواده جدا از دیگری است؛ برای همین ژرسه که در پود کش می‌آید
-     * با جین که در هیچ جهتی کش نمی‌آید یکسان رفتار نمی‌کند.
-     */
-    buildConstraints() {
-        const { rows, segments, positions, fabric } = this;
-        const groups = [];
-
-        const make = (pairs, law) => {
-            const size = pairs.length / 2;
-            const a = new Uint32Array(size);
-            const b = new Uint32Array(size);
-            const rest = new Float32Array(size);
-
-            for (let i = 0; i < size; i++) {
-                const ia = pairs[i * 2];
-                const ib = pairs[i * 2 + 1];
-
-                a[i] = ia;
-                b[i] = ib;
-
-                const dx = positions[ia * 3] - positions[ib * 3];
-                const dy = positions[ia * 3 + 1] - positions[ib * 3 + 1];
-                const dz = positions[ia * 3 + 2] - positions[ib * 3 + 2];
-
-                rest[i] = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-5;
-            }
-
-            groups.push({ a, b, rest, ...law });
-        };
-
-        const at = (row, col) => row * segments + (col % segments);
-
-        const warp = [];
-        const weft = [];
-        const shear = [];
-        const bendWarp = [];
-        const bendWeft = [];
-
-        for (let row = 0; row < rows; row++) {
-            for (let col = 0; col < segments; col++) {
-                const here = at(row, col);
-
-                weft.push(here, at(row, col + 1));
-
-                if (segments > 4) {
-                    bendWeft.push(here, at(row, col + 2));
-                }
-
-                if (row + 1 < rows) {
-                    shear.push(here, at(row + 1, col + 1));
-                    shear.push(at(row, col + 1), at(row + 1, col));
-                }
-
-                if (row + 2 < rows) {
-                    bendWarp.push(here, at(row + 2, col));
-                }
-            }
-        }
-
-        /*
-         * قیدهای عمودی از بالا به پایین ساخته می‌شوند، نه برعکس.
-         *
-         * حل گاوس-زایدل هر قید را به ترتیب اصلاح می‌کند؛ اگر از لبه‌ی پایین شروع
-         * کنیم، کشش درزها باید چند تکرار بالا برود تا به سرشانه برسد و لباس تا
-         * آن موقع کِش آمده است. با شروع از سرشانه، همان یک تکرار اول کشش را تا
-         * لبه می‌رساند و پارچه دیگر زیر وزن خودش «تلمبه» نمی‌زند.
-         */
-        for (let row = rows - 2; row >= 0; row--) {
-            for (let col = 0; col < segments; col++) {
-                warp.push(at(row + 1, col), at(row, col));
-            }
-        }
-
-        make(warp, fabric.warp);
-        make(weft, fabric.weft);
-        make(shear, fabric.shear);
-        make(bendWarp, fabric.bend);
-        make(bendWeft, fabric.bend);
-
-        return groups;
-    }
-
-    /*
-     * «مهار بلند»: از هر رأس یک قید مستقیم به نزدیک‌ترین رأس دوخته‌شده‌ی همان
-     * ستون، با بیشترین طول ممکنِ همان مسیر.
-     *
-     * چرا لازم است؟ چون زنجیره‌ی درزها با دو سه تکرار هیچ‌وقت کامل حل نمی‌شود و
-     * دامنِ بلند زیر وزن خودش کِش می‌آید و بالا و پایین می‌رود. این قید فقط یک
-     * سقف است — اگر رأس از سرشانه دورتر از طول پارچه شد، همان‌جا برمی‌گردد — و
-     * چون سرِ دیگرش بی‌حرکت است، با یک تکرار حل می‌شود.
-     *
-     * طول مسیر از جمع طول درزهای همان ستون گرفته می‌شود؛ این عدد از فاصله‌ی
-     * واقعی روی پارچه بیشتر است، پس قید هیچ‌وقت لباس را بی‌جا تنگ نمی‌کند.
-     */
-    buildTethers() {
-        const { rows, segments, positions, invMass, fabric } = this;
-        const stretch = fabric.warp.maxScale;
-        const index = [];
-        const anchor = [];
-        const max = [];
-
-        const length = (a, b) => {
-            const dx = positions[a * 3] - positions[b * 3];
-            const dy = positions[a * 3 + 1] - positions[b * 3 + 1];
-            const dz = positions[a * 3 + 2] - positions[b * 3 + 2];
-
-            return Math.sqrt(dx * dx + dy * dy + dz * dz);
-        };
-
-        const distance = new Float32Array(rows);
-        const owner = new Int32Array(rows);
-
-        for (let col = 0; col < segments; col++) {
-            distance.fill(Infinity);
-            owner.fill(-1);
-
-            for (let row = 0; row < rows; row++) {
-                const here = row * segments + col;
-
-                if (invMass[here] === 0) {
-                    distance[row] = 0;
-                    owner[row] = here;
-                } else if (row > 0 && owner[row - 1] >= 0) {
-                    distance[row] = distance[row - 1] + length(here, here - segments);
-                    owner[row] = owner[row - 1];
-                }
-            }
-
-            for (let row = rows - 2; row >= 0; row--) {
-                const here = row * segments + col;
-
-                if (owner[row + 1] < 0) {
-                    continue;
-                }
-
-                const candidate = distance[row + 1] + length(here, here + segments);
-
-                if (candidate < distance[row]) {
-                    distance[row] = candidate;
-                    owner[row] = owner[row + 1];
-                }
-            }
-
-            for (let row = 0; row < rows; row++) {
-                const here = row * segments + col;
-
-                if (owner[row] < 0 || owner[row] === here || invMass[here] === 0) {
-                    continue;
-                }
-
-                index.push(here);
-                anchor.push(owner[row]);
-                max.push(distance[row] * stretch);
-            }
-        }
-
-        this.tetherIndex = new Uint32Array(index);
-        this.tetherAnchor = new Uint32Array(anchor);
-        this.tetherMax = new Float32Array(max);
     }
 
     /*
@@ -947,6 +783,773 @@ export class ClothPatch {
 }
 
 /* ---------------------------------------------------------------------------
+ * یک تکه پارچه‌ی شبکه‌ای
+ * ---------------------------------------------------------------------------
+ * هر قطعه‌ی لباسِ نمای پارامتری (بالاتنه، دامن، هر آستین) یک ClothPatch است.
+ * موقعیت‌ها همان آرایه‌ی position هندسه‌ی three هستند؛ پس نوشتن نتیجه هزینه‌ی
+ * کپی ندارد.
+ */
+export class ClothPatch extends PatchBase {
+    /**
+     * @param {object} options
+     * @param {Float32Array} options.positions آرایه‌ی ۳n مختصات جهانی
+     * @param {number} options.rows تعداد حلقه‌ها (از پایین به بالا)
+     * @param {number} options.segments تعداد نقطه در هر حلقه (حلقه بسته است)
+     * @param {Uint8Array} options.pinned ۱ یعنی این رأس به بدن دوخته است
+     * @param {Float32Array} [options.follow] چسبندگی هر رأس به اندام زیرش (۰ تا ۱)
+     * @param {object} options.fabric خروجی fabricLaw()
+     */
+    constructor({ positions, rows, segments, pinned, follow = null, fabric }) {
+        super({ positions, count: rows * segments, pinned, follow, fabric });
+
+        this.rows = rows;
+        this.segments = segments;
+
+        this.groups = this.buildConstraints();
+        this.buildTethers();
+        this.constraintCount =
+            this.groups.reduce((sum, group) => sum + group.rest.length, 0) + this.tetherMax.length;
+    }
+
+    /*
+     * ساخت قیدها از توپولوژی حلقه‌ای.
+     *
+     *   تار (warp)  : عمودی، بین دو حلقه‌ی پشت سر هم — امتداد قد لباس
+     *   پود (weft)  : افقی، دور تا دور حلقه — امتداد دور لباس
+     *   برش (shear) : قطرهای هر خانه — مقاومت پارچه در برابر لوزی شدن
+     *   خمش (bend)  : یکی در میان، هم عمودی هم افقی — مقاومت در برابر تا خوردن
+     *
+     * کشسانی هر خانواده جدا از دیگری است؛ برای همین ژرسه که در پود کش می‌آید
+     * با جین که در هیچ جهتی کش نمی‌آید یکسان رفتار نمی‌کند.
+     */
+    buildConstraints() {
+        const { rows, segments, positions, fabric } = this;
+        const groups = [];
+
+        const make = (pairs, law) => {
+            const size = pairs.length / 2;
+            const a = new Uint32Array(size);
+            const b = new Uint32Array(size);
+            const rest = new Float32Array(size);
+
+            for (let i = 0; i < size; i++) {
+                const ia = pairs[i * 2];
+                const ib = pairs[i * 2 + 1];
+
+                a[i] = ia;
+                b[i] = ib;
+
+                const dx = positions[ia * 3] - positions[ib * 3];
+                const dy = positions[ia * 3 + 1] - positions[ib * 3 + 1];
+                const dz = positions[ia * 3 + 2] - positions[ib * 3 + 2];
+
+                rest[i] = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-5;
+            }
+
+            groups.push({ a, b, rest, ...law });
+        };
+
+        const at = (row, col) => row * segments + (col % segments);
+
+        const warp = [];
+        const weft = [];
+        const shear = [];
+        const bendWarp = [];
+        const bendWeft = [];
+
+        for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < segments; col++) {
+                const here = at(row, col);
+
+                weft.push(here, at(row, col + 1));
+
+                if (segments > 4) {
+                    bendWeft.push(here, at(row, col + 2));
+                }
+
+                if (row + 1 < rows) {
+                    shear.push(here, at(row + 1, col + 1));
+                    shear.push(at(row, col + 1), at(row + 1, col));
+                }
+
+                if (row + 2 < rows) {
+                    bendWarp.push(here, at(row + 2, col));
+                }
+            }
+        }
+
+        /*
+         * قیدهای عمودی از بالا به پایین ساخته می‌شوند، نه برعکس.
+         *
+         * حل گاوس-زایدل هر قید را به ترتیب اصلاح می‌کند؛ اگر از لبه‌ی پایین شروع
+         * کنیم، کشش درزها باید چند تکرار بالا برود تا به سرشانه برسد و لباس تا
+         * آن موقع کِش آمده است. با شروع از سرشانه، همان یک تکرار اول کشش را تا
+         * لبه می‌رساند و پارچه دیگر زیر وزن خودش «تلمبه» نمی‌زند.
+         */
+        for (let row = rows - 2; row >= 0; row--) {
+            for (let col = 0; col < segments; col++) {
+                warp.push(at(row + 1, col), at(row, col));
+            }
+        }
+
+        make(warp, fabric.warp);
+        make(weft, fabric.weft);
+        make(shear, fabric.shear);
+        make(bendWarp, fabric.bend);
+        make(bendWeft, fabric.bend);
+
+        return groups;
+    }
+
+    /*
+     * «مهار بلند»: از هر رأس یک قید مستقیم به نزدیک‌ترین رأس دوخته‌شده‌ی همان
+     * ستون، با بیشترین طول ممکنِ همان مسیر.
+     *
+     * چرا لازم است؟ چون زنجیره‌ی درزها با دو سه تکرار هیچ‌وقت کامل حل نمی‌شود و
+     * دامنِ بلند زیر وزن خودش کِش می‌آید و بالا و پایین می‌رود. این قید فقط یک
+     * سقف است — اگر رأس از سرشانه دورتر از طول پارچه شد، همان‌جا برمی‌گردد — و
+     * چون سرِ دیگرش بی‌حرکت است، با یک تکرار حل می‌شود.
+     *
+     * طول مسیر از جمع طول درزهای همان ستون گرفته می‌شود؛ این عدد از فاصله‌ی
+     * واقعی روی پارچه بیشتر است، پس قید هیچ‌وقت لباس را بی‌جا تنگ نمی‌کند.
+     */
+    buildTethers() {
+        const { rows, segments, positions, invMass, fabric } = this;
+        const stretch = fabric.warp.maxScale;
+        const index = [];
+        const anchor = [];
+        const max = [];
+
+        const length = (a, b) => {
+            const dx = positions[a * 3] - positions[b * 3];
+            const dy = positions[a * 3 + 1] - positions[b * 3 + 1];
+            const dz = positions[a * 3 + 2] - positions[b * 3 + 2];
+
+            return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        };
+
+        const distance = new Float32Array(rows);
+        const owner = new Int32Array(rows);
+
+        for (let col = 0; col < segments; col++) {
+            distance.fill(Infinity);
+            owner.fill(-1);
+
+            for (let row = 0; row < rows; row++) {
+                const here = row * segments + col;
+
+                if (invMass[here] === 0) {
+                    distance[row] = 0;
+                    owner[row] = here;
+                } else if (row > 0 && owner[row - 1] >= 0) {
+                    distance[row] = distance[row - 1] + length(here, here - segments);
+                    owner[row] = owner[row - 1];
+                }
+            }
+
+            for (let row = rows - 2; row >= 0; row--) {
+                const here = row * segments + col;
+
+                if (owner[row + 1] < 0) {
+                    continue;
+                }
+
+                const candidate = distance[row + 1] + length(here, here + segments);
+
+                if (candidate < distance[row]) {
+                    distance[row] = candidate;
+                    owner[row] = owner[row + 1];
+                }
+            }
+
+            for (let row = 0; row < rows; row++) {
+                const here = row * segments + col;
+
+                if (owner[row] < 0 || owner[row] === here || invMass[here] === 0) {
+                    continue;
+                }
+
+                index.push(here);
+                anchor.push(owner[row]);
+                max.push(distance[row] * stretch);
+            }
+        }
+
+        this.tetherIndex = new Uint32Array(index);
+        this.tetherAnchor = new Uint32Array(anchor);
+        this.tetherMax = new Float32Array(max);
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * یک قطعه‌ی واقعیِ الگو
+ * ---------------------------------------------------------------------------
+ * ClothPatch یک شبکه‌ی منظم است و همین برای پوسته‌ی پارامتری بس بود. ولی قطعه‌ی
+ * الگو نه مستطیل است نه استوانه: حلقه‌ی آستین گود است، یقه بریده است و کنارش
+ * ساسون خالی شده. چنین چیزی فقط با یک مشِ مثلثیِ دلخواه بیان می‌شود.
+ *
+ * سه تفاوت با تکه‌ی شبکه‌ای، هر سه از همین‌جا می‌آیند:
+ *
+ *   • طول استراحتِ قیدها از خودِ الگوی تخت گرفته می‌شود، نه از جایی که قطعه
+ *     برای شروع دور بدن چیده شده. پارچه در واقعیت تخت بافته شده و فرم سه‌بعدی
+ *     را درز و ساسون به آن می‌دهند؛ اگر طول استراحت را از چیدنِ اولیه بگیریم،
+ *     همان استوانه‌ی چیدن می‌شود «فرم درست» و دوختن هیچ چیزی را عوض نمی‌کند.
+ *   • وزن هر رأس از مساحت مثلث‌های پیرامونش می‌آید. مش مثلثی یکنواخت نیست و
+ *     رأس‌های لبه سهم کمتری از پارچه دارند؛ اگر همه هم‌وزن باشند، لبه‌ی قطعه
+ *     مثل زنجیر سنگین آویزان می‌شود و درز را با خودش پایین می‌کشد.
+ *   • جهت هر یال روی الگو تعیین می‌کند از کدام قانون پارچه پیروی کند: یال
+ *     نزدیک به راستای طولِ الگو تار است، نزدیک به عرض پود، و بینشان اریب.
+ *     همین است که یک قطعه‌ی اریب‌بُر جور دیگری می‌افتد.
+ */
+
+/* یک خانواده‌ی قید فاصله؛ طول استراحت از منبعی که به آن داده می‌شود */
+const distanceGroup = (pairs, law, restOf) => {
+    const size = pairs.length / 2;
+    const a = new Uint32Array(size);
+    const b = new Uint32Array(size);
+    const rest = new Float32Array(size);
+
+    for (let i = 0; i < size; i++) {
+        a[i] = pairs[i * 2];
+        b[i] = pairs[i * 2 + 1];
+        rest[i] = restOf(a[i], b[i]) || 1e-5;
+    }
+
+    return { a, b, rest, ...law };
+};
+
+/* هرمِ دودویی کوچک؛ فقط برای مسیر کوتاه روی مش، در زمان ساخت */
+const heapPush = (heap, node, cost) => {
+    let i = heap.length / 2;
+
+    heap.push(node, cost);
+
+    while (i > 0) {
+        const parent = (i - 1) >> 1;
+
+        if (heap[parent * 2 + 1] <= cost) {
+            break;
+        }
+
+        heap[i * 2] = heap[parent * 2];
+        heap[i * 2 + 1] = heap[parent * 2 + 1];
+        heap[parent * 2] = node;
+        heap[parent * 2 + 1] = cost;
+        i = parent;
+    }
+};
+
+const heapPop = (heap) => {
+    const size = heap.length / 2;
+    const node = heap[0];
+    const lastNode = heap[(size - 1) * 2];
+    const lastCost = heap[(size - 1) * 2 + 1];
+
+    heap.length -= 2;
+
+    if (size === 1) {
+        return node;
+    }
+
+    heap[0] = lastNode;
+    heap[1] = lastCost;
+
+    let i = 0;
+
+    for (;;) {
+        const left = i * 2 + 1;
+        const right = left + 1;
+        let best = i;
+
+        if (left < size - 1 && heap[left * 2 + 1] < heap[best * 2 + 1]) {
+            best = left;
+        }
+
+        if (right < size - 1 && heap[right * 2 + 1] < heap[best * 2 + 1]) {
+            best = right;
+        }
+
+        if (best === i) {
+            break;
+        }
+
+        const bn = heap[best * 2];
+        const bc = heap[best * 2 + 1];
+
+        heap[best * 2] = heap[i * 2];
+        heap[best * 2 + 1] = heap[i * 2 + 1];
+        heap[i * 2] = bn;
+        heap[i * 2 + 1] = bc;
+        i = best;
+    }
+
+    return node;
+};
+
+/* بیشترین و کمترین وزن مجاز هر رأس نسبت به میانگین؛ یک مثلث تیغه‌ای نباید
+ * رأسش را چنان سبک کند که با یک اصلاح از صحنه بپرد */
+const MASS_SPREAD = 6;
+
+export class TriPatch extends PatchBase {
+    /**
+     * @param {object} options
+     * @param {Float32Array} options.positions ۳n مختصات جهانی (متر)
+     * @param {ArrayLike<number>} options.indices سه‌تایی‌های مثلث (پادساعتگرد)
+     * @param {ArrayLike<number>} [options.grain] ۲n مختصات همان رأس روی الگوی تخت،
+     *        بر حسب **متر**. اگر داده شود طول استراحت از اینجا خوانده می‌شود.
+     * @param {Uint8Array} [options.pinned]
+     * @param {Float32Array} [options.follow]
+     * @param {object} options.fabric خروجی fabricLaw()
+     */
+    constructor({ positions, indices, grain = null, pinned = null, follow = null, fabric }) {
+        super({ positions, count: positions.length / 3, pinned, follow, fabric });
+
+        this.indices = indices instanceof Uint32Array ? indices : Uint32Array.from(indices);
+        this.grain = grain;
+        this.triangles = this.indices.length / 3;
+
+        this.weigh();
+        this.groups = this.buildConstraints();
+        this.buildTethers();
+        this.constraintCount =
+            this.groups.reduce((sum, group) => sum + group.rest.length, 0) + this.tetherMax.length;
+    }
+
+    /*
+     * وزن رأس‌ها از مساحت.
+     *
+     * سهم هر مثلث میان سه رأسش پخش می‌شود؛ همان چیزی که در مکانیک به آن جرمِ
+     * توده‌ای می‌گویند. بعد همه بر میانگین تقسیم می‌شوند تا اعداد در همان مقیاسِ
+     * ClothPatch بمانند و ضریب‌های تنظیم‌شده‌ی حل‌کننده دست‌نخورده کار کنند.
+     */
+    weigh() {
+        const { positions, indices, invMass, count, grain } = this;
+        const mass = new Float64Array(count);
+
+        for (let t = 0; t < indices.length; t += 3) {
+            const ia = indices[t];
+            const ib = indices[t + 1];
+            const ic = indices[t + 2];
+            let area;
+
+            if (grain) {
+                const ax = grain[ib * 2] - grain[ia * 2];
+                const ay = grain[ib * 2 + 1] - grain[ia * 2 + 1];
+                const bx = grain[ic * 2] - grain[ia * 2];
+                const by = grain[ic * 2 + 1] - grain[ia * 2 + 1];
+
+                area = Math.abs(ax * by - ay * bx) / 2;
+            } else {
+                const ax = positions[ib * 3] - positions[ia * 3];
+                const ay = positions[ib * 3 + 1] - positions[ia * 3 + 1];
+                const az = positions[ib * 3 + 2] - positions[ia * 3 + 2];
+                const bx = positions[ic * 3] - positions[ia * 3];
+                const by = positions[ic * 3 + 1] - positions[ia * 3 + 1];
+                const bz = positions[ic * 3 + 2] - positions[ia * 3 + 2];
+                const cx = ay * bz - az * by;
+                const cy = az * bx - ax * bz;
+                const cz = ax * by - ay * bx;
+
+                area = Math.sqrt(cx * cx + cy * cy + cz * cz) / 2;
+            }
+
+            mass[ia] += area / 3;
+            mass[ib] += area / 3;
+            mass[ic] += area / 3;
+        }
+
+        let sum = 0;
+        let live = 0;
+
+        for (let i = 0; i < count; i++) {
+            if (invMass[i] !== 0 && mass[i] > 0) {
+                sum += mass[i];
+                live++;
+            }
+        }
+
+        this.area = mass.reduce((total, value) => total + value, 0);
+
+        if (! live) {
+            return;
+        }
+
+        const mean = sum / live;
+
+        for (let i = 0; i < count; i++) {
+            if (invMass[i] === 0) {
+                continue;
+            }
+
+            invMass[i] = clamp(mean / Math.max(mass[i], 1e-12), 1 / MASS_SPREAD, MASS_SPREAD);
+        }
+    }
+
+    /*
+     * ساخت قیدها از مثلث‌ها.
+     *
+     *   هر یال            → یک قید فاصله (تار/پود/اریب بر اساس جهتش روی الگو)
+     *   هر جفت مثلثِ همسایه → یک قید فاصله میان دو رأس روبه‌رو، با قانون خمش
+     *
+     * قید خمشِ «فاصله‌ی دو رأس روبه‌رو» ساده‌ترین شکل ممکن است و همان کاری را
+     * می‌کند که در ClothPatch قیدِ یکی‌درمیان می‌کرد: هرچه آن فاصله به حالت تختِ
+     * الگو نزدیک‌تر بماند، پارچه کمتر تا می‌خورد. چون طول استراحتش از الگوی تخت
+     * می‌آید، پارچه‌ی سفت خودش را صاف نگه می‌دارد و پارچه‌ی لخت راحت چین می‌خورد.
+     *
+     * ترتیب قیدها از بالا به پایین مرتب می‌شود؛ به همان دلیلی که در ClothPatch
+     * قیدهای عمودی از سرشانه شروع می‌شدند: حل گاوس-زایدل کشش را در همان تکرار
+     * اول تا لبه‌ی پایین می‌رساند و پارچه زیر وزن خودش تلمبه نمی‌زند.
+     */
+    buildConstraints() {
+        const { positions, indices, grain, fabric, count } = this;
+        const map = new Map();
+
+        const touch = (u, v, opposite) => {
+            const key = u < v ? u * count + v : v * count + u;
+            const found = map.get(key);
+
+            if (found) {
+                found.other = opposite;
+
+                return;
+            }
+
+            map.set(key, { a: u, b: v, own: opposite, other: -1 });
+        };
+
+        for (let t = 0; t < indices.length; t += 3) {
+            const ia = indices[t];
+            const ib = indices[t + 1];
+            const ic = indices[t + 2];
+
+            touch(ia, ib, ic);
+            touch(ib, ic, ia);
+            touch(ic, ia, ib);
+        }
+
+        const edges = [...map.values()];
+
+        // ارتفاعِ بالاترین سرِ هر یال؛ کلید مرتب‌سازی از بالا به پایین
+        const height = (edge) => Math.max(positions[edge.a * 3 + 1], positions[edge.b * 3 + 1]);
+
+        edges.sort((one, two) => {
+            const diff = height(two) - height(one);
+
+            // گره‌گشاییِ قطعی: هم‌ارتفاع‌ها با شماره‌ی رأس مرتب می‌شوند تا خروجی
+            // به پایداری sort موتور جاوااسکریپت وابسته نباشد
+            return diff !== 0 ? diff : one.a - two.a || one.b - two.b;
+        });
+
+        const restOf = grain
+            ? (a, b) => Math.hypot(grain[a * 2] - grain[b * 2], grain[a * 2 + 1] - grain[b * 2 + 1])
+            : (a, b) =>
+                  Math.hypot(
+                      positions[a * 3] - positions[b * 3],
+                      positions[a * 3 + 1] - positions[b * 3 + 1],
+                      positions[a * 3 + 2] - positions[b * 3 + 2],
+                  );
+
+        const warp = [];
+        const weft = [];
+        const bias = [];
+        const bend = [];
+
+        for (let i = 0; i < edges.length; i++) {
+            const edge = edges[i];
+
+            if (grain) {
+                const dx = grain[edge.b * 2] - grain[edge.a * 2];
+                const dy = grain[edge.b * 2 + 1] - grain[edge.a * 2 + 1];
+                const length = Math.hypot(dx, dy) || 1e-9;
+                // نسبت مؤلفه‌ی طولی؛ ۱ یعنی کاملاً هم‌راستای تار، ۰ یعنی پود
+                const along = Math.abs(dy) / length;
+
+                (along > 0.866 ? warp : along < 0.5 ? weft : bias).push(edge.a, edge.b);
+            } else {
+                warp.push(edge.a, edge.b);
+            }
+
+            if (edge.other >= 0) {
+                bend.push(edge.own, edge.other);
+            }
+        }
+
+        const groups = [];
+
+        if (warp.length) groups.push(distanceGroup(warp, fabric.warp, restOf));
+        if (weft.length) groups.push(distanceGroup(weft, fabric.weft, restOf));
+        if (bias.length) groups.push(distanceGroup(bias, fabric.shear, restOf));
+        if (bend.length) groups.push(distanceGroup(bend, fabric.bend, restOf));
+
+        this.edgeCount = edges.length;
+
+        return groups;
+    }
+
+    /*
+     * مهار بلند روی مش مثلثی.
+     *
+     * در تکه‌ی شبکه‌ای، «مسیر تا نزدیک‌ترین رأس دوخته‌شده» همان ستون بود. اینجا
+     * ستونی در کار نیست، پس همان مسیر با کوتاه‌ترین راه روی گرافِ یال‌ها پیدا
+     * می‌شود. فلسفه‌اش عوض نشده: یک سقفِ یک‌طرفه که فقط وقتی پارچه از تکیه‌گاهش
+     * دورتر از طول واقعی پارچه شود به کار می‌افتد.
+     *
+     * اگر قطعه به هیچ جای بدن دوخته نشده باشد (که حالت عادیِ درز-محور است)،
+     * هیچ مهاری ساخته نمی‌شود و هزینه‌ای هم ندارد.
+     */
+    buildTethers() {
+        const { count, invMass, groups, fabric } = this;
+
+        if (this.pins.length === 0) {
+            return;
+        }
+
+        const degree = new Uint32Array(count);
+        let links = 0;
+
+        for (const group of groups) {
+            for (let i = 0; i < group.rest.length; i++) {
+                degree[group.a[i]]++;
+                degree[group.b[i]]++;
+                links += 2;
+            }
+        }
+
+        const start = new Uint32Array(count + 1);
+
+        for (let i = 0; i < count; i++) {
+            start[i + 1] = start[i] + degree[i];
+        }
+
+        const cursor = start.slice(0, count);
+        const target = new Uint32Array(links);
+        const weight = new Float32Array(links);
+
+        for (const group of groups) {
+            for (let i = 0; i < group.rest.length; i++) {
+                const ia = group.a[i];
+                const ib = group.b[i];
+
+                target[cursor[ia]] = ib;
+                weight[cursor[ia]++] = group.rest[i];
+                target[cursor[ib]] = ia;
+                weight[cursor[ib]++] = group.rest[i];
+            }
+        }
+
+        const distance = new Float64Array(count).fill(Infinity);
+        const owner = new Int32Array(count).fill(-1);
+        const heap = [];
+
+        for (let p = 0; p < this.pins.length; p++) {
+            const pin = this.pins[p];
+
+            distance[pin] = 0;
+            owner[pin] = pin;
+            heapPush(heap, pin, 0);
+        }
+
+        while (heap.length) {
+            const node = heapPop(heap);
+            const base = distance[node];
+
+            for (let e = start[node]; e < start[node + 1]; e++) {
+                const next = target[e];
+                const candidate = base + weight[e];
+
+                if (candidate < distance[next] - 1e-12) {
+                    distance[next] = candidate;
+                    owner[next] = owner[node];
+                    heapPush(heap, next, candidate);
+                }
+            }
+        }
+
+        const stretch = fabric.warp.maxScale;
+        const index = [];
+        const anchor = [];
+        const max = [];
+
+        for (let i = 0; i < count; i++) {
+            if (owner[i] < 0 || owner[i] === i || invMass[i] === 0) {
+                continue;
+            }
+
+            index.push(i);
+            anchor.push(owner[i]);
+            max.push(distance[i] * stretch);
+        }
+
+        this.tetherIndex = new Uint32Array(index);
+        this.tetherAnchor = new Uint32Array(anchor);
+        this.tetherMax = new Float32Array(max);
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * درز: دو کمان که به هم می‌رسند
+ * ---------------------------------------------------------------------------
+ * یک درز فهرستی از جفت‌رأس است؛ هر جفت یک سوزن. دو سرِ جفت می‌توانند روی دو
+ * قطعه‌ی جدا باشند (درز پهلو) یا روی یک قطعه (ساسون، درز خودِ قطعه).
+ *
+ * چرا «شدت» لازم است؟ چون قطعه‌ها اولِ کار دور بدن پخش شده‌اند و دو لبه‌ی یک درز
+ * گاهی ده سانتی‌متر از هم فاصله دارند. اگر همان لحظه‌ی اول جفت‌ها را روی هم
+ * بگذاریم، پارچه با یک پرش کشیده می‌شود، قیدهای فاصله می‌ترکند و مش تا آخرِ کار
+ * چروکِ بی‌جا نگه می‌دارد. پس به‌جای «چسباندن»، هدفِ هر جفت از فاصله‌ی امروزش
+ * آرام‌آرام به صفر می‌رسد: درز مثل یک بخیه‌ی واقعی کشیده می‌شود، قطعه‌ها در چند
+ * دهم ثانیه به هم می‌رسند و پارچه فرصت دارد خودش را مرتب کند.
+ *
+ * درز فقط می‌کشد و هیچ‌وقت هُل نمی‌دهد: دو لبه‌ای که نزدیک‌تر از هدف شده‌اند
+ * لابد جای بهتری پیدا کرده‌اند و باز کردنشان فقط لرزش می‌سازد.
+ */
+export class SeamSet {
+    /**
+     * @param {object} options
+     * @param {PatchBase} options.a تکه‌ی سمت اول
+     * @param {PatchBase} [options.b] تکه‌ی سمت دوم؛ نبودنش یعنی درز درون همان تکه
+     * @param {ArrayLike<number>} options.pairs زوج‌های [iA, iB, iA, iB, …]
+     * @param {string} [options.label] برچسب فارسی برای گزارش
+     * @param {string} [options.kind] seam | dart
+     * @param {number} [options.rest] فاصله‌ی هدف (متر)؛ صفر یعنی روی هم
+     * @param {number} [options.duration] ثانیه‌ی شبیه‌سازی تا کاملاً دوخته شود
+     * @param {number} [options.stiffness] سهم هر تکرار از بستن فاصله
+     */
+    constructor({
+        a,
+        b = null,
+        pairs,
+        label = '',
+        kind = 'seam',
+        rest = 0,
+        duration = 0.6,
+        stiffness = 0.7,
+    }) {
+        this.a = a;
+        this.b = b || a;
+        this.pairs = pairs instanceof Uint32Array ? pairs : Uint32Array.from(pairs);
+        this.count = this.pairs.length / 2;
+        this.label = label;
+        this.kind = kind;
+        this.rest = Math.max(0, rest);
+        this.stiffness = clamp(stiffness, 0.05, 1);
+        this.duration = Math.max(1e-3, duration);
+        this.strength = 0;
+        this.gap = new Float32Array(this.count);
+
+        this.measure(this.gap);
+    }
+
+    /* فاصله‌ی امروزِ هر جفت؛ مبنای رمپِ دوختن و هم معیار سلامت درز */
+    measure(out = null) {
+        const { a, b, pairs, count } = this;
+        let total = 0;
+
+        for (let i = 0; i < count; i++) {
+            const ia = pairs[i * 2] * 3;
+            const ib = pairs[i * 2 + 1] * 3;
+            const length = Math.hypot(
+                a.positions[ia] - b.positions[ib],
+                a.positions[ia + 1] - b.positions[ib + 1],
+                a.positions[ia + 2] - b.positions[ib + 2],
+            );
+
+            if (out) {
+                out[i] = length;
+            }
+
+            total += length;
+        }
+
+        return count ? total / count : 0;
+    }
+
+    /* میانگین فاصله‌ی جفت‌ها؛ همان «چقدر درز هنوز باز است» */
+    error() {
+        return this.measure(null);
+    }
+
+    /* جلو بردن رمپ به اندازه‌ی زمان یک زیرگام */
+    advance(dt) {
+        if (this.strength < 1) {
+            this.strength = clamp(this.strength + dt / this.duration, 0, 1);
+        }
+    }
+
+    /* دوختنِ آنی؛ برای بارگذاری دوباره‌ی یک لباس که قبلاً نشسته بوده */
+    weld() {
+        this.strength = 1;
+    }
+
+    /* باز کردن دوباره‌ی درز، با اندازه‌گیری تازه‌ی فاصله‌ها */
+    reset() {
+        this.strength = 0;
+        this.measure(this.gap);
+    }
+
+    project() {
+        const strength = this.strength;
+
+        if (strength <= 0 || this.count === 0) {
+            return;
+        }
+
+        const { a, b, pairs, gap, rest, count } = this;
+        const pa = a.positions;
+        const pb = b.positions;
+        const wa = a.invMass;
+        const wb = b.invMass;
+        const k = this.stiffness * strength;
+
+        for (let i = 0; i < count; i++) {
+            const na = pairs[i * 2];
+            const nb = pairs[i * 2 + 1];
+            const ma = wa[na];
+            const mb = wb[nb];
+            const sum = ma + mb;
+
+            if (sum === 0) {
+                continue;
+            }
+
+            const ia = na * 3;
+            const ib = nb * 3;
+            const dx = pa[ia] - pb[ib];
+            const dy = pa[ia + 1] - pb[ib + 1];
+            const dz = pa[ia + 2] - pb[ib + 2];
+            const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+            if (length < 1e-9) {
+                continue;
+            }
+
+            // هدفِ امروز: از فاصله‌ی اولیه به سمت فاصله‌ی نهایی، به اندازه‌ی شدت
+            const goal = rest + Math.max(0, gap[i] - rest) * (1 - strength);
+
+            if (length <= goal) {
+                continue;
+            }
+
+            const scale = ((length - goal) / length) * k / sum;
+            const cx = dx * scale;
+            const cy = dy * scale;
+            const cz = dz * scale;
+
+            if (ma !== 0) {
+                pa[ia] -= cx * ma;
+                pa[ia + 1] -= cy * ma;
+                pa[ia + 2] -= cz * ma;
+            }
+
+            if (mb !== 0) {
+                pb[ib] += cx * mb;
+                pb[ib + 1] += cy * mb;
+                pb[ib + 2] += cz * mb;
+            }
+        }
+    }
+}
+
+/* ---------------------------------------------------------------------------
  * ترجمه‌ی شناسنامه‌ی پارچه به قانون رفتاری قیدها
  * ---------------------------------------------------------------------------
  * ورودی همان payload.fabric است (physics + drape). خروجی برای هر خانواده‌ی
@@ -1010,6 +1613,7 @@ export class ClothWorld {
 
         this.patches = [];
         this.colliders = [];
+        this.seams = [];
 
         this.substeps = 2;
         this.iterations = 3;
@@ -1043,6 +1647,19 @@ export class ClothWorld {
         return patch;
     }
 
+    /*
+     * افزودن یک درز.
+     *
+     * درز به هیچ تکه‌ای «تعلق» ندارد؛ دو سرش می‌توانند روی دو تکه‌ی جدا باشند.
+     * پس فهرستش جدا نگه داشته می‌شود و در همان حلقه‌ی حل، کنار قیدهای پارچه
+     * اجرا می‌شود.
+     */
+    addSeam(seam) {
+        this.seams.push(seam);
+
+        return seam;
+    }
+
     setColliders(colliders) {
         this.colliders = colliders;
     }
@@ -1053,6 +1670,28 @@ export class ClothWorld {
 
     get constraints() {
         return this.patches.reduce((sum, patch) => sum + patch.constraintCount, 0);
+    }
+
+    /* هنوز دوختن تمام نشده؟ تا وقتی درزی نیمه‌باز است، صحنه حق خوابیدن ندارد */
+    get sewing() {
+        for (let i = 0; i < this.seams.length; i++) {
+            if (this.seams[i].strength < 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /* بیشترین فاصله‌ی باقی‌مانده‌ی درزها؛ برای گزارش و اشکال‌زدایی */
+    seamError() {
+        let worst = 0;
+
+        for (let i = 0; i < this.seams.length; i++) {
+            worst = Math.max(worst, this.seams[i].error());
+        }
+
+        return worst;
     }
 
     wake() {
@@ -1078,17 +1717,37 @@ export class ClothWorld {
         this.window = 0;
     }
 
-    /* یک گام کامل با زیرگام‌ها */
+    /*
+     * یک گام کامل با زیرگام‌ها.
+     *
+     * ترتیب داخل هر تکرار عمدی است: اول درزها، بعد قیدهای پارچه، و برخورد در
+     * آخر.
+     *
+     *   • درز پیش از پارچه، چون درز فقط یک «هدف» است؛ اگر آخرین حرف را بزند،
+     *     رأس‌های لبه را جلوتر از همسایه‌هایشان می‌کِشد و مش کنار درز تیغه‌تیغه
+     *     می‌شود. وقتی قیدهای پارچه بعد از آن اجرا شوند، همان کشش را در تمام
+     *     قطعه پخش می‌کنند — دقیقاً کاری که پارچه‌ی واقعی زیر دست خیاط می‌کند.
+     *   • برخورد در آخر، چون هیچ درزی حق ندارد پارچه را داخل بدن ببرد. حرف
+     *     آخر همیشه با بدن است.
+     */
     stepOnce(dt) {
         const h = dt / this.substeps;
-        const { law, colliders, patches, skin } = this;
+        const { law, colliders, patches, seams, skin } = this;
 
         for (let s = 0; s < this.substeps; s++) {
             for (let p = 0; p < patches.length; p++) {
                 patches[p].predict(h, law.gravity, law.damping);
             }
 
+            for (let i = 0; i < seams.length; i++) {
+                seams[i].advance(h);
+            }
+
             for (let k = 0; k < this.iterations; k++) {
+                for (let i = 0; i < seams.length; i++) {
+                    seams[i].project();
+                }
+
                 for (let p = 0; p < patches.length; p++) {
                     patches[p].project();
                 }
@@ -1160,7 +1819,9 @@ export class ClothWorld {
             this.window = 0;
             this.drift = drift;
 
-            if (drift < this.sleepDrift) {
+            // تا وقتی سوزنِ آخرین درز نخورده، لباس هنوز در حال شکل گرفتن است؛
+            // خوابیدن در این حال یعنی نیم‌دوخته ماندنِ همیشگیِ لباس
+            if (drift < this.sleepDrift && ! this.sewing) {
                 this.sleeping = true;
                 this.patches.forEach((patch) => patch.rest());
             } else {

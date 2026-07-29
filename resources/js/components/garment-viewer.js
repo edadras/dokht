@@ -42,6 +42,7 @@ const POSE_DURATION = 0.45;
  */
 let THREE = null;
 let CLOTH = null;
+let DRAPE = null;
 
 /*
  * اشیای three بیرون از حالت واکنشی آلپاین نگه داشته می‌شوند.
@@ -75,6 +76,15 @@ const loadThree = async () => {
             CLOTH = await import('../lib/cloth-solver');
         } catch (error) {
             CLOTH = null;
+        }
+    }
+
+    /* دوختِ واقعیِ قطعه‌های الگو؛ نیامدنش یعنی برگشت به نمای پارامتری */
+    if (! DRAPE) {
+        try {
+            DRAPE = await import('../lib/pattern-drape');
+        } catch (error) {
+            DRAPE = null;
         }
     }
 
@@ -148,6 +158,9 @@ export default (config = {}) => ({
     autoRotate: false,
     showZones: true,
     liveSim: true,
+    /* دوختِ واقعیِ قطعه‌های الگو؛ خاموش که شود، پوستهٔ پارامتری برمی‌گردد */
+    trueSeams: true,
+    seamCount: 0,
     pose: config.pose || 'stand',
     payload: config.payload || {},
 
@@ -969,6 +982,11 @@ export default (config = {}) => ({
         ctx.cloth = [];
         ctx.colliders = [];
 
+        // اول دوختِ واقعی؛ اگر نشد، پوستهٔ پارامتری همان‌جا که هست می‌ماند
+        if (this.buildDrapeCloth()) {
+            return;
+        }
+
         if (! CLOTH || ! (ctx.garmentPatches || []).length) {
             return;
         }
@@ -1030,6 +1048,147 @@ export default (config = {}) => ({
             item.geometry.attributes.position.needsUpdate = true;
             item.geometry.computeVertexNormals();
         });
+    },
+
+    /* ------------------------------------------------------------------
+     * دوختِ واقعی
+     * ------------------------------------------------------------------
+     * تفاوتش با پوستهٔ پارامتری در یک جمله: آن‌جا شکلِ لباس از مقطع بدن و
+     * آزادی هر ناحیه ساخته می‌شد، این‌جا از خودِ قطعه‌های الگو. هر قطعه
+     * مثلث‌بندی می‌شود، دور بدن چیده می‌شود، و درزها و ساسون‌ها آن را جمع
+     * می‌کنند. طول استراحتِ قیدها از الگوی تخت می‌آید، پس نقطهٔ تعادل حل‌کننده
+     * همان چیزی است که از پارچه بریده می‌شود.
+     *
+     * اگر بستهٔ الگو نیامده باشد یا مثلث‌بندی شکست بخورد، false برمی‌گرداند و
+     * نمای دیروز سر جایش می‌ماند. نمای سه‌بعدی هیچ‌وقت نباید خالی بماند.
+     */
+    buildDrapeCloth() {
+        const ctx = contextFor(this.$root);
+        const payload = this.payload.drape;
+
+        if (! CLOTH || ! DRAPE || ! this.trueSeams || ! (payload?.pieces || []).length) {
+            return false;
+        }
+
+        let drape = null;
+
+        try {
+            drape = DRAPE.buildDrape(
+                payload,
+                {
+                    level: ctx.level,
+                    radii: ctx.radii,
+                    profile: ctx.profile,
+                    armTable: ctx.armTable,
+                    armLength: ctx.armLength,
+                },
+                { fabric: this.payload.fabric || {} },
+            );
+        } catch (error) {
+            ctx.drapeError = error?.message || String(error);
+
+            return false;
+        }
+
+        if (! drape || ! (drape.patches || []).length) {
+            return false;
+        }
+
+        // پوستهٔ پارامتری برداشته می‌شود؛ دو لباس روی هم دیده نمی‌شود
+        (ctx.garmentMeshes || []).forEach((mesh) => mesh.parent && mesh.parent.remove(mesh));
+        ctx.garmentMeshes = [];
+        ctx.garmentPatches = [];
+
+        ctx.root.updateMatrixWorld(true);
+        ctx.tmpMatrix = new THREE.Matrix4();
+
+        ctx.world = new CLOTH.ClothWorld({
+            fabric: this.payload.fabric || {},
+            skin: SKIN_GAP,
+        });
+
+        if (drape.stats?.solver) {
+            ctx.world.substeps = drape.stats.solver.substeps ?? ctx.world.substeps;
+            ctx.world.iterations = drape.stats.solver.iterations ?? ctx.world.iterations;
+        }
+
+        drape.patches.forEach((item) => {
+            const geometry = new THREE.BufferGeometry();
+
+            // بافرِ موقعیت همان بافرِ حل‌کننده است؛ کپی نمی‌شود
+            geometry.setAttribute('position', new THREE.BufferAttribute(item.mesh.positions, 3));
+
+            if (item.mesh.uv) {
+                geometry.setAttribute('uv', new THREE.BufferAttribute(item.mesh.uv, 2));
+            }
+
+            geometry.setIndex(new THREE.BufferAttribute(item.mesh.indices, 1));
+            geometry.computeVertexNormals();
+
+            this.paintZones(geometry, item.piece?.placement?.zone === 'sleeve' ? 'sleeve' : 'body');
+
+            const mesh = new THREE.Mesh(geometry, ctx.fabricMaterial);
+
+            mesh.matrixAutoUpdate = false;
+            mesh.matrix.identity();
+            mesh.matrixWorld.identity();
+            mesh.frustumCulled = false;
+
+            ctx.scene.add(mesh);
+            ctx.disposables.push(geometry);
+            ctx.garmentMeshes.push(mesh);
+
+            ctx.world.addPatch(item.patch);
+            ctx.cloth.push({ patch: item.patch, group: ctx.torso, geometry });
+        });
+
+        (drape.seams || []).forEach((seam) => ctx.world.addSeam(seam));
+
+        this.buildColliders();
+        ctx.world.setColliders(ctx.colliders.map((entry) => entry.collider));
+        this.refreshColliders();
+
+        /*
+         * لباس مثل روی میز خیاطی دوخته می‌شود، بعد پوشیده.
+         *
+         * اگر از همان اول وزن روی پارچه باشد، قطعه‌ها پیش از بسته شدن درزها از
+         * تن سُر می‌خورند و پایین می‌ریزند — سنجیده شد: با جاذبه از لحظهٔ اول،
+         * پیراهن روی زمین جمع می‌شد و هیچ‌چیز روی مانکن نمی‌ماند. پس اول در
+         * بی‌وزنی دوخته می‌شود، بعد سرشانه گرفته می‌شود و بعد وزن برمی‌گردد.
+         */
+        const gravity = ctx.world.law.gravity;
+
+        ctx.world.law.gravity = 0;
+        ctx.world.presettle(drape.stats?.presettle ?? 120);
+
+        ctx.tmpMatrix.copy(ctx.torso.matrixWorld).invert();
+        /*
+         * لباس از سرشانه آویزان است، نه از هیچ‌جا.
+         *
+         * با کشش ملایمِ پیش‌فرض، پیراهن زیر وزن خودش از تن سُر می‌خورد و روی
+         * پا جمع می‌شود (اندازه گرفته شد: لبهٔ بالا ۲۸ سانتی‌متر پایین می‌آمد).
+         * نوارِ بالای هر قطعهٔ تنه محکم گرفته می‌شود — همان کاری که سرشانهٔ
+         * واقعی می‌کند.
+         */
+        DRAPE.supportGarment(drape, { inverse: ctx.tmpMatrix.elements, band: 0.08, strength: 1 });
+
+        // ماتریس گروه بدن باید پیش از اولین گامِ باوزن روی هر تکه باشد، وگرنه
+        // «جای اصلیِ» رأس‌ها در فضای محلی خوانده می‌شود و لباس به اندازهٔ
+        // جابه‌جاییِ گروه پایین کشیده می‌شود
+        ctx.cloth.forEach((item) => item.patch.applyPins(item.group.matrixWorld.elements));
+
+        ctx.world.law.gravity = gravity;
+        ctx.world.presettle(40);
+
+        ctx.cloth.forEach((item) => {
+            item.geometry.attributes.position.needsUpdate = true;
+            item.geometry.computeVertexNormals();
+        });
+
+        ctx.drape = drape;
+        this.applyZoneMaterial();
+
+        return true;
     },
 
     /*
@@ -1276,6 +1435,38 @@ export default (config = {}) => ({
     toggleZones() {
         this.showZones = !this.showZones;
         this.applyZoneMaterial();
+    },
+
+    /*
+     * جابه‌جایی میان دوختِ واقعی و پوستهٔ پارامتری.
+     *
+     * لباس از نو ساخته می‌شود چون این دو دو هندسهٔ کاملاً متفاوت‌اند: یکی
+     * قطعه‌های مثلث‌بندی‌شده‌ی دوخته‌شده و دیگری چند حلقهٔ افقی دور بدن.
+     */
+    toggleTrueSeams() {
+        if (! this.canDrape) {
+            return;
+        }
+
+        this.trueSeams = ! this.trueSeams;
+
+        const ctx = contextFor(this.$root);
+
+        (ctx.garmentMeshes || []).forEach((mesh) => mesh.parent && mesh.parent.remove(mesh));
+        ctx.garmentMeshes = [];
+        ctx.garmentPatches = [];
+        ctx.world = null;
+        ctx.drape = null;
+
+        this.buildGarment();
+        this.buildCloth();
+        this.applyPose(this.pose);
+        this.applyZoneMaterial();
+    },
+
+    /* آیا برای این الگو اصلاً بستهٔ دوخت آمده است؟ */
+    get canDrape() {
+        return !! (this.payload.drape?.pieces || []).length;
     },
 
     /*
@@ -1591,6 +1782,20 @@ export default (config = {}) => ({
         stats.energy = ctx.world.energy;
         stats.drift = ctx.world.drift;
         stats.pieces = ctx.cloth.length;
+        stats.meshes = (ctx.garmentMeshes || []).length;
+        stats.trueSeams = !! ctx.drape;
+
+        if (ctx.drape) {
+            stats.seams = ctx.drape.stats?.seams ?? 0;
+            stats.darts = ctx.drape.stats?.darts ?? 0;
+            stats.stitches = ctx.drape.stats?.stitches ?? 0;
+            stats.seamError = ctx.world.seamError ? ctx.world.seamError() : null;
+            stats.drapeWarnings = ctx.drape.stats?.warnings ?? [];
+        }
+
+        if (ctx.drapeError) {
+            stats.drapeError = ctx.drapeError;
+        }
     },
 
     /* ------------------------------------------------------------------

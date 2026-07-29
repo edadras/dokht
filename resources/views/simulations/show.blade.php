@@ -26,8 +26,8 @@
         {{-- نمای سه‌بعدی --}}
         <div class="lg:col-span-2">
             @if ($payload)
-                <div x-data="garmentViewer(@js(['payload' => $payload, 'pose' => $simulation->pose]))"
-                    class="overflow-hidden rounded-2xl border border-stone-200 bg-stone-900 shadow-sm">
+                <div x-data="garmentViewer(@js(['payload' => $payload, 'pose' => $simulation->pose]))">
+                <div class="overflow-hidden rounded-2xl border border-stone-200 bg-stone-900 shadow-sm">
                     <div x-ref="stage" class="relative aspect-4/5 w-full sm:aspect-video">
                         <div x-cloak x-show="! supported"
                             class="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center text-stone-200">
@@ -57,14 +57,26 @@
                             x-bind:class="liveSim ? 'bg-brand-600 text-white' : 'bg-stone-800 text-stone-200'">
                             شبیه‌سازی زنده
                         </button>
+                        <button type="button" x-show="canDrape" @click="toggleTrueSeams()"
+                            class="rounded-lg px-3 py-1.5 text-xs"
+                            x-bind:class="trueSeams ? 'bg-brand-600 text-white' : 'bg-stone-800 text-stone-200'">
+                            دوخت قطعه‌های الگو
+                        </button>
                     </div>
                 </div>
 
                 {{-- توضیح یک‌خطی: کاربر باید بداند چه چیزی را دارد می‌بیند --}}
                 <p class="mt-3 text-xs leading-6 text-stone-500">
-                    پارچه زنده حساب می‌شود: زیر وزن خودش می‌افتد و به بدن برخورد می‌کند، پس لباس هیچ‌جا داخل
-                    مانکن فرو نمی‌رود و افتادگی‌اش از مشخصات همین پارچه می‌آید.
+                    <span x-show="trueSeams && canDrape">
+                        آنچه می‌بینید دوختِ خودِ الگوست: هر قطعه از روی مسیر واقعی‌اش بریده و مثلث‌بندی شده،
+                        درزها و ساسون‌ها به هم دوخته شده‌اند و پارچه زیر وزن خودش روی همین بدن نشسته است.
+                    </span>
+                    <span x-show="! trueSeams || ! canDrape">
+                        پارچه زنده حساب می‌شود: زیر وزن خودش می‌افتد و به بدن برخورد می‌کند، پس لباس هیچ‌جا داخل
+                        مانکن فرو نمی‌رود و افتادگی‌اش از مشخصات همین پارچه می‌آید.
+                    </span>
                 </p>
+                </div>
             @else
                 <x-empty-state icon="cube" title="نمای سه‌بعدی برای این گزارش موجود نیست"
                     description="الگوی این شبیه‌سازی حذف شده است." />

@@ -24,12 +24,14 @@ class ClothPreviewService
         'inseam', 'outseam', 'back_length', 'front_length', 'waist_to_hip',
     ];
 
+    public function __construct(protected DrapePayloadService $drape = new DrapePayloadService) {}
+
     /**
      * بسته‌ی کامل نمای سه‌بعدی.
      *
      * @param  array<string, float|int|string>  $measurements  اندازه‌های بدن
      * @param  array  $fit  خروجی FitAnalysisService::analyze()
-     * @return array{avatar: array, fabric: array, garment: array, zones: array, pose: string}
+     * @return array{avatar: array, fabric: array, garment: array, drape: array, zones: array, pose: string}
      */
     public function payload(Pattern $pattern, ?Fabric $fabric, array $measurements, array $fit): array
     {
@@ -55,6 +57,11 @@ class ClothPreviewService
                 'ease' => $this->ease($pattern, $fit),
                 'pieces' => $this->outlines($pieces),
             ],
+            // بستهٔ «دوخت سه‌بعدی»: قطعه‌های واقعی، درزها و چیدن اولیه. نمای
+            // پارامتری بالا دست‌نخورده می‌ماند تا اگر مثلث‌بندی در مرورگر نگرفت،
+            // صفحه سفید نماند؛ و اگر ساختن همین بسته هم بگیرد، باز هم چیزی از
+            // نمای امروز کم نمی‌شود.
+            'drape' => $this->drapePayload($pattern),
             'zones' => array_map(fn (array $zone) => [
                 'key' => $zone['key'] ?? '',
                 'label' => $zone['label'] ?? '',
@@ -65,6 +72,31 @@ class ClothPreviewService
             ], array_values($fit['zones'] ?? [])),
             'pose' => (string) ($fit['pose'] ?? 'stand'),
         ];
+    }
+
+    /**
+     * بسته‌ی دوخت سه‌بعدی، با تور ایمنی.
+     *
+     * ساختن این بسته از نمای پارامتری سنگین‌تر است و به هندسه‌ی هر قطعه دست
+     * می‌زند؛ اگر جایی بگیرد، کلید drape خالی می‌آید و مرورگر خودش به نمای
+     * پارامتری برمی‌گردد.
+     */
+    protected function drapePayload(Pattern $pattern): array
+    {
+        try {
+            return $this->drape->payload($pattern);
+        } catch (\Throwable $error) {
+            report($error);
+
+            return ['scale' => 0.01, 'pieces' => [], 'seams' => [], 'budget' => [
+                'target_edge' => DrapePayloadService::TARGET_EDGE,
+                'max_vertices' => DrapePayloadService::MAX_VERTICES,
+            ], 'meta' => [
+                'unmatched' => [],
+                'relations' => 0,
+                'notes' => ['بسته‌ی دوخت سه‌بعدی ساخته نشد: '.$error->getMessage()],
+            ]];
+        }
     }
 
     /** اندازه‌های لازم مانکن. */
