@@ -5,8 +5,8 @@ namespace Tests\Feature;
 use App\Services\Pattern\GeneratorRegistry;
 use App\Services\Pattern\Geometry;
 use App\Services\Pattern\Transform\PieceOps;
-use App\Support\Measurements;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Support\Bodies;
 use Tests\TestCase;
 
 /**
@@ -26,7 +26,7 @@ class SkirtCatalogTest extends TestCase
         $generator = GeneratorRegistry::make($key);
 
         return $generator->generate(
-            Measurements::complete(Measurements::fromSize($size)),
+            Bodies::body($size),
             ['waist' => 3, 'hip' => 5],
             array_merge($generator->defaultParams(), $params),
         );

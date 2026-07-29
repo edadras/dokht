@@ -7,6 +7,7 @@ use App\Services\Pattern\Geometry;
 use App\Services\Pattern\PatternComposer;
 use App\Support\Measurements;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Support\Bodies;
 use Tests\TestCase;
 
 /**
@@ -28,7 +29,7 @@ class ShirtCatalogTest extends TestCase
         $generator = GeneratorRegistry::make($key);
 
         return $generator->generate(
-            Measurements::complete(Measurements::fromSize($size)),
+            Bodies::body($size),
             static::EASE,
             array_merge($generator->defaultParams(), $params),
         );
