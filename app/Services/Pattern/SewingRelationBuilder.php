@@ -15,6 +15,9 @@ use Illuminate\Support\Collection;
  */
 class SewingRelationBuilder
 {
+    /** برچسب‌هایی که لبه‌شان دوخته می‌شود. دم و لبهٔ آزاد در این فهرست نیستند. */
+    public const SEWABLE_TAGS = ['side', 'shoulder', 'armhole', 'neck', 'waist', 'strap', 'default'];
+
     /**
      * پیشنهاد جفت‌های دوخت بر پایه برچسب لبه‌ها و نقش هر قطعه.
      *
@@ -172,6 +175,374 @@ class SewingRelationBuilder
         }
 
         return array_values($relations);
+    }
+
+    /* ---------------------------------------------------------------------
+     |  کامل کردن با هندسه
+     * ------------------------------------------------------------------- */
+
+    /**
+     * جفت‌های دوختی که فهرست دستیِ بالا نمی‌بیند.
+     *
+     * `suggest()` روی نقش قطعه‌ها کار می‌کند: جلو، پشت، آستین، یقه، یوک، مچ‌بند،
+     * کمربند. این برای کاربری که رابطه‌ها را مرور می‌کند بس است، اما برای دوختِ
+     * سه‌بعدی نیست: اندازه‌گیری روی کل کاتالوگ نشان داد به‌طور میانگین تنها حدود
+     * یک‌سوم لبه‌های درزی جفت می‌شوند و بیست مدل — از جمله کرست و بوستیه — هیچ
+     * رابطه‌ای نمی‌گیرند. لباسی که درزهایش جفت نشده باشد روی مانکن از هم می‌پاشد.
+     *
+     * جای خالی همیشه یک شکل دارد: **درز پنلی**. درز پرنسسی یا کرست روی مسیرِ
+     * خط‌شکسته یک لبه نیست، ده‌ها لبهٔ پشت‌سرهم است که همه برچسب `default`
+     * دارند. پس این‌جا به‌جای لبه، «کمان» جفت می‌شود: هر بازهٔ پیوسته از
+     * لبه‌های هم‌برچسبِ جفت‌نشده یک نامزد است و نامزدها با طول، برچسب و
+     * خویشاوندی قطعه‌ها به هم می‌رسند.
+     *
+     * خروجی عمداً شکل دیگری دارد (`edges` به‌جای `edge`) تا از رابطه‌های دستی
+     * قابل تشخیص باشد و مصرف‌کننده بداند با یک کمان طرف است.
+     *
+     * @param  array<int, array<string, mixed>>  $relations  خروجی suggest()
+     * @return array<int, array{from: array{piece: string, edges: array<int, int>}, to: array{piece: string, edges: array<int, int>}, label: string, reverse: bool, length: float}>
+     */
+    public static function complete(Pattern $pattern, array $relations = []): array
+    {
+        $service = new SeamAllowanceService;
+        $used = static::usedEdges($relations);
+        $runs = [];
+
+        foreach ($pattern->pieces as $piece) {
+            foreach (static::runsOf($piece, $service->edgeTags($piece), $used) as $run) {
+                $runs[] = $run;
+            }
+        }
+
+        $pairs = [];
+
+        foreach ($runs as $i => $a) {
+            foreach ($runs as $j => $b) {
+                if ($j <= $i) {
+                    continue;
+                }
+
+                $score = static::pairScore($a, $b);
+
+                if ($score !== null) {
+                    $pairs[] = ['score' => $score, 'a' => $i, 'b' => $j];
+                }
+            }
+        }
+
+        usort($pairs, fn (array $x, array $y) => $x['score'] <=> $y['score']);
+
+        $taken = [];
+        $out = [];
+
+        foreach ($pairs as $pair) {
+            if (isset($taken[$pair['a']]) || isset($taken[$pair['b']])) {
+                continue;
+            }
+
+            $taken[$pair['a']] = true;
+            $taken[$pair['b']] = true;
+
+            $a = $runs[$pair['a']];
+            $b = $runs[$pair['b']];
+
+            $out[] = [
+                'from' => ['piece' => $a['piece'], 'edges' => $a['edges']],
+                'to' => ['piece' => $b['piece'], 'edges' => $b['edges']],
+                'label' => static::runLabel($a, $b),
+                'reverse' => static::runsRunOpposite($a, $b),
+                'length' => round(min($a['length'], $b['length']), 2),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * لبه‌هایی که رابطه‌های دستی از قبل مصرف کرده‌اند.
+     *
+     * @return array<string, true>
+     */
+    protected static function usedEdges(array $relations): array
+    {
+        $used = [];
+
+        foreach ($relations as $relation) {
+            foreach (['from', 'to'] as $side) {
+                $piece = (string) ($relation[$side]['piece'] ?? '');
+
+                foreach ((array) ($relation[$side]['edges'] ?? [$relation[$side]['edge'] ?? null]) as $edge) {
+                    if ($edge !== null) {
+                        $used[$piece.'|'.(int) $edge] = true;
+                    }
+                }
+            }
+        }
+
+        return $used;
+    }
+
+    /**
+     * بازه‌های پیوستهٔ لبه‌های هم‌برچسبِ جفت‌نشدهٔ یک قطعه.
+     *
+     * لبهٔ دم، لبهٔ تای پارچه و لبه‌های مصرف‌شده کنار گذاشته می‌شوند: دم دوخته
+     * نمی‌شود، تا دوخته نمی‌شود، و لبهٔ مصرف‌شده جایش را دارد.
+     *
+     * @param  array<int, string>  $tags
+     * @param  array<string, true>  $used
+     * @return array<int, array<string, mixed>>
+     */
+    protected static function runsOf(PatternPiece $piece, array $tags, array $used): array
+    {
+        $count = count($tags);
+
+        if ($count < 3) {
+            return [];
+        }
+
+        $points = $piece->points();
+        $bounds = $piece->bounds();
+        $height = (float) ($bounds[3] - $bounds[1]);
+        $folds = array_map('intval', $piece->meta['fold_edges'] ?? []);
+        $skip = fn (int $edge) => in_array($edge, $folds, true)
+            || isset($used[$piece->code.'|'.$edge])
+            || ! in_array($tags[$edge], static::SEWABLE_TAGS, true);
+
+        // از یک مرز شروع کن تا بازه‌ای که دور مسیر می‌پیچد دو تکه گزارش نشود
+        $start = 0;
+
+        for ($i = 0; $i < $count; $i++) {
+            if ($skip($i) || $tags[$i] !== $tags[($i - 1 + $count) % $count]) {
+                $start = $i;
+
+                break;
+            }
+        }
+
+        $runs = [];
+        $current = null;
+
+        for ($k = 0; $k <= $count; $k++) {
+            $edge = ($start + $k) % $count;
+            // یک بازه با عوض شدن برچسب تمام می‌شود، و با «گوشه». پنل‌های کرست
+            // همهٔ لبه‌هایشان default است؛ بدون گوشه، لبهٔ بالای کرست و درز پنلی
+            // یک بازهٔ بی‌معنا می‌شوند و طولشان با هیچ درزی نمی‌خواند.
+            $close = $k === $count || $skip($edge)
+                || ($current !== null && $tags[$edge] !== $current['tag'])
+                || ($current !== null && static::turnsCorner($points, $edge, $count));
+
+            if ($close && $current !== null) {
+                $runs[] = $current;
+                $current = null;
+            }
+
+            if ($k === $count || $skip($edge)) {
+                continue;
+            }
+
+            if ($current === null) {
+                $current = [
+                    'piece' => $piece->code,
+                    'part' => (string) ($piece->meta['part'] ?? ''),
+                    'side' => (string) ($piece->meta['side'] ?? ''),
+                    'layer' => (string) ($piece->layer ?? 'outer'),
+                    'tag' => $tags[$edge],
+                    'height' => $height,
+                    'edges' => [],
+                    'length' => 0.0,
+                    'before' => $tags[($edge - 1 + $count) % $count],
+                ];
+            }
+
+            $current['edges'][] = $edge;
+            $current['length'] += Geometry::edgeLength($points, $edge);
+            $current['after'] = $tags[($edge + 1) % $count];
+        }
+
+        // جهت عمودیِ هر کمان (نسبت به بلندی خودش) برای تشخیص وارونگی درز
+        foreach ($runs as $index => $run) {
+            $first = $run['edges'][0];
+            $last = $run['edges'][count($run['edges']) - 1];
+            $span = ($points[($last + 1) % $count]['y'] ?? 0) - ($points[$first]['y'] ?? 0);
+            $runs[$index]['rise'] = $run['length'] > 0.01 ? round($span / $run['length'], 3) : 0.0;
+        }
+
+        return array_values(array_filter($runs, fn (array $run) => $run['length'] > 1.0));
+    }
+
+    /**
+     * امتیاز جفت‌شدن دو کمان؛ هرچه کمتر بهتر. null یعنی این دو به هم نمی‌خورند.
+     */
+    protected static function pairScore(array $a, array $b): ?float
+    {
+        // قطعه به خودش دوخته نمی‌شود. دو کمانِ هم‌طولِ یک پنل، دو پهلوی همان
+        // پنل‌اند و هرکدام باید به پنل همسایه برسند؛ اگر این را نبندیم، امتیاز
+        // «هم‌طول و هم‌قطعه» از همه بهتر می‌شود و پنل به خودش دوخته می‌شود.
+        // درزِ مرکز جلو و پشت هم بین دو نمونهٔ آینه‌ای است، نه روی یک قطعه.
+        if ($a['piece'] === $b['piece']) {
+            return null;
+        }
+
+        if ($a['tag'] !== $b['tag']) {
+            return null;
+        }
+
+        // حلقه، خط یقه و خط کمر را نمی‌شود فقط با طول جفت کرد: دو پنلِ یک
+        // بالاتنه هم حلقه دارند هم کمر، و هم‌طول‌اند، ولی به هم دوخته نمی‌شوند.
+        // حلقه به آستین می‌رود، یقه به یقه‌بند، و کمر به دامن یا کمربند. پس
+        // این سه فقط وقتی جفت می‌شوند که دو سر، دو نقشِ متفاوت باشند.
+        if (! static::rolesMayJoin($a, $b)) {
+            return null;
+        }
+
+        // آستر به رو دوخته نمی‌شود؛ هر لایه با لایهٔ خودش
+        if (($a['layer'] === 'lining') !== ($b['layer'] === 'lining')) {
+            return null;
+        }
+
+        if (($a['part'] === 'lining') !== ($b['part'] === 'lining')) {
+            return null;
+        }
+
+        $longer = max($a['length'], $b['length']);
+        $gap = abs($a['length'] - $b['length']) / max(0.01, $longer);
+
+        // اختلاف طول بیش از این یعنی این دو لبه اصلاً یک درز نیستند؛ چینِ
+        // واقعی هم روی meta.gathers ثبت می‌شود، پس این‌جا لازم نیست جا باز شود
+        if ($gap > 0.12) {
+            return null;
+        }
+
+        $score = $gap;
+
+        // برچسب default هم درز پنلی است هم لبهٔ آزاد (بالای کرست، لبهٔ سجاف).
+        // هندسه به‌تنهایی این دو را از هم جدا نمی‌کند، پس این‌جا سخت‌گیر
+        // می‌شویم: فقط دو پنلِ هم‌نقش، با کمانِ بلند، و با شمارهٔ کنارِ هم.
+        // حدس زدنِ درزی که وجود ندارد بدتر از نبستن آن است؛ درزِ اشتباه لباس را
+        // روی مانکن پیچ می‌دهد.
+        if ($a['tag'] === 'default') {
+            if ($a['part'] === '' || $a['part'] !== $b['part']) {
+                return null;
+            }
+
+            if (in_array($a['part'], ['facing', 'binding', 'interfacing', 'lining'], true)) {
+                return null;
+            }
+
+            $tall = 0.4 * max($a['height'], $b['height']);
+
+            if (min($a['length'], $b['length']) < $tall) {
+                return null;
+            }
+
+            $indexA = static::panelIndex($a['piece']);
+            $indexB = static::panelIndex($b['piece']);
+
+            if ($indexA !== null && $indexB !== null && abs($indexA - $indexB) !== 1) {
+                return null;
+            }
+        }
+
+        // درز پهلو و سرشانه بین جلو و پشت است
+        if (in_array($a['tag'], ['side', 'shoulder'], true)) {
+            $score += ($a['side'] !== '' && $a['side'] === $b['side']) ? 0.3 : 0.0;
+        }
+
+        return round($score, 4);
+    }
+
+    /**
+     * آیا مسیر پیش از این لبه گوشه می‌خورد؟
+     *
+     * منحنیِ باز شده به خط شکسته، لبه‌هایش چند درجه با هم فرق دارند؛ گوشهٔ واقعی
+     * (جایی که درز تمام می‌شود و لبهٔ دیگری شروع) تندتر از این می‌پیچد.
+     */
+    protected static function turnsCorner(array $points, int $edge, int $count): bool
+    {
+        $previous = ($edge - 1 + $count) % $count;
+
+        $ax = ($points[($previous + 1) % $count]['x'] ?? 0) - ($points[$previous]['x'] ?? 0);
+        $ay = ($points[($previous + 1) % $count]['y'] ?? 0) - ($points[$previous]['y'] ?? 0);
+        $bx = ($points[($edge + 1) % $count]['x'] ?? 0) - ($points[$edge]['x'] ?? 0);
+        $by = ($points[($edge + 1) % $count]['y'] ?? 0) - ($points[$edge]['y'] ?? 0);
+
+        $lengthA = sqrt(($ax * $ax) + ($ay * $ay));
+        $lengthB = sqrt(($bx * $bx) + ($by * $by));
+
+        if ($lengthA < 0.01 || $lengthB < 0.01) {
+            return false;
+        }
+
+        $cos = (($ax * $bx) + ($ay * $by)) / ($lengthA * $lengthB);
+
+        return $cos < cos(deg2rad(40));
+    }
+
+    /** شمارهٔ پنل از انتهای کدِ قطعه؛ null یعنی قطعه شماره ندارد. */
+    protected static function panelIndex(string $code): ?int
+    {
+        return preg_match('/(\d+)$/', $code, $match) ? (int) $match[1] : null;
+    }
+
+    /** قطعه‌هایی که خط کمرشان به بالاتنه می‌رسد، نه به پنل کناری. */
+    protected const LOWER_PARTS = ['skirt_front', 'skirt_back', 'skirt_panel', 'skirt_tier', 'front_leg', 'back_leg', 'waistband', 'peplum'];
+
+    /**
+     * آیا نقشِ دو سر با هم می‌خواند؟
+     *
+     * برای درز پنلی و پهلو و سرشانه هر دو سر هم‌نقش‌اند. برای حلقه، یقه و کمر
+     * باید دو نقش متفاوت باشند، وگرنه دو پنل هم‌طولِ یک بالاتنه از حلقه به هم
+     * دوخته می‌شوند و لباس روی مانکن بسته می‌ماند.
+     */
+    protected static function rolesMayJoin(array $a, array $b): bool
+    {
+        $sleeve = fn (array $run) => $run['part'] === 'sleeve';
+        $collar = fn (array $run) => in_array($run['part'], ['collar', 'binding', 'facing'], true);
+        $lower = fn (array $run) => in_array($run['part'], static::LOWER_PARTS, true);
+
+        return match ($a['tag']) {
+            'armhole' => $sleeve($a) !== $sleeve($b),
+            'neck' => $collar($a) !== $collar($b),
+            'waist' => $lower($a) !== $lower($b),
+            default => true,
+        };
+    }
+
+    /**
+     * آیا کمان دوم باید وارونه پیموده شود؟
+     *
+     * از جهت پیمایش فهمیده می‌شود: درز پهلوی جلو و پشت هر دو از بالا به پایین
+     * می‌روند و سر به سر دوخته می‌شوند؛ ولی در درز پرنسسی، کمانِ پنل میانی از
+     * حلقه به کمر می‌رود و کمانِ پنل پهلو از کمر به حلقه، پس یکی باید وارونه
+     * شود تا دو سرِ هم‌نام به هم برسند. این همان «هم‌ترازکردن نشانه‌ها»ی خیاط است.
+     *
+     * اگر جهت عمودی دو کمان به هم نزدیک بود (درز افقی مثل خط کمر)، به همسایهٔ
+     * دو سرِ کمان تکیه می‌کنیم.
+     */
+    protected static function runsRunOpposite(array $a, array $b): bool
+    {
+        $riseA = $a['rise'] ?? 0.0;
+        $riseB = $b['rise'] ?? 0.0;
+
+        if (abs($riseA) > 0.2 && abs($riseB) > 0.2) {
+            return ($riseA > 0) !== ($riseB > 0);
+        }
+
+        return ! (($a['before'] ?? '') === ($b['before'] ?? '') && ($a['after'] ?? '') === ($b['after'] ?? ''));
+    }
+
+    /** نام فارسی درز از روی برچسب لبه. */
+    protected static function runLabel(array $a, array $b): string
+    {
+        return match ($a['tag']) {
+            'side' => 'درز پهلو',
+            'shoulder' => 'درز سرشانه',
+            'armhole' => 'دوخت حلقه',
+            'neck' => 'دوخت خط یقه',
+            'waist' => 'دوخت خط کمر',
+            'strap' => 'دوخت بند',
+            default => 'درز پنلی',
+        };
     }
 
     /**
