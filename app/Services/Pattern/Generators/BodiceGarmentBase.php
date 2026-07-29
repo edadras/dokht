@@ -346,6 +346,42 @@ abstract class BodiceGarmentBase extends BodiceBaseGenerator
 
         $piece['meta']['buttons'] = $count;
 
+        // همان تعداد را برای صورت مواد هم ثبت می‌کنیم تا فهرست خرید از روی
+        // نشانه‌های واقعی الگو دربیاید، نه از روی حدسِ نوع لباس.
+        $piece['meta']['notions'][] = [
+            'type' => 'button',
+            'label' => $label === 'جای دکمه' ? 'دکمه مرکز جلو' : $label,
+            'count' => $count,
+        ];
+
+        return $piece;
+    }
+
+    /**
+     * خط زیپ روی مرکز جلو، با اندازه‌گیری طول واقعی زیپ.
+     *
+     * لباس جلوبازِ زیپ‌دار تا امروز هیچ نشانه‌ای از زیپ روی الگو نمی‌گذاشت، پس
+     * نه خیاط می‌دانست زیپ از کجا تا کجاست و نه صورت مواد طول آن را می‌دانست.
+     *
+     * @param  array<string, mixed>  $piece
+     * @return array<string, mixed>
+     */
+    protected function markZip(array $piece, float $x, float $fromY, float $toY, string $label = 'زیپ مرکز جلو'): array
+    {
+        $length = round($toY - $fromY, 1);
+
+        if ($length < 5) {
+            return $piece;
+        }
+
+        $piece['markers'][] = $this->marker('zip', $label, $x, $fromY, $x, $toY);
+        $piece['meta']['notions'][] = [
+            'type' => 'zip',
+            'label' => 'زیپ جداشونده',
+            'count' => 1,
+            'length' => $length,
+        ];
+
         return $piece;
     }
 
@@ -619,6 +655,10 @@ abstract class BodiceGarmentBase extends BodiceBaseGenerator
         if ($opening === 'button') {
             $buttons = (int) ($o['buttons'] ?? $this->param($params, 'buttons', 5));
             $front = $this->markButtons($front, $stand, $g['front_neck_depth'] + 2, $g['front_waist_y'] + min($length - 4, 18), $buttons);
+        }
+
+        if ($opening === 'zip') {
+            $front = $this->markZip($front, 0.0, $g['front_neck_depth'], $g['front_waist_y'] + $length);
         }
 
         $pieces = [$front, $back];

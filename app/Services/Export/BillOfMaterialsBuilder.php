@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Project;
 use App\Services\Cutting\NestingService;
+use App\Services\Pattern\NotionCollector;
 use App\Support\Format;
 use Throwable;
 
@@ -18,7 +19,21 @@ use Throwable;
  */
 class BillOfMaterialsBuilder
 {
-    public function __construct(protected NestingService $nesting = new NestingService) {}
+    public function __construct(
+        protected NestingService $nesting = new NestingService,
+        protected NotionCollector $notions = new NotionCollector,
+    ) {}
+
+    /** یراقی که هر نوع در انبار با آن ثبت می‌شود. */
+    protected const NOTION_KIND = [
+        'button' => 'button',
+        'zip' => 'zipper',
+        'hook' => 'other',
+        'snap' => 'other',
+        'elastic' => 'elastic',
+        'cord' => 'other',
+        'eyelet' => 'other',
+    ];
 
     public function build(Project $project): array
     {
@@ -149,14 +164,39 @@ class BillOfMaterialsBuilder
 
         $parts = $project->garmentType?->parts ?? [];
 
-        if (in_array('placket', $parts, true)) {
+        // یراق واقعی الگو: دکمه، زیپ، قزن، دکمه فشاری و کش با همان تعداد و طولی
+        // که روی خود قطعه‌ها علامت خورده است.
+        $notions = $this->notions->forPattern($project->pattern);
+
+        foreach ($notions as $notion) {
+            $kind = static::NOTION_KIND[$notion['type']] ?? 'other';
+            $price = (float) ($this->materialPrice($kind) ?? 0);
+
+            $rows[] = [
+                'kind' => $kind,
+                'kind_label' => NotionCollector::LABELS[$notion['type']] ?? 'یراق',
+                'label' => $notion['label'],
+                'description' => $this->notionDescription($notion),
+                'quantity' => $notion['count'],
+                'unit' => 'عدد',
+                'unit_price' => $price,
+                'total' => round($notion['count'] * $price),
+                'source' => 'pattern',
+            ];
+        }
+
+        // اگر الگو هنوز ساخته نشده یا یراقی روی آن علامت نخورده، از روی اجزای
+        // نوع لباس یک برآورد محافظه‌کارانه می‌دهیم تا فهرست خرید خالی نماند.
+        $has = fn (string $type) => collect($notions)->contains(fn (array $row) => $row['type'] === $type);
+
+        if (! $has('button') && ! $has('snap') && in_array('placket', $parts, true)) {
             $price = (float) ($this->materialPrice('button') ?? 0);
 
             $rows[] = [
                 'kind' => 'button',
                 'kind_label' => 'دکمه',
                 'label' => 'دکمه هم‌رنگ',
-                'description' => 'برای پاتلت جلو',
+                'description' => 'برآورد برای پاتلت جلو؛ با گذاشتن سبک بست روی الگو، تعداد دقیق می‌شود.',
                 'quantity' => 6,
                 'unit' => 'عدد',
                 'unit_price' => $price,
@@ -165,14 +205,14 @@ class BillOfMaterialsBuilder
             ];
         }
 
-        if (array_intersect(['waistband', 'skirt_back', 'back_panel'], $parts) !== []) {
+        if (! $has('zip') && array_intersect(['waistband', 'skirt_back', 'back_panel'], $parts) !== []) {
             $price = (float) ($this->materialPrice('zipper') ?? 0);
 
             $rows[] = [
                 'kind' => 'zipper',
                 'kind_label' => 'زیپ',
                 'label' => 'زیپ مخفی ۲۰ سانتی‌متری',
-                'description' => 'برای بسته شدن کمر یا پشت',
+                'description' => 'برآورد برای بسته شدن کمر یا پشت',
                 'quantity' => 1,
                 'unit' => 'عدد',
                 'unit_price' => $price,
@@ -182,6 +222,22 @@ class BillOfMaterialsBuilder
         }
 
         return $rows;
+    }
+
+    /** توضیح ردیف یراق: طول و اندازه‌ای که از روی الگو خوانده شده. */
+    protected function notionDescription(array $notion): string
+    {
+        $parts = ['از روی نشانه‌های خود الگو'];
+
+        if ($notion['length'] !== null) {
+            $parts[] = 'طول '.Format::cm($notion['length']);
+        }
+
+        if ($notion['size'] !== null) {
+            $parts[] = 'اندازه '.Format::cm($notion['size']);
+        }
+
+        return implode(' • ', $parts);
     }
 
     /** مصرف پارچه: از چیدمان ثبت‌شده، وگرنه با اجرای چیدمان روی الگو. */

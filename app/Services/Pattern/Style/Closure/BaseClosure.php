@@ -122,6 +122,16 @@ abstract class BaseClosure extends DetailStyle
             'positions' => $positions,
         ];
 
+        // همان ردیف، این بار به زبان صورت مواد: چند دکمه و در چه اندازه‌ای باید
+        // خرید. جای دکمه‌ها روی الگوست، پس تعداد هم از همان‌جا خوانده می‌شود نه
+        // از روی حدسِ نوع لباس.
+        $piece['meta']['notions'][] = [
+            'type' => 'button',
+            'label' => $label,
+            'count' => $count,
+            'size' => round($size, 2),
+        ];
+
         $piece['markers'][] = $this->marker('button_line', $label, $x, $topY, $x, $bottomY);
 
         return $piece;

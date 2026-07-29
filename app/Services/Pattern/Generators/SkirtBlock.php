@@ -535,6 +535,11 @@ trait SkirtBlock
                 'edges' => ['waist', 'side', 'waist', 'side'],
                 'fold_edges' => [],
                 'interfacing' => (bool) ($o['interfacing'] ?? true),
+                // کمربند به اندازه رویهم‌آمدن بلندتر از دور کمر بریده می‌شود و
+                // همان رویهم‌آمدن باید با چیزی بسته شود؛ کمینه‌اش یک قزن است.
+                'notions' => $overlap > 0.5
+                    ? [['type' => 'hook', 'label' => 'قزن کمربند', 'count' => 1]]
+                    : [],
                 'band_girth' => round($girth, 2),
                 'band_overlap' => round($overlap, 2),
                 'notes' => $o['notes'] ?? [],

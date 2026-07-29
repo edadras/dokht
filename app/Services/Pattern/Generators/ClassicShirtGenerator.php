@@ -330,6 +330,22 @@ class ClassicShirtGenerator extends BaseGenerator
     {
         $width = $stand * 2;
 
+        // فاصله دکمه‌ها روی پیراهن حدود هشت سانتی‌متر است؛ تعداد از همین
+        // درمی‌آید تا صورت مواد عدد واقعی همین الگو را بدهد، نه یک عدد ثابت.
+        $buttons = max(3, (int) round(($length - 6) / 8));
+        $drills = [];
+        $step = ($length - 6) / max(1, $buttons - 1);
+
+        for ($i = 0; $i < $buttons; $i++) {
+            $y = 3 + ($step * $i);
+            $drills[] = [
+                'key' => 'button_'.($i + 1),
+                'label' => 'جای دکمه '.($i + 1),
+                'x' => round($width / 2, 2),
+                'y' => round($y, 2),
+            ];
+        }
+
         return $this->piece([
             'code' => 'placket',
             'name' => 'پاتلت جای دکمه',
@@ -341,11 +357,17 @@ class ClassicShirtGenerator extends BaseGenerator
                 Geometry::point(0, $length),
             ],
             'grainline' => $this->grainline($width * 0.5, 2, $length - 2),
+            'drills' => $drills,
+            'markers' => [$this->marker('button_line', 'خط دکمه', $width / 2, 3, $width / 2, $length - 3)],
             'meta' => [
                 'part' => 'placket',
                 'edges' => ['default', 'default', 'hem', 'default'],
                 'fold_edges' => [],
                 'interfacing' => true,
+                'buttons' => $buttons,
+                'notions' => [
+                    ['type' => 'button', 'label' => 'دکمه پیراهن', 'count' => $buttons, 'size' => 1.1],
+                ],
             ],
         ]);
     }

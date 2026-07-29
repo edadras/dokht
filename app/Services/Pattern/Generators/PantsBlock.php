@@ -806,6 +806,13 @@ trait PantsBlock
                     'نوار '.$this->fa(round($cut, 1)).' سانتی‌متر بریده و روی '
                         .$this->fa(round($girth, 1)).' سانتی‌متر کشیده و دوخته می‌شود.',
                 ],
+                // طول کشی که باید خرید، همان طول بریده‌شده نوار است
+                'notions' => [[
+                    'type' => 'elastic',
+                    'label' => 'کش '.$this->fa(round($height, 1)).' سانتی‌متری',
+                    'count' => 1,
+                    'length' => round($cut, 1),
+                ]],
             ],
         ]);
     }
