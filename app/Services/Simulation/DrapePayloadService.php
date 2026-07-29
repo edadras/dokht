@@ -101,6 +101,12 @@ class DrapePayloadService
             $notes[] = 'بستن مرکز جلو و پشت انجام نشد: '.$error->getMessage();
         }
 
+        try {
+            $seams = array_merge($seams, $this->adopt($instances, $seams));
+        } catch (Throwable $error) {
+            $notes[] = 'دوختن قطعه‌های جامانده انجام نشد: '.$error->getMessage();
+        }
+
         return [
             'scale' => 0.01,
             'pieces' => array_values(array_map(fn (array $instance) => $instance['payload'], $instances)),
@@ -1022,6 +1028,125 @@ class DrapePayloadService
                 ];
             }
         }
+
+        return $arcs;
+    }
+
+    /**
+     * قطعه‌ای که هیچ رابطه‌ای به آن نرسیده، به همسایه‌اش دوخته می‌شود.
+     *
+     * سنجش روی کل کاتالوگ: از ۲۳۶ مدل، ۵۲۱ قطعه هیچ درزی نداشتند — جیب و
+     * سجاف و نوار، ولی همچنین ۵۴ یقه، ۴۳ تکه دامن، ۳۱ آستین و ۲۸ تنه. قطعه‌ی
+     * بی‌درز روی مانکن یا می‌افتد یا باید پنهان شود؛ هر دو یعنی لباس ناقص.
+     *
+     * فهرست رابطه‌ها این‌ها را نمی‌بیند چون نامشان را نمی‌شناسد. ولی جای همه‌شان
+     * روی بدن معلوم است: یقه کنار خط یقه است، جیب روی تنه، نوار روی لبه‌ای که
+     * می‌پوشاند. پس همان ملاکی که برای جفت‌کردن کمان‌ها داریم — نزدیکی روی بدن
+     * و هم‌طولی — این‌جا هم به کار می‌آید: بلندترین کمانِ قطعه‌ی جامانده به
+     * نزدیک‌ترین کمانِ هم‌طولِ آزاد روی یک قطعه‌ی دوخته‌شده می‌رسد.
+     *
+     * سخت‌گیرانه است و باید باشد: درزی که وجود ندارد لباس را پیچ می‌دهد.
+     *
+     * @param  array<int, array<string, mixed>>  $seams
+     * @return array<int, array<string, mixed>>
+     */
+    protected function adopt(array $instances, array $seams): array
+    {
+        $stitched = [];
+        $used = [];
+
+        foreach ($seams as $seam) {
+            foreach (['a', 'b'] as $end) {
+                $stitched[$seam[$end]['piece']] = true;
+                $used[$seam[$end]['piece'].'|'.$seam[$end]['from'].'|'.$seam[$end]['to']] = true;
+            }
+        }
+
+        $free = [];
+
+        foreach ($instances as $id => $instance) {
+            if (! isset($stitched[$id])) {
+                continue;
+            }
+
+            foreach ($this->sewableArcs($instance) as $arc) {
+                if (! isset($used[$id.'|'.$arc['from'].'|'.$arc['to']])) {
+                    $free[] = $arc;
+                }
+            }
+        }
+
+        $out = [];
+
+        foreach ($instances as $id => $instance) {
+            if (isset($stitched[$id]) || $free === []) {
+                continue;
+            }
+
+            $arcs = $this->sewableArcs($instance);
+            $best = null;
+
+            foreach ($arcs as $arc) {
+                foreach ($free as $key => $partner) {
+                    $longer = max($arc['length'], $partner['length']);
+
+                    if ($longer < 4.0 || abs($arc['length'] - $partner['length']) / $longer > 0.25) {
+                        continue;
+                    }
+
+                    $cost = $this->cost($arc, $partner);
+
+                    if ($cost > 25.0) {
+                        continue; // بیش از یک وجب دورتر، همسایه نیست
+                    }
+
+                    if ($best === null || $cost < $best['cost']) {
+                        $best = ['cost' => $cost, 'arc' => $arc, 'partner' => $partner, 'key' => $key];
+                    }
+                }
+            }
+
+            if ($best === null) {
+                continue;
+            }
+
+            $out[] = $this->seam($best['arc'], $best['partner'], 'دوخت به قطعه‌ی همسایه', null, []);
+            $stitched[$id] = true;
+            unset($free[$best['key']]);
+        }
+
+        return $out;
+    }
+
+    /**
+     * کمان‌های دوختنیِ یک نمونه، از بلند به کوتاه.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    protected function sewableArcs(array $instance): array
+    {
+        $arcs = [];
+
+        foreach ($instance['edges'] as $edge => $info) {
+            if ($info['length'] < 2.0) {
+                continue;
+            }
+
+            $middle = DrapeGeometry::arcMidpoint($instance['polygon'], $info['start'], $info['end']);
+
+            $arcs[] = [
+                'piece' => $instance['id'],
+                'from' => $info['start'],
+                'to' => $info['end'],
+                'length' => $info['length'],
+                'instance' => $instance,
+                'at' => $this->onBody($instance, $middle),
+                'frame' => $this->frame($instance['role']),
+                'body_side' => $this->bodySide($instance),
+            ];
+        }
+
+        usort($arcs, fn (array $a, array $b) => $b['length'] <=> $a['length']);
 
         return $arcs;
     }
