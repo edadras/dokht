@@ -1233,10 +1233,23 @@ const alignPatches = (patches, seams, rounds) => {
 
     const want = new Float64Array(patches.length * 3);
     const weight = new Float64Array(patches.length);
+    /*
+     * چرخش هم لازم است، نه فقط جابه‌جایی.
+     *
+     * یقه تنها قطعه‌ای است که به سه قطعه‌ی دیگر دوخته می‌شود؛ با جابه‌جایی
+     * صُلبِ تنها نمی‌شود هر سه را راضی کرد و بیست سانتی‌متر فاصله می‌ماند. یک
+     * چرخش کوچک دور محور بدن همان را حل می‌کند: قطعه می‌چرخد تا نشانه‌هایش
+     * روبه‌روی نشانه‌های همسایه بیایند — همان کاری که خیاط پیش از سنجاق‌زدن
+     * می‌کند.
+     */
+    const spin = new Float64Array(patches.length);
+    const inertia = new Float64Array(patches.length);
 
     for (let round = 0; round < rounds; round++) {
         want.fill(0);
         weight.fill(0);
+        spin.fill(0);
+        inertia.fill(0);
 
         for (const seam of seams) {
             if (! seam.b || seam.b === seam.a) {
@@ -1259,10 +1272,19 @@ const alignPatches = (patches, seams, rounds) => {
             for (let i = 0; i < seam.count; i++) {
                 const at = seam.pairs[i * 2] * 3;
                 const to = seam.pairs[i * 2 + 1] * 3;
+                const ex = pb[to] - pa[at];
+                const ey = pb[to + 1] - pa[at + 1];
+                const ez = pb[to + 2] - pa[at + 2];
 
-                dx += pb[to] - pa[at];
-                dy += pb[to + 1] - pa[at + 1];
-                dz += pb[to + 2] - pa[at + 2];
+                dx += ex;
+                dy += ey;
+                dz += ez;
+
+                // گشتاور چرخش دور محور بدن: Δx ≈ θz و Δz ≈ −θx
+                spin[ia] += pa[at + 2] * ex - pa[at] * ez;
+                inertia[ia] += pa[at] * pa[at] + pa[at + 2] * pa[at + 2];
+                spin[ib] += pb[to] * ez - pb[to + 2] * ex;
+                inertia[ib] += pb[to] * pb[to] + pb[to + 2] * pb[to + 2];
             }
 
             const n = Math.max(1, seam.count);
@@ -1298,6 +1320,24 @@ const alignPatches = (patches, seams, rounds) => {
 
             const patch = patches[p].patch;
             const positions = patch.positions;
+
+            // چرخش کوچک و میراشده؛ بیش از ده درجه در یک دور، قطعه را پرت می‌کند
+            const theta = inertia[p] > 1e-6
+                ? clamp((spin[p] / inertia[p]) * 0.5, -0.17, 0.17)
+                : 0;
+
+            if (Math.abs(theta) > 1e-5) {
+                const cos = Math.cos(theta);
+                const sin = Math.sin(theta);
+
+                for (let i = 0; i < positions.length; i += 3) {
+                    const x = positions[i];
+                    const z = positions[i + 2];
+
+                    positions[i] = x * cos + z * sin;
+                    positions[i + 2] = -x * sin + z * cos;
+                }
+            }
 
             for (let i = 0; i < positions.length; i += 3) {
                 positions[i] += dx;
