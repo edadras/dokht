@@ -95,6 +95,12 @@ class DrapePayloadService
             }
         }
 
+        try {
+            $seams = array_merge($seams, $this->closures($instances, $byCode));
+        } catch (Throwable $error) {
+            $notes[] = 'بستن مرکز جلو و پشت انجام نشد: '.$error->getMessage();
+        }
+
         return [
             'scale' => 0.01,
             'pieces' => array_values(array_map(fn (array $instance) => $instance['payload'], $instances)),
@@ -862,6 +868,8 @@ class DrapePayloadService
                 continue;
             }
 
+            [$left, $right] = $this->balance($left, $right);
+
             $pairs = $this->pairArcs($left, $right);
 
             foreach ($pairs['matched'] as [$a, $b]) {
@@ -999,6 +1007,233 @@ class DrapePayloadService
     }
 
     /**
+     * بستن مرکز جلو و مرکز پشت.
+     *
+     * قطعه‌ای که دو برشِ آینه‌ای دارد — بالاتنهٔ پشتِ زیپ‌دار، جلوی پیراهن
+     * دکمه‌دار — روی تن با زیپ یا دکمه بسته می‌شود، ولی هیچ رابطهٔ دوختی برایش
+     * نوشته نمی‌شود چون دوخته نمی‌شود. برای نمای سه‌بعدی همین کافی است که لباس
+     * از پشت باز بماند و دو نیمه از تن آویزان شوند؛ چیزی که در نخستین نما دیده
+     * شد.
+     *
+     * پس دو نیمه از همان لبه‌ای که به هم می‌رسند بسته می‌شوند: بلندترین کمانِ
+     * هر نیمه که نزدیک مرز مشترکِ دو نیمه است. اگر چنین کمانی پیدا نشود یا دو
+     * طول به هم نخورند، چیزی بسته نمی‌شود.
+     *
+     * @param  array<string, array<int, string>>  $byCode
+     * @return array<int, array<string, mixed>>
+     */
+    protected function closures(array $instances, array $byCode): array
+    {
+        $out = [];
+
+        foreach ($byCode as $ids) {
+            if (count($ids) !== 2) {
+                continue;
+            }
+
+            [$first, $second] = [$instances[$ids[0]], $instances[$ids[1]]];
+
+            if (empty($second['payload']['mirrored'])) {
+                continue;
+            }
+
+            // مرز مشترک دو نیمه: جایی که بازهٔ زاویه‌ای یکی تمام و دیگری شروع می‌شود
+            $meeting = $this->meetingAngle($first['placement'], $second['placement']);
+
+            if ($meeting === null) {
+                continue;
+            }
+
+            $a = $this->closureArc($first, $meeting);
+            $b = $this->closureArc($second, $meeting);
+
+            if ($a === null || $b === null) {
+                continue;
+            }
+
+            $longer = max($a['length'], $b['length']);
+
+            if ($longer < 8.0 || abs($a['length'] - $b['length']) / $longer > 0.2) {
+                continue;
+            }
+
+            $front = abs(atan2(sin($meeting), cos($meeting))) < M_PI_2;
+
+            $out[] = $this->seam(
+                $a,
+                $b,
+                $front ? 'بستن مرکز جلو' : 'بستن مرکز پشت',
+                // این درز از هیچ رابطه‌ای نیامده؛ خودِ هندسه آن را می‌بندد
+                null,
+                ['reverse' => true],
+            );
+        }
+
+        return $out;
+    }
+
+    /** زاویه‌ای که دو نیمه در آن به هم می‌رسند؛ null یعنی کنار هم نیستند. */
+    protected function meetingAngle(array $a, array $b): ?float
+    {
+        foreach ([[$a['u1'], $b['u0']], [$a['u0'], $b['u1']]] as [$left, $right]) {
+            if (abs($left - $right) < 0.05) {
+                return ($left + $right) / 2;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * کمانی از یک نمونه که روی مرز مشترک می‌نشیند.
+     *
+     * ملاک دوتاست و هر دو لازم است: نزدیکی به مرز، و بلندی. لبهٔ کوتاهِ کنارِ
+     * مرز (مثل گوشهٔ یقه) نباید جای درزِ مرکز را بگیرد.
+     */
+    protected function closureArc(array $instance, float $meeting): ?array
+    {
+        $best = null;
+
+        foreach ($instance['edges'] as $edge => $info) {
+            if (in_array($info['tag'], ['hem', 'waist', 'neck', 'shoulder', 'armhole'], true)) {
+                continue;
+            }
+
+            $middle = DrapeGeometry::arcMidpoint($instance['polygon'], $info['start'], $info['end']);
+            $at = $this->onBody($instance, $middle);
+            $gap = abs($at['u'] - $meeting);
+
+            if ($gap > 0.25 || $info['length'] < 8.0) {
+                continue;
+            }
+
+            if ($best === null || $info['length'] > $best['length']) {
+                $best = [
+                    'piece' => $instance['id'],
+                    'from' => $info['start'],
+                    'to' => $info['end'],
+                    'length' => $info['length'],
+                    'instance' => $instance,
+                    'at' => $at,
+                    'frame' => $this->frame($instance['role']),
+                    'body_side' => $this->bodySide($instance),
+                ];
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * هم‌شمار کردن دو سر یک درز با شکستن کمانِ بلند.
+     *
+     * خط کمر لباس غلافی نمونهٔ روشنش است: بالاتنهٔ پشت دو نیمه است و دامنِ پشت
+     * یک قطعهٔ کامل، پس یک کمانِ ۴۴ سانتی‌متری باید به دو کمانِ ۲۲ سانتی‌متری
+     * برسد. با جفت‌سازی یک‌به‌یک، یکی از دو نیمه بی‌دوخت می‌ماند و روی مانکن از
+     * تن آویزان می‌شود — همان چیزی که در نخستین نمای سه‌بعدی دیده شد.
+     *
+     * فقط حالت «یک در برابر چند» شکسته می‌شود. اگر هر دو سر چند کمان داشته
+     * باشند و شمارشان یکی نباشد، دست نمی‌زنیم و همان‌طور که هست گزارش می‌شود؛
+     * حدس زدن در آن حالت یعنی درزی که وجود ندارد.
+     *
+     * @return array{0: array<int, array>, 1: array<int, array>}
+     */
+    protected function balance(array $left, array $right): array
+    {
+        if (count($left) === count($right)) {
+            return [$left, $right];
+        }
+
+        if (count($left) === 1 && count($right) > 1) {
+            return [$this->splitArc($left[0], $this->shares($right)), $right];
+        }
+
+        if (count($right) === 1 && count($left) > 1) {
+            return [$left, $this->splitArc($right[0], $this->shares($left))];
+        }
+
+        return [$left, $right];
+    }
+
+    /** سهم هر کمان از طول کل، برای شکستن کمان روبه‌رو به همان نسبت‌ها. */
+    protected function shares(array $arcs): array
+    {
+        $total = array_sum(array_map(fn (array $arc) => (float) $arc['length'], $arcs));
+
+        if ($total < 0.01) {
+            return array_fill(0, count($arcs), 1 / max(1, count($arcs)));
+        }
+
+        return array_map(fn (array $arc) => (float) $arc['length'] / $total, $arcs);
+    }
+
+    /**
+     * شکستن یک کمان به چند کمانِ پشت‌سرهم، به نسبت‌های خواسته‌شده.
+     *
+     * برش روی نزدیک‌ترین رأس انجام می‌شود، نه وسط یک پاره‌خط؛ قرارداد بسته
+     * می‌گوید دو سر هر درز باید به رأس واقعی اشاره کنند.
+     *
+     * @param  array<int, float>  $shares
+     * @return array<int, array<string, mixed>>
+     */
+    protected function splitArc(array $arc, array $shares): array
+    {
+        $polygon = $arc['instance']['polygon'];
+        $count = count($polygon);
+        $total = DrapeGeometry::arcLength($polygon, $arc['from'], $arc['to']);
+
+        if ($total < 0.1 || $count < 3) {
+            return [$arc];
+        }
+
+        // مرزهای برش را روی رأس‌ها پیدا کن
+        $cuts = [$arc['from']];
+        $target = 0.0;
+        $walked = 0.0;
+        $index = $arc['from'];
+        $wanted = array_slice($shares, 0, count($shares) - 1);
+
+        foreach ($wanted as $share) {
+            $target += $share * $total;
+
+            while ($index !== $arc['to']) {
+                $next = ($index + 1) % $count;
+                $step = Geometry::distance($polygon[$index], $polygon[$next]);
+
+                if ($walked + $step > $target) {
+                    break;
+                }
+
+                $walked += $step;
+                $index = $next;
+            }
+
+            $cuts[] = $index;
+        }
+
+        $cuts[] = $arc['to'];
+
+        $pieces = [];
+
+        for ($i = 0; $i < count($cuts) - 1; $i++) {
+            [$from, $to] = [$cuts[$i], $cuts[$i + 1]];
+
+            if ($from === $to) {
+                return [$arc]; // برش بی‌معنا شد؛ کمان دست‌نخورده می‌ماند
+            }
+
+            $pieces[] = array_merge($arc, [
+                'from' => $from,
+                'to' => $to,
+                'length' => DrapeGeometry::arcLength($polygon, $from, $to),
+                'at' => $this->onBody($arc['instance'], DrapeGeometry::arcMidpoint($polygon, $from, $to)),
+            ]);
+        }
+
+        return $pieces;
+    }
+
+    /**
      * جفت‌کردن کمان‌های دو سر یک رابطه.
      *
      * ملاک نزدیکی روی بدن است، نه شماره نمونه: کمانی که روی پهلوی چپ نشسته با
@@ -1072,7 +1307,7 @@ class DrapePayloadService
      *
      * @return array<string, mixed>
      */
-    protected function seam(array $a, array $b, string $label, int $relation, array $source): array
+    protected function seam(array $a, array $b, string $label, ?int $relation, array $source): array
     {
         return [
             'a' => ['piece' => $a['piece'], 'from' => $a['from'], 'to' => $a['to'], 'length' => round($a['length'], 3)],

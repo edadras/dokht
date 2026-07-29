@@ -1484,6 +1484,41 @@ export const buildDrape = (payload, body, options = {}) => {
      * می‌خواهد تا زیر وزن خودش بنشیند. مقدار پیش‌فرضِ presettle برای پوسته‌ی
      * پارامتری بود، نه برای لباسی که باید دوخته شود.
      */
+    /*
+     * قطعه‌ای که هیچ سوزنی نخورده، لباس نیست.
+     *
+     * جیب، مغزی و نوارهای ریز رابطه‌ی دوختی ندارند؛ اگر همان‌طور رها شوند زیر
+     * وزن خودشان از لباس جدا می‌افتند و کاربر یک تکه‌ی سرگردان می‌بیند. تنه و
+     * دامن و آستین حتی اگر بی‌درز بمانند سر جایشان می‌مانند (ساروَنگ و تور
+     * همین‌اند)، پس فقط «جزئیات» کنار گذاشته می‌شوند.
+     */
+    if (seams.length) {
+        const stitched = new Set();
+
+        for (const seam of seams) {
+            stitched.add(seam.a);
+
+            if (seam.b) {
+                stitched.add(seam.b);
+            }
+        }
+
+        for (let i = patches.length - 1; i >= 0; i--) {
+            const entry = patches[i];
+
+            if (entry.piece.role !== 'detail' || stitched.has(entry.patch)) {
+                continue;
+            }
+
+            patches.splice(i, 1);
+            meshes.splice(meshes.indexOf(entry.mesh), 1);
+            stats.skipped.push({ id: entry.id, reason: 'هیچ درزی به آن نمی‌رسد؛ رها می‌شد و می‌افتاد' });
+        }
+
+        stats.pieces = patches.length;
+        stats.vertices = patches.reduce((sum, entry) => sum + entry.patch.count, 0);
+    }
+
     stats.presettle = Math.ceil(settings.seamDuration * 60) + 140;
 
     stats.solver =
