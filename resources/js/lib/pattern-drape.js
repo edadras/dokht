@@ -1708,7 +1708,7 @@ export const supportGarment = (drape, options = {}) => {
      * بی‌جا می‌ماند — همان نوار مچاله‌ای که کاربر دور کمر می‌دید. روی تن هم
      * همین است: کمرِ دامن روی خودِ کمر می‌ایستد، نه روی درز.
      */
-    const zones = options.zones || ['torso', 'collar', 'skirt'];
+    const zones = options.zones || ['torso', 'collar', 'skirt', 'sleeve'];
 
     for (const { piece, patch } of drape.patches) {
         const zone = piece.placement?.zone || '';

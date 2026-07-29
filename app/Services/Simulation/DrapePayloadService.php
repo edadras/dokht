@@ -343,14 +343,17 @@ class DrapePayloadService
         }
 
         foreach ([
-            'sleeve' => ['sleeve', 'آستین'],
+            // مچ‌بند دور مچِ دست می‌پیچد، نه دور بدن. اگر «جزئیات» شمرده شود،
+            // روی محور بدن و در ارتفاع مچ می‌نشیند — یعنی یک نوار پارچه دور
+            // زانو، همان چیزی که در نمای سه‌بعدی جدا از لباس دیده می‌شد.
+            'sleeve' => ['sleeve', 'cuff', 'آستین', 'مچ'],
             'collar' => ['collar', 'hood', 'lapel', 'یقه', 'کلاه'],
             'skirt' => ['skirt', 'peplum', 'godet', 'دامن'],
             'leg' => ['leg', 'pant', 'trouser', 'panty', 'short', 'شلوار', 'پاچه'],
             'detail' => [
-                'cuff', 'pocket', 'facing', 'waistband', 'belt', 'placket', 'binding', 'band',
+                'pocket', 'facing', 'waistband', 'belt', 'placket', 'binding', 'band',
                 'strap', 'tie', 'loop', 'trim', 'patch', 'gusset', 'veil',
-                'مچ', 'جیب', 'سجاف', 'کمربند', 'نوار', 'بند',
+                'جیب', 'سجاف', 'کمربند', 'نوار', 'بند',
             ],
         ] as $role => $keywords) {
             foreach ($keywords as $keyword) {
@@ -380,6 +383,12 @@ class DrapePayloadService
         }
 
         if ($quantity > 1 && $piece->mirror) {
+            return $mirrored ? 'right' : 'left';
+        }
+
+        // مچ‌بند قرینه است، پس ژنراتور آینه‌اش نمی‌کند؛ ولی دو تا که بریده شد،
+        // یکی روی دست چپ می‌رود و یکی روی راست
+        if ($quantity > 1 && ($piece->meta['part'] ?? null) === 'cuff') {
             return $mirrored ? 'right' : 'left';
         }
 
@@ -532,6 +541,8 @@ class DrapePayloadService
 
         $yTop = match (true) {
             $role === 'collar' => $body->level('neck'),
+            // مچ‌بند روی همان محورِ دست است ولی سرِ دیگرش: پای آستین، نه حلقه
+            $role === 'sleeve' && $part !== null => $part,
             $role === 'sleeve' => $body->level('armhole'),
             $top !== null => $top,
             $part !== null => $part,
