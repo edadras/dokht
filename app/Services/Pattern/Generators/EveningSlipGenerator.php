@@ -62,7 +62,7 @@ class EveningSlipGenerator extends EveningBaseGenerator
 
         $skirt = $this->gownSkirt('skirt_a_line', $measurements, $ease, [
             'length' => (float) $this->param($params, 'skirt_length', 108),
-            'hem_flare' => 22,
+            'flare' => 22,
         ], 'slip');
 
         [$skirt, $waistNotes] = $this->joinWaist($skirt, $waist);

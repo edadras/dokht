@@ -4,6 +4,7 @@ namespace App\Services\Pattern\Generators;
 
 use App\Services\Pattern\GeneratorRegistry;
 use App\Services\Pattern\Geometry;
+use InvalidArgumentException;
 
 /**
  * پایه مشترک لباس‌های شب، مجلسی و عروس.
@@ -258,7 +259,19 @@ abstract class EveningBaseGenerator extends TopBaseGenerator
         }
 
         $generator = GeneratorRegistry::make($key);
-        $params = array_merge($generator->defaultParams(), array_merge([
+        $defaults = $generator->defaultParams();
+
+        // نامِ پارامتری که این دامن نمی‌شناسد در array_merge بی‌صدا گم می‌شود و
+        // لباس با تنظیمات پیش‌فرض دامن ساخته می‌شود — بی آنکه کسی خبردار شود.
+        $unknown = array_diff(array_keys($overrides), array_keys($defaults));
+
+        if ($unknown !== []) {
+            throw new InvalidArgumentException(
+                'دامن «'.$key.'» پارامتر «'.implode('، ', $unknown).'» را نمی‌شناسد.'
+            );
+        }
+
+        $params = array_merge($defaults, array_merge([
             // کمربند دامن لازم نیست: خط کمرِ لباس به بالاتنه دوخته می‌شود
             'waistband' => false,
             'zip' => 'none',
@@ -286,12 +299,17 @@ abstract class EveningBaseGenerator extends TopBaseGenerator
      * دو عدد اندازه گرفته می‌شود و اختلافشان یا با چین حل می‌شود یا گزارش.
      * پنهان کردن این اختلاف یعنی لباسی که روی کاغذ درست است و دوخته نمی‌شود.
      *
+     * فقط لایهٔ رو در این حساب می‌آید. زیردامنی و آستر از نوار کمرِ خودشان
+     * آویزان‌اند و چین خودشان را دارند؛ اگر دور کمرشان جزو کمر دامن شمرده شود،
+     * اختلاف چند برابر واقعی درمی‌آید و لایهٔ رو تا نصف جمع می‌شود.
+     *
      * @param  array<int, array<string, mixed>>  $skirt
      * @return array{0: array<int, array<string, mixed>>, 1: array<int, string>}
      */
     protected function joinWaist(array $skirt, float $bodiceWaist): array
     {
-        $skirtWaist = $this->edgeGirth($skirt, 'waist');
+        $shell = array_filter($skirt, fn (array $piece) => $this->joinsTheBodice($piece));
+        $skirtWaist = $this->edgeGirth($shell, 'waist');
         $notes = [];
 
         if ($skirtWaist < 1.0 || $bodiceWaist < 1.0) {
@@ -308,17 +326,43 @@ abstract class EveningBaseGenerator extends TopBaseGenerator
         }
 
         if ($difference > 0) {
-            // دامن پُرتر است: همان اضافه چین می‌خورد
-            foreach ($skirt as $index => $piece) {
+            // دامن پُرتر است: همان اضافه چین می‌خورد.
+            //
+            // سهم هر قطعه به نسبت سهمش از دور کمر است، نه «تقسیم بر تعداد قطعه‌ها»:
+            // یک پنل روی تای پارچه دو برابر خودش کمر می‌دهد و اگر همان‌قدر چین
+            // بگیرد که یک پنل تک‌لا، دو برابر لازم جمع می‌شود و کمر دامن از کمر
+            // بالاتنه کوچک‌تر درمی‌آید. مقدارِ ثبت‌شده روی هر قطعه هم برای یک برش
+            // است، پس ضریب تکرار در آن ضرب نمی‌شود.
+            $shares = [];
+            $total = 0.0;
+
+            foreach ($shell as $index => $piece) {
                 $edges = Geometry::edgesWithTag($piece, 'waist');
 
                 if ($edges === []) {
                     continue;
                 }
 
+                $length = 0.0;
+
+                foreach ($edges as $edge) {
+                    $length += Geometry::edgeLength($piece['outline'], $edge);
+                }
+
+                $repeats = ! empty($piece['on_fold']) ? 2 : max(1, (int) ($piece['cut_quantity'] ?? 1));
+
+                $shares[$index] = ['edge' => $edges[0], 'length' => $length];
+                $total += $length * $repeats;
+            }
+
+            if ($total < 0.01) {
+                return [$skirt, $notes];
+            }
+
+            foreach ($shares as $index => $share) {
                 $skirt[$index]['meta']['gathers'][] = [
-                    'edge' => $edges[0],
-                    'amount' => round($difference / max(1, count($skirt)), 2),
+                    'edge' => $share['edge'],
+                    'amount' => round($difference * ($share['length'] / $total), 2),
                     'label' => 'چین کمر روی بالاتنه',
                 ];
             }
@@ -335,6 +379,23 @@ abstract class EveningBaseGenerator extends TopBaseGenerator
             .' یا ساسون بالاتنه را کم؛ این دو لبه همین‌طور به هم نمی‌رسند.';
 
         return [$skirt, $notes];
+    }
+
+    /**
+     * آیا این قطعه همان لایه‌ای است که به کمر بالاتنه دوخته می‌شود؟
+     *
+     * آستر، زیردامنی و نوارها کمر خودشان را دارند و در این حساب نمی‌آیند.
+     *
+     * @param  array<string, mixed>  $piece
+     */
+    protected function joinsTheBodice(array $piece): bool
+    {
+        $part = (string) ($piece['meta']['part'] ?? '');
+        $role = (string) ($piece['meta']['girth_role'] ?? 'shell');
+
+        return $role === 'shell'
+            && ! in_array($part, ['lining', 'binding', 'waistband', 'petticoat'], true)
+            && ($piece['layer'] ?? 'outer') !== 'lining';
     }
 
     /**

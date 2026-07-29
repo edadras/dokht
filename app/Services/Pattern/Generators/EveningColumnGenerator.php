@@ -55,7 +55,7 @@ class EveningColumnGenerator extends EveningBaseGenerator
 
         $skirt = $this->gownSkirt('skirt_pencil', $measurements, $ease, [
             'length' => (float) $this->param($params, 'skirt_length', 112),
-            'vent' => (float) $this->param($params, 'slit', 40),
+            'vent_length' => (float) $this->param($params, 'slit', 40),
         ], 'column');
 
         [$skirt, $waistNotes] = $this->joinWaist($skirt, $waist);

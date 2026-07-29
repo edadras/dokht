@@ -125,15 +125,29 @@ class EveningCatalogTest extends TestCase
      |  خط کمر: جایی که این لباس‌ها می‌شکنند
      * ------------------------------------------------------------------- */
 
+    /**
+     * هر لباسی که بالاتنه و دامنش جدا درفت می‌شوند، باید در کمر جفت باشد.
+     *
+     * این آزمون عمداً روی کل خانواده می‌چرخد، نه چند مدل دستچین‌شده: با فهرست
+     * دستچین، لباس پرنسسی و بالماسکه از قلم افتاده بودند و کمرِ دامنشان ۳۳
+     * سانتی‌متر از بالاتنه کوچک‌تر بود، چون زیردامنی هم جزو کمر دامن شمرده
+     * می‌شد و اختلافِ خیالی روی لایهٔ رو چین می‌خورد.
+     */
     public function test_the_bodice_waist_and_the_skirt_waist_meet(): void
     {
-        foreach (['evening_column', 'evening_a_line', 'evening_mermaid', 'bridal_sheath', 'bridal_a_line'] as $key) {
-            $pieces = $this->build($key);
+        foreach (array_keys(GeneratorRegistry::group('evening')) as $key) {
+            $pieces = array_filter(
+                $this->build($key),
+                fn (array $p) => ($p['meta']['girth_role'] ?? 'shell') === 'shell'
+                    && ($p['layer'] ?? 'outer') !== 'lining',
+            );
 
             $bodice = $this->girth($pieces, 'waist', ['front_bodice', 'back_bodice']);
             $skirt = $this->girth($pieces, 'waist', ['skirt_front', 'skirt_back', 'skirt_panel']);
 
-            $this->assertGreaterThan(0, $bodice, "«{$key}» کمر بالاتنه ندارد.");
+            if ($bodice <= 0) {
+                continue; // تور عروس بالاتنه ندارد
+            }
 
             if ($skirt <= 0) {
                 continue; // دامن ترک‌دار کمرش را از پنل‌ها می‌دهد، نه از یک لبه

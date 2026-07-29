@@ -69,7 +69,7 @@ class EngagementDressGenerator extends EveningBaseGenerator
 
         $skirt = $this->gownSkirt('skirt_a_line', $measurements, $ease, [
             'length' => (float) $this->param($params, 'skirt_length', 112),
-            'hem_flare' => (float) $this->param($params, 'skirt_flare', 40),
+            'flare' => (float) $this->param($params, 'skirt_flare', 40),
         ], 'engagement');
 
         [$skirt, $waistNotes] = $this->joinWaist($skirt, $waist);

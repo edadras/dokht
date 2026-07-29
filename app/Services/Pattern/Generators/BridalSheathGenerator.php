@@ -37,7 +37,7 @@ class BridalSheathGenerator extends EveningBaseGenerator
             $this->fitParam('fitted'),
             $this->eveningSchema(
                 array_merge($this->gownLengthParam(116), [
-                    'vent' => [
+                    'vent_length' => [
                         'label' => 'بلندی چاک پشت', 'min' => 10, 'max' => 70, 'step' => 5,
                         'default' => 35, 'unit' => 'سانتی‌متر',
                         'hint' => 'بدون چاک، لباس راسته اجازهٔ قدم برداشتن نمی‌دهد.',
@@ -60,7 +60,7 @@ class BridalSheathGenerator extends EveningBaseGenerator
 
         $skirt = $this->gownSkirt('skirt_pencil', $measurements, $ease, [
             'length' => (float) $this->param($params, 'skirt_length', 116),
-            'vent' => (float) $this->param($params, 'vent', 35),
+            'vent_length' => (float) $this->param($params, 'vent', 35),
         ], 'sheath');
 
         [$skirt, $waistNotes] = $this->joinWaist($skirt, $waist);

@@ -56,8 +56,8 @@ class EveningMermaidGenerator extends EveningBaseGenerator
 
         $skirt = $this->gownSkirt('skirt_mermaid', $measurements, $ease, [
             'length' => (float) $this->param($params, 'skirt_length', 118),
-            'flare_from' => $flareFrom,
-            'hem_flare' => (float) $this->param($params, 'hem_flare', 55),
+            'flare_start' => $flareFrom,
+            'flare' => (float) $this->param($params, 'hem_flare', 55),
         ], 'mermaid');
 
         [$skirt, $waistNotes] = $this->joinWaist($skirt, $waist);

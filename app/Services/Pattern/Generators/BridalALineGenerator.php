@@ -63,11 +63,12 @@ class BridalALineGenerator extends EveningBaseGenerator
             ? $this->gownSkirt('skirt_train', $measurements, $ease, [
                 'length' => $length,
                 'train' => $train,
+                // نام این پارامتر در دامن دنباله‌دار hem_flare است و در خط A، flare
                 'hem_flare' => (float) $this->param($params, 'skirt_flare', 55),
             ], 'bridal-aline')
             : $this->gownSkirt('skirt_a_line', $measurements, $ease, [
                 'length' => $length,
-                'hem_flare' => (float) $this->param($params, 'skirt_flare', 55),
+                'flare' => (float) $this->param($params, 'skirt_flare', 55),
             ], 'bridal-aline');
 
         [$skirt, $waistNotes] = $this->joinWaist($skirt, $waist);
