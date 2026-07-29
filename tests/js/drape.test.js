@@ -185,3 +185,50 @@ test('پیشنهاد تنظیم حل‌کننده با سنگینی مش عوض 
     assert.equal(heavy.stats.solver.substeps, 1);
     assert.ok(heavy.stats.warnings.some((line) => line.includes('رأس')));
 });
+
+/*
+ * قطعه‌ها باید کنارِ هم پارک شده باشند، پیش از آنکه فیزیک شروع شود.
+ *
+ * این آزمون همان چیزی را قفل می‌کند که گران‌ترین درسِ این ماژول بود: قید درز
+ * فقط در خط راست می‌کشد و راهِ دور بدن را نمی‌شناسد. اگر دو سرِ یک درز دور از
+ * هم شروع کنند، پارچه از روی مانکن کشیده می‌شود و لباس گره می‌خورد — حتی وقتی
+ * الگو و برش و جفتِ درزها همه درست‌اند. اندازه‌ی اندازه‌گرفته‌شده روی پیراهن
+ * کلاسیک: ۳۸ سانتی‌متر پیش از چیدنِ گرافی، ۱۰٫۶ سانتی‌متر پس از آن.
+ */
+test('دو سرِ هر درز نزدیک هم پارک می‌شوند', () => {
+    const payload = typeof bodicePayload === 'function' ? bodicePayload() : bodicePayload;
+    const drape = buildDrape(payload.drape || payload, makeBody(payload.avatar || {}), {});
+
+    assert.ok(drape.seams.length > 0, 'بستهٔ آزمون باید درز داشته باشد');
+
+    for (const seam of drape.seams) {
+        const a = seam.a.positions;
+        const b = (seam.b || seam.a).positions;
+        let sum = 0;
+
+        for (let i = 0; i < seam.count; i++) {
+            const at = seam.pairs[i * 2] * 3;
+            const to = seam.pairs[i * 2 + 1] * 3;
+
+            sum += Math.hypot(a[at] - b[to], a[at + 1] - b[to + 1], a[at + 2] - b[to + 2]);
+        }
+
+        const mean = sum / Math.max(1, seam.count);
+
+        assert.ok(
+            mean < 0.15,
+            `درز «${seam.label || '—'}» با ${(mean * 100).toFixed(1)} سانتی‌متر فاصله شروع می‌کند؛ بیش از ۱۵ سانتی‌متر یعنی پارچه از روی بدن کشیده می‌شود`,
+        );
+    }
+});
+
+test('هیچ رأسی پس از چیدن NaN نیست', () => {
+    const payload = typeof bodicePayload === 'function' ? bodicePayload() : bodicePayload;
+    const drape = buildDrape(payload.drape || payload, makeBody(payload.avatar || {}), {});
+
+    for (const { id, patch } of drape.patches) {
+        for (let i = 0; i < patch.positions.length; i++) {
+            assert.ok(Number.isFinite(patch.positions[i]), `قطعهٔ «${id}» رأس بی‌مقدار دارد`);
+        }
+    }
+});
