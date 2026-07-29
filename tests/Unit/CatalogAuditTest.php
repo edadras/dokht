@@ -154,6 +154,34 @@ class CatalogAuditTest extends TestCase
     }
 
     /** آیا این بررسی برای این مدل کنار گذاشته شده است؟ */
+    /**
+     * ضریب کشسانی اعلام‌شدهٔ یک مدل، اگر لباس کشی باشد.
+     *
+     * فقط وقتی برمی‌گردد که قطعه‌های پوسته خودشان meta.stretch داشته باشند؛
+     * یعنی الگو صریحاً گفته «من با آزادی منفی بریده شده‌ام».
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     */
+    protected function declaredStretch(array $pieces): ?float
+    {
+        foreach ($pieces as $piece) {
+            // فقط قطعهٔ پوسته و فقط کلید مخصوص خودش؛ meta.stretch روی نوار
+            // کشباف معنای دیگری دارد و اگر با این یکی اشتباه شود، تی‌شرت هم
+            // «لباس کشی با آزادی منفی» شمرده می‌شود.
+            if (($piece['meta']['girth_role'] ?? '') !== 'shell') {
+                continue;
+            }
+
+            $stretch = $piece['meta']['stretch_ratio'] ?? null;
+
+            if (is_numeric($stretch) && (float) $stretch < 0.999) {
+                return (float) $stretch;
+            }
+        }
+
+        return null;
+    }
+
     protected function allowed(string $check, string $key): bool
     {
         return array_key_exists($check.':'.$key, static::ALLOW_LIST);
@@ -672,12 +700,36 @@ class CatalogAuditTest extends TestCase
                     continue;
                 }
 
+                // لباس کشی (مایو) عمداً کوچک‌تر از بدن بریده می‌شود و در بازه
+                // لباس بافته نمی‌گنجد. به‌جای کنار گذاشتنش، سنجه عوض می‌شود:
+                // خودِ الگو می‌گوید با چه ضریب کشسانی بریده شده، و بررسی می‌کنیم
+                // که واقعاً همان‌قدر کوچک شده باشد. این سخت‌گیرانه‌تر از بازه است.
+                $stretch = $this->declaredStretch($pieces);
+
                 foreach ($this->markerGirths($pieces) as $area => $girth) {
                     if ($this->allowed($area.'_girth', $key)) {
                         continue;
                     }
 
                     $checked++;
+
+                    if ($stretch !== null) {
+                        // لباس کشیِ راست‌بریده هم مثل لباس بافتهٔ راست، کمرش را
+                        // از سینه می‌گیرد؛ همان روادارییِ $drop این‌جا هم لازم است
+                        $expected = $body[$area] * $stretch;
+                        $ceiling = ($body[$area] + $drop[$area]) * $stretch;
+
+                        if ($girth < $expected - max(6.0, $expected * 0.12)
+                            || $girth > $ceiling + max(6.0, $ceiling * 0.12)) {
+                            $problems[] = sprintf(
+                                '%s|%s اندازه تمام‌شده %s %.1f است؛ با ضریب کشسانی %.2f روی بدن %.1f باید میان %.1f و %.1f می‌شد.',
+                                $key, $size, $area, $girth, $stretch, $body[$area], $expected, $ceiling,
+                            );
+                        }
+
+                        continue;
+                    }
+
                     $ease = $girth - $body[$area];
                     [$low, $high] = $band[$area];
                     $high += $drop[$area];

@@ -46,6 +46,7 @@ class GeneratorRegistry
         'bodice' => 'بالاتنه',
         'top' => 'تاپ',
         'shirt' => 'پیراهن و تی‌شرت',
+        'swim' => 'مایو',
         'sleeve' => 'آستین',
         'skirt' => 'دامن',
         'pants' => 'پایین‌تنه',
