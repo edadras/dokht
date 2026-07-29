@@ -243,7 +243,7 @@ trait BuildsSleeve
      * به طول حلقه رسید و باید خود آستین پهن‌تر شود. آستین پهن‌تر یعنی آزادی بیشتر
      * روی بازو، که درست است؛ آستین کوتاه‌تر از حلقه اصلاً دوخته نمی‌شود.
      *
-     * @return array{0: float, 1: float}  پهنا و ارتفاع
+     * @return array{0: float, 1: float} پهنا و ارتفاع
      */
     protected function fitCap(float $width, float $target): array
     {

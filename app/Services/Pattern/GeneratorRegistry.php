@@ -45,6 +45,7 @@ class GeneratorRegistry
     public const GROUPS = [
         'bodice' => 'بالاتنه',
         'top' => 'تاپ',
+        'shirt' => 'پیراهن و تی‌شرت',
         'sleeve' => 'آستین',
         'skirt' => 'دامن',
         'pants' => 'پایین‌تنه',
