@@ -1576,6 +1576,36 @@ export const buildDrape = (payload, body, options = {}) => {
                 continue;
             }
 
+            /*
+             * جیب در درز دوخته نمی‌شود، روی سطح می‌نشیند.
+             *
+             * جیب رودوزی، پاتلت و نوارِ رویی لبه‌شان به لبه‌ی چیزی نمی‌رسد؛ روی
+             * تنه کوک می‌خورند. جفت‌کردن کمان برایشان جواب نمی‌دهد و تا امروز
+             * کنار گذاشته می‌شدند. حالا هر رأسِ مرزیِ قطعه به نزدیک‌ترین رأسِ
+             * قطعه‌ی زیرش دوخته می‌شود — همان کوکِ دور جیب.
+             */
+            const host = nearestHost(entry, patches, stitched);
+            const pairs = host ? surfaceStitches(states.get(entry.id), host, settings.gap * 2.5) : [];
+
+            if (pairs.length >= 8) {
+                const seam = new SeamSet({
+                    a: entry.patch,
+                    b: host.patch,
+                    pairs: Uint32Array.from(pairs),
+                    label: 'دوخت روی سطح',
+                    kind: 'seam',
+                    duration: settings.seamDuration,
+                    stiffness: settings.seamStiffness,
+                });
+
+                seams.push(seam);
+                stitched.add(entry.patch);
+                stats.seams++;
+                stats.stitches += seam.count;
+
+                continue;
+            }
+
             patches.splice(i, 1);
             meshes.splice(meshes.indexOf(entry.mesh), 1);
             stats.skipped.push({ id: entry.id, reason: 'هیچ درزی به آن نمی‌رسد؛ رها می‌شد و می‌افتاد' });
@@ -1675,6 +1705,82 @@ const markCollapsed = (state, arc) => {
     for (let i = 0; i + 1 < arc.slots.length; i++) {
         state.collapsed[arc.slots[i]] = 1;
     }
+};
+
+/* نزدیک‌ترین قطعه‌ی دوخته‌شده به یک قطعه‌ی جامانده، بر پایه‌ی مرکز ثقلشان */
+const nearestHost = (entry, patches, stitched) => {
+    const centre = (patch) => {
+        let x = 0;
+        let y = 0;
+        let z = 0;
+
+        for (let i = 0; i < patch.count; i++) {
+            x += patch.positions[i * 3];
+            y += patch.positions[i * 3 + 1];
+            z += patch.positions[i * 3 + 2];
+        }
+
+        return [x / patch.count, y / patch.count, z / patch.count];
+    };
+
+    const [ax, ay, az] = centre(entry.patch);
+    let best = null;
+    let bestGap = Infinity;
+
+    for (const other of patches) {
+        if (other === entry || ! stitched.has(other.patch)) {
+            continue;
+        }
+
+        const [bx, by, bz] = centre(other.patch);
+        const gap = Math.hypot(ax - bx, ay - by, az - bz);
+
+        if (gap < bestGap) {
+            bestGap = gap;
+            best = other;
+        }
+    }
+
+    return best;
+};
+
+/*
+ * کوکِ دور یک قطعه‌ی رویی: هر رأس مرزی به نزدیک‌ترین رأس قطعه‌ی زیرش.
+ *
+ * فقط رأس‌هایی که واقعاً روی قطعه‌ی زیر می‌افتند کوک می‌خورند؛ اگر جیب نصفه
+ * بیرون از تنه باشد، همان نصفه‌اش دوخته می‌شود و بقیه آزاد می‌ماند.
+ */
+const surfaceStitches = (state, host, reach) => {
+    if (! state) {
+        return [];
+    }
+
+    const pairs = [];
+    const from = state.patch.positions;
+    const to = host.patch.positions;
+
+    for (const vertex of state.loop) {
+        const ax = from[vertex * 3];
+        const ay = from[vertex * 3 + 1];
+        const az = from[vertex * 3 + 2];
+        let best = -1;
+        let bestGap = reach;
+
+        for (let j = 0; j < host.patch.count; j++) {
+            const gap = Math.hypot(ax - to[j * 3], ay - to[j * 3 + 1], az - to[j * 3 + 2]);
+
+            if (gap < bestGap) {
+                bestGap = gap;
+                best = j;
+            }
+        }
+
+        if (best >= 0) {
+            pairs.push(vertex, best);
+        }
+    }
+
+    return pairs;
 };
 
 /**
