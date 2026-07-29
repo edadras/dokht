@@ -1157,7 +1157,18 @@ export default (config = {}) => ({
          * بی‌وزنی دوخته می‌شود، بعد سرشانه گرفته می‌شود و بعد وزن برمی‌گردد.
          */
         const gravity = ctx.world.law.gravity;
+        const iterations = ctx.world.iterations;
 
+        /*
+         * هنگام دوختن، تکرارِ بیشتر می‌ارزد.
+         *
+         * درز فقط یک «هدف» است و هر تکرار کمی نزدیک‌ترش می‌کند؛ با سه تکرار،
+         * خط کمر تا آخر بسته نمی‌شد و پارچه کنار درز مچاله می‌ماند. اندازه
+         * گرفته شد: با شش تکرار خطای درز از ۷٫۸ به ۵٫۴ سانتی‌متر و بیشترین
+         * کشش مثلث از ۴٫۴ به ۲٫۴ برابر می‌رسد. این هزینه فقط یک بار هنگام
+         * ساخت پرداخت می‌شود، نه در هر فریم.
+         */
+        ctx.world.iterations = Math.max(6, iterations);
         ctx.world.law.gravity = 0;
         ctx.world.presettle(drape.stats?.presettle ?? 120);
 
@@ -1179,6 +1190,7 @@ export default (config = {}) => ({
 
         ctx.world.law.gravity = gravity;
         ctx.world.presettle(40);
+        ctx.world.iterations = iterations;
 
         ctx.cloth.forEach((item) => {
             item.geometry.attributes.position.needsUpdate = true;

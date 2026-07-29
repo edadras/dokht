@@ -1016,17 +1016,54 @@ const notchDarts = (piece) => {
         (dart) => dart && dart.legs && dart.apex && ! Number.isInteger(dart.start),
     );
 
-    for (const dart of open) {
+    /*
+     * نوکِ دو ساسون نباید روی یک نقطه بیفتد.
+     *
+     * روی الگو، ساسون سینه و ساسون کمر هر دو به «نقطه‌ی سینه» اشاره می‌کنند و
+     * سرور هم همان یک نقطه را برای هر دو می‌دهد. اگر هر دو گوه را با همان نوکِ
+     * مشترک از مرز ببریم، چندضلعی در آن نقطه به خودش گره می‌خورد (bowtie) و
+     * دیگر ساده نیست؛ مثلث‌بندی همان‌جا به‌هم می‌ریزد. اندازه‌گیری‌اش روی لباس
+     * غلافی: یک مثلث ۴۹۳ برابر کشیده می‌شد و روی سینه یک حفره‌ی سه‌گوش می‌ماند.
+     *
+     * کاری که خیاط می‌کند همین است: نوک ساسون چند میلی‌متر پیش از نقطه‌ی سینه
+     * تمام می‌شود، وگرنه روی سینه یک قله‌ی تیز می‌افتد. پس نوکِ ساسونِ دوم را
+     * به همان اندازه عقب می‌کشیم.
+     */
+    const tips = [];
+
+    const freeTip = (dart) => {
         const [l0, l1] = dart.legs;
+        const mouth = [(l0[0] + l1[0]) / 2, (l0[1] + l1[1]) / 2];
+        let apex = [dart.apex[0], dart.apex[1]];
+
+        for (let attempt = 0; attempt < 6; attempt++) {
+            const clash = tips.some((tip) => Math.hypot(tip[0] - apex[0], tip[1] - apex[1]) < 0.4);
+
+            if (! clash) {
+                break;
+            }
+
+            const dx = apex[0] - mouth[0];
+            const dy = apex[1] - mouth[1];
+            const length = Math.hypot(dx, dy) || 1;
+
+            apex = [apex[0] - (dx / length) * 0.7, apex[1] - (dy / length) * 0.7];
+        }
+
+        tips.push(apex);
+
+        return apex;
+    };
+
+    /* نزدیک‌ترین پاره‌خط مرزی به یک نقطه */
+    const nearestSegment = (point) => {
         let best = -1;
         let bestCost = Infinity;
 
         for (let i = 0; i < polygon.length; i++) {
             const a = polygon[i];
             const b = polygon[(i + 1) % polygon.length];
-            const cost =
-                segmentDistance2(l0[0], l0[1], a[0], a[1], b[0], b[1]) +
-                segmentDistance2(l1[0], l1[1], a[0], a[1], b[0], b[1]);
+            const cost = segmentDistance2(point[0], point[1], a[0], a[1], b[0], b[1]);
 
             if (cost < bestCost) {
                 bestCost = cost;
@@ -1034,30 +1071,59 @@ const notchDarts = (piece) => {
             }
         }
 
-        if (best < 0) {
+        return best;
+    };
+
+    for (const dart of open) {
+        const [l0, l1] = dart.legs;
+
+        // دهانه‌ی صفر یعنی گوه‌ای بی‌عرض؛ بریدنش فقط مثلث تیغه می‌سازد
+        if (Math.hypot(l1[0] - l0[0], l1[1] - l0[1]) < 0.05) {
             continue;
         }
 
-        const a = polygon[best];
-        const b = polygon[(best + 1) % polygon.length];
-        const dx = b[0] - a[0];
-        const dy = b[1] - a[1];
-        const len2 = dx * dx + dy * dy || 1;
-        const tOf = (p) => ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2;
-        const ordered = tOf(l0) <= tOf(l1) ? [l0, l1] : [l1, l0];
+        /*
+         * دو ساق ساسون لزوماً روی یک پاره‌خط نیستند.
+         *
+         * دهانه‌ی ساسون سینه روی درز پهلو سه‌ونیم سانتی‌متر باز است و مسیرِ
+         * خط‌شکسته آنجا هر یک سانتی‌متر یک رأس دارد؛ یعنی میان دو ساق چند رأس
+         * دیگر هست. اگر گوه را همان‌جا «اضافه» کنیم بی‌آنکه آن رأس‌ها را
+         * برداریم، مرز از روی خودش برمی‌گردد و چندضلعی دیگر ساده نیست —
+         * مثلث‌بندی همان‌جا می‌ترکد. اندازه‌گیری‌اش: یک مثلث ۶۲۵ برابر کشیده
+         * می‌شد. پس بازه‌ی میان دو ساق برداشته و به‌جایش ساق→نوک→ساق می‌نشیند.
+         */
+        const first = nearestSegment(l0);
+        const second = nearestSegment(l1);
 
-        polygon.splice(best + 1, 0, [ordered[0][0], ordered[0][1]], [dart.apex[0], dart.apex[1]], [
+        if (first < 0 || second < 0) {
+            continue;
+        }
+
+        const [from, to, ordered] =
+            first <= second ? [first, second, [l0, l1]] : [second, first, [l1, l0]];
+
+        // بازه‌ای که دور مسیر می‌پیچد را دست نمی‌زنیم؛ نادر است و بریدنش خطاخیز
+        if (to - from > polygon.length / 2) {
+            continue;
+        }
+
+        const apex = freeTip(dart);
+        const removed = to - from;
+
+        polygon.splice(from + 1, removed, [ordered[0][0], ordered[0][1]], [apex[0], apex[1]], [
             ordered[1][0],
             ordered[1][1],
         ]);
 
+        const shift = 3 - removed;
+
         for (let i = 0; i < map.length; i++) {
-            if (map[i] > best) {
-                map[i] += 3;
+            if (map[i] > from) {
+                map[i] = Math.max(from + 1, map[i] + shift);
             }
         }
 
-        darts.push({ start: best + 1, apex: best + 2, end: best + 3, intake: dart.intake, cut: false });
+        darts.push({ start: from + 1, apex: from + 2, end: from + 3, intake: dart.intake, cut: false });
     }
 
     // ساسون‌هایی که سرور خودش بریده؛ فقط باید نوکشان را روی مسیر پیدا کنیم
@@ -1633,10 +1699,22 @@ export const supportGarment = (drape, options = {}) => {
     const strength = options.strength ?? DEFAULTS.support.strength;
     const inverse = options.inverse || IDENTITY;
 
+    /*
+     * دامن هم باید نگه داشته شود، نه فقط تنه.
+     *
+     * دامن تنها از خط کمر به بالاتنه دوخته است و وزن یک دامن بلند روی همان یک
+     * درز می‌افتد؛ قید درز نرم است و زیر بار می‌کشد. اندازه‌گیری روی لباس
+     * غلافی: لبه‌ی بالای دامن پانزده سانتی‌متر پایین می‌رفت و بالاتنه بالای آن
+     * بی‌جا می‌ماند — همان نوار مچاله‌ای که کاربر دور کمر می‌دید. روی تن هم
+     * همین است: کمرِ دامن روی خودِ کمر می‌ایستد، نه روی درز.
+     */
+    const zones = options.zones || ['torso', 'collar', 'skirt'];
+
     for (const { piece, patch } of drape.patches) {
         const zone = piece.placement?.zone || '';
+        const held = zones.some((name) => zone === name || zone.startsWith(`${name}_`));
 
-        if (! (zone.startsWith('torso') || zone === 'collar') || ! patch.follow) {
+        if (! held || ! patch.follow) {
             continue;
         }
 
