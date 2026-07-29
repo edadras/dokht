@@ -72,6 +72,10 @@
                     </div>
                 </x-card>
             @endforeach
+
+        @if ($materials->hasPages())
+            <div class="mt-6">{{ $materials->links() }}</div>
+        @endif
         </div>
     @endif
 </x-app-layout>

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use App\Notifications\ResetPasswordLink;
 use Illuminate\Notifications\Notifiable;
 
 #[Fillable(['workshop_id', 'name', 'email', 'password', 'role', 'is_admin', 'phone', 'avatar_path'])]
@@ -37,6 +38,12 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_admin' => 'boolean',
         ];
+    }
+
+    /** ایمیل بازیابی رمز، به فارسی. */
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new ResetPasswordLink($token));
     }
 
     public function workshop(): BelongsTo

@@ -4,6 +4,10 @@
         <p class="mt-1 text-sm text-stone-500">خوش آمدید؛ کارتان را از همان‌جا که رها کردید ادامه دهید.</p>
     </div>
 
+    @if (session('status'))
+        <x-alert type="success" class="mb-4">{{ session('status') }}</x-alert>
+    @endif
+
     <form method="POST" action="{{ route('login') }}" class="space-y-4">
         @csrf
 
@@ -15,6 +19,12 @@
         <x-field label="رمز عبور" name="password" required>
             <x-input type="password" name="password" required autocomplete="current-password" />
         </x-field>
+
+        <div class="text-start">
+            <a href="{{ route('password.request') }}" class="text-sm text-brand-600 hover:underline">
+                رمزتان را فراموش کرده‌اید؟
+            </a>
+        </div>
 
         <label class="flex items-center gap-2 text-sm text-stone-600">
             <input type="checkbox" name="remember" value="1"

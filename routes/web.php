@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\PatternTemplateController as AdminPatternTemplate
 use App\Http\Controllers\AssistantController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\InviteController;
+use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CuttingLayoutController;
@@ -47,10 +48,19 @@ Route::get('/', HomeController::class)->name('home');
 
 Route::middleware('guest')->group(function () {
     Route::get('register', [RegisteredUserController::class, 'create'])->name('register');
-    Route::post('register', [RegisteredUserController::class, 'store']);
+    // بدون این محدودیت، یک اسکریپت می‌تواند بی‌نهایت کارگاه بسازد
+    Route::post('register', [RegisteredUserController::class, 'store'])->middleware('throttle:8,60');
 
     Route::get('login', [AuthenticatedSessionController::class, 'create'])->name('login');
-    Route::post('login', [AuthenticatedSessionController::class, 'store']);
+    Route::post('login', [AuthenticatedSessionController::class, 'store'])->middleware('throttle:20,1');
+
+    // بازیابی رمز؛ فرستادن لینک سخت‌گیرانه‌تر بسته می‌شود چون ایمیل می‌فرستد
+    Route::get('forgot-password', [PasswordResetController::class, 'request'])->name('password.request');
+    Route::post('forgot-password', [PasswordResetController::class, 'send'])
+        ->middleware('throttle:5,60')->name('password.email');
+    Route::get('reset-password/{token}', [PasswordResetController::class, 'reset'])->name('password.reset');
+    Route::post('reset-password', [PasswordResetController::class, 'update'])
+        ->middleware('throttle:10,60')->name('password.update');
 });
 
 // پذیرش دعوت همکار

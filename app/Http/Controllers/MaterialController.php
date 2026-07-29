@@ -20,11 +20,16 @@ class MaterialController extends Controller
                 ->orWhere('color', 'like', "%{$term}%")))
             ->orderBy('kind')
             ->orderBy('name')
-            ->get()
-            ->groupBy('kind');
+            // انبار یک کارگاه پرکار صدها قلم می‌شود؛ بدون صفحه‌بندی این صفحه
+            // بی‌مرز بزرگ می‌شد. دسته‌بندی روی همان صفحه جاری انجام می‌گیرد.
+            ->paginate(60)
+            ->withQueryString();
+
+        $grouped = $materials->getCollection()->groupBy('kind');
 
         return view('materials.index', [
-            'grouped' => $materials,
+            'grouped' => $grouped,
+            'materials' => $materials,
             'kinds' => Material::KINDS,
             'q' => $term,
             'totalValue' => (float) Material::query()->selectRaw('COALESCE(SUM(price * stock), 0) as total')->value('total'),
