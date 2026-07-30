@@ -846,14 +846,28 @@ const placePiece = (piece, flat, body, options) => {
         let center = 0;
 
         if (zone === 'sleeve') {
-            // آستین دور بازو می‌پیچد، نه دور تنه؛ محورش سرشانه است
+            /*
+             * آستین دور بازو می‌پیچد، نه دور تنه — و بازو عمودی نیست.
+             *
+             * مانکن بازوهایش را هشت درجه باز نگه می‌دارد (armLZ/armRZ در
+             * poseAngles، برای *همهٔ* حالت‌ها از جمله ایستاده). آستین روی
+             * استوانه‌ای عمودی چیده می‌شد، پس هرچه پایین‌تر می‌رفت از بازو دورتر
+             * می‌شد: در ۴۰ سانتی‌متر ۵٫۶ سانتی‌متر و در مچ نزدیک هشت. روی مانکن
+             * یک آستین کنارِ بازو آویزان می‌ماند و بازو لخت می‌شد.
+             *
+             * پس مرکزِ هر مقطع، همان‌جاست که محورِ بازو در آن ارتفاع هست: اگر
+             * ارتفاع t·cos(θ) پایین‌ترِ لولا باشد، محور t·sin(θ) بیرون‌تر رفته.
+             */
             const shoulder = body.level.shoulder - 0.035;
-            const radius = sampleTable(body.armTable, world - shoulder)[0];
+            const tilt = body.armTilt ?? 0;
+            const along = (shoulder - world) / Math.max(0.2, Math.cos(tilt));
+            const radius = sampleTable(body.armTable, -Math.max(0, along))[0];
 
             rx = radius + gap;
             rz = radius + gap;
             // محورِ بازو مماس بر تنه است؛ ببینید armOffset در نماگر
-            center = side * (body.armOffset ?? (body.radii.shoulder * 0.87));
+            center = side * ((body.armOffset ?? (body.radii.shoulder * 0.87))
+                + (Math.max(0, along) * Math.sin(tilt)));
         } else if (legs) {
             const row = sampleTable(legs, world);
 

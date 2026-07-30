@@ -56,6 +56,13 @@ export const makeBody = (avatar = {}) => {
         radii,
         armLength,
         armOffset,
+        /*
+         * بازوی مانکن هشت درجه باز است — armLZ/armRZ در poseAngles، برای همهٔ
+         * حالت‌ها از جمله ایستاده. سنجه بازو را عمودی می‌ساخت و همین یک عدد را
+         * جا می‌انداخت: آستین در مرورگر تا هشت سانتی‌متر از بازو دور می‌افتاد و
+         * سنجه هیچ‌وقت ندیدش.
+         */
+        armTilt: (8 * Math.PI) / 180,
         armTable: [
             [-armLength, radii.wrist],
             [-armLength * 0.55, radii.bicep * 0.72],
@@ -430,19 +437,27 @@ export const bodyColliders = (Collider, body, avatar = {}) => {
     const height = level.top;
     const armLength = (avatar.arm_length || 58) / 100;
     const out = [];
-    const at = (sections, name, offset = [0, 0, 0], caps = {}) => {
+    const at = (sections, name, offset = [0, 0, 0], caps = {}, spin = 0) => {
         const collider = new Collider({ sections, name, ...caps });
+        // چرخش حول z، همان کاری که گروهِ بازو در نماگر می‌کند
+        const cos = Math.cos(spin);
+        const sin = Math.sin(spin);
         const matrix = new Float32Array([
-            1, 0, 0, 0,
-            0, 1, 0, 0,
+            cos, sin, 0, 0,
+            -sin, cos, 0, 0,
             0, 0, 1, 0,
             offset[0], offset[1], offset[2], 1,
         ]);
-        const inverse = new Float32Array(matrix);
-
-        inverse[12] = -offset[0];
-        inverse[13] = -offset[1];
-        inverse[14] = -offset[2];
+        // وارونِ یک چرخش‌و‌جابه‌جایی: R⁻¹ و بعد -R⁻¹·t
+        const inverse = new Float32Array([
+            cos, -sin, 0, 0,
+            sin, cos, 0, 0,
+            0, 0, 1, 0,
+            -(cos * offset[0] + sin * offset[1]),
+            -(-sin * offset[0] + cos * offset[1]),
+            -offset[2],
+            1,
+        ]);
 
         collider.setTransform(matrix, inverse, 0.03);
         out.push(collider);
@@ -460,7 +475,17 @@ export const bodyColliders = (Collider, body, avatar = {}) => {
         [headY + headR * 0.95, headR * 0.39, headR * 0.41],
     ], 'head');
 
-    // بازوها: «چپ» روی x منفی، همان قراردادی که سرور برای زاویه دارد
+    /*
+     * بازوها: «چپ» روی x منفی، همان قراردادی که سرور برای زاویه دارد — و هشت
+     * درجه باز، همان‌طور که نماگر می‌سازدشان (armLZ/armRZ در poseAngles، برای
+     * *همهٔ* حالت‌ها از جمله ایستاده).
+     *
+     * سنجه بازو را عمودی می‌ساخت و همین یک عدد را جا می‌انداخت: در مرورگر آستین
+     * تا هشت سانتی‌متر از بازو دور می‌افتاد و روی مانکن کنارِ بازو آویزان می‌ماند،
+     * ولی هر نُه عددِ سنجه سالم بود. کاربر دیدش، سنجه نه.
+     */
+    const tilt = body.armTilt ?? 0;
+
     for (const [name, side] of [['armL', -1], ['armR', 1]]) {
         at([
             [-armLength - r.wrist * 0.5, r.wrist * 1.1, r.wrist * 1.1],
@@ -468,7 +493,7 @@ export const bodyColliders = (Collider, body, avatar = {}) => {
             [-armLength * 0.12, r.bicep * 1.02, r.bicep * 1.02],
             [0, r.bicep * 1.06, r.bicep * 1.06],
             [r.bicep * 0.5, r.bicep * 0.86, r.bicep * 0.86],
-        ], name, [side * (body.armOffset ?? r.shoulder * 0.87), level.shoulder - 0.035, 0]);
+        ], name, [side * (body.armOffset ?? r.shoulder * 0.87), level.shoulder - 0.035, 0], {}, side * tilt);
     }
 
     const thighDrop = level.crotch - level.knee;

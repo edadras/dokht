@@ -1109,6 +1109,17 @@ export default (config = {}) => ({
                     armOffset: ctx.armOffset,
                     armTable: ctx.armTable,
                     armLength: ctx.armLength,
+                    /*
+                     * بازوی مانکن عمودی نیست.
+                     *
+                     * poseAngles هر حالتی را با armLZ = -۸ و armRZ = +۸ درجه
+                     * می‌سازد — حتی «ایستاده». پس بازو هشت درجه باز است، ولی
+                     * آستین روی استوانه‌ای *عمودی* چیده می‌شد: در ۴۰ سانتی‌متر
+                     * پایین‌تر ۵٫۶ سانتی‌متر و در مچ نزدیک ۸ سانتی‌متر اختلاف.
+                     * روی مانکن یکی از آستین‌ها کنارِ بازو آویزان می‌ماند و بازو
+                     * لخت می‌شد — و سنجه نمی‌دیدش، چون بازو را عمودی می‌ساخت.
+                     */
+                    armTilt: Math.abs((this.poseAngles('stand').armRZ || 0) * Math.PI / 180),
                 },
                 { fabric: this.payload.fabric || {} },
             );
@@ -1172,6 +1183,10 @@ export default (config = {}) => ({
         });
 
         (drape.seams || []).forEach((seam) => ctx.world.addSeam(seam));
+
+        if (typeof window !== 'undefined' && window.location?.search?.includes('drapedebug')) {
+            window.__drape = { drape, ctx };
+        }
 
         this.buildColliders();
         ctx.world.setColliders(ctx.colliders.map((entry) => entry.collider));

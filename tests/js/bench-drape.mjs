@@ -219,7 +219,7 @@ const armCapOf = (drape, body, avatar = {}) => {
     );
 
     if (sleeves.length === 0) {
-        return { bare: 0, seen: 0, worst: 0 };
+        return { bare: 0, seen: 0, worst: 0, gap: 0 };
     }
 
     const points = [];
@@ -230,22 +230,65 @@ const armCapOf = (drape, body, avatar = {}) => {
         }
     }
 
-    // مرکزِ گروهِ بازو، همان‌که نماگر می‌سازد
+    /*
+     * روی محورِ *مایلِ* بازو نمونه می‌گیریم، نه یک خطِ عمودی.
+     *
+     * مانکن بازوهایش را هشت درجه باز نگه می‌دارد (armLZ/armRZ در poseAngles،
+     * برای همهٔ حالت‌ها از جمله ایستاده). سنجه بازو را عمودی می‌ساخت و همین یک
+     * عدد را جا می‌انداخت: در مرورگر آستین هرچه پایین‌تر می‌رفت از بازو دورتر
+     * می‌شد و در ساعد کنارش آویزان می‌ماند، ولی هر نُه عددِ سنجه سالم بود.
+     * کاربر دیدش، سنجه نه.
+     */
+    /*
+     * تا آن‌جا که آستین می‌رسد، نه تا مچ.
+     *
+     * آستینِ کوتاه پایین‌تر از دمش پارچه ندارد و لختیِ آن‌جا ایراد نیست. بی این
+     * مرز، هر آستینِ کوتاهی «۲۱۳ از ۳۳۶ لخت» گزارش می‌شد و عدد بی‌معنی بود.
+     */
+    let reach = 0;
+
+    for (const { patch } of sleeves) {
+        for (let v = 0; v < patch.count; v++) {
+            reach = Math.max(reach, body.level.shoulder - 0.035 - patch.positions[v * 3 + 1]);
+        }
+    }
+
+    const armLength = Math.min((avatar.arm_length || 58) / 100, reach);
     const top = body.level.shoulder - 0.035;
-    const radius = body.radii.bicep;
+    const tilt = body.armTilt ?? 0;
+    const rows = body.armTable.slice().sort((one, two) => one[0] - two[0]);
+    const thick = (along) => {
+        const y = -along;
+
+        for (let i = 1; i < rows.length; i++) {
+            if (y <= rows[i][0]) {
+                const span = Math.max(1e-9, rows[i][0] - rows[i - 1][0]);
+                const t = (y - rows[i - 1][0]) / span;
+
+                return rows[i - 1][1] + (rows[i][1] - rows[i - 1][1]) * t;
+            }
+        }
+
+        return rows[rows.length - 1][1];
+    };
+
     let bare = 0;
     let seen = 0;
     let worst = 0;
+    let gap = 0;
 
     for (const side of [-1, 1]) {
         const middle = side * body.armOffset;
 
-        for (let drop = -0.005; drop >= -0.085; drop -= 0.01) {
-            const y = top + drop;
+        for (let along = 0.02; along <= armLength - 0.04; along += 0.04) {
+            const y = top - along * Math.cos(tilt);
+            const axis = middle + side * along * Math.sin(tilt);
+            const radius = thick(along);
+            let off = 0;
 
-            for (let k = 0; k < 16; k++) {
-                const u = (k / 16) * Math.PI * 2;
-                const x = middle + Math.cos(u) * radius;
+            for (let k = 0; k < 12; k++) {
+                const u = (k / 12) * Math.PI * 2;
+                const x = axis + Math.cos(u) * radius;
                 const z = Math.sin(u) * radius;
                 let close = Infinity;
 
@@ -258,12 +301,18 @@ const armCapOf = (drape, body, avatar = {}) => {
 
                 if (close > 0.04) {
                     bare++;
+                    off++;
                 }
+            }
+
+            // پایین‌ترین جایی که بازو لخت است: نشانهٔ «آستین از بازو افتاده»
+            if (off >= 6) {
+                gap = Math.max(gap, along);
             }
         }
     }
 
-    return { bare, seen, worst };
+    return { bare, seen, worst, gap };
 };
 
 /*
@@ -513,7 +562,7 @@ const bench = (file) => {
             ` | پوستِ لخت: ${bare.bare}/${bare.seen} بدترین=${(bare.worst * 100).toFixed(1)}` +
             ` | ناقرینگیِ چیدن: میانگین=${(mirror.mean * 100).toFixed(1)} بدترین=${(mirror.worst * 100).toFixed(1)} (${mirror.pairs} جفت)` +
             (sleeve.worst === null ? '' : ` | آستین: پوشش=${sleeve.worst.toFixed(0)}° سُرخوردن=${(sleeve.sag * 100).toFixed(1)}`)
-            + (cap.seen === 0 ? '' : ` | سرِ بازوی لخت: ${cap.bare}/${cap.seen}`),
+            + (cap.seen === 0 ? '' : ` | بازوی لخت: ${cap.bare}/${cap.seen} افتادگی=${(cap.gap * 100).toFixed(0)}`),
     );
 };
 

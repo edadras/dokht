@@ -482,19 +482,28 @@ test('بازوی مانکن بیرونِ تنه می‌ایستد، نه داخ�
 
 /*
  * و قطعهٔ آستین روی همان محور چیده می‌شود، نه روی محورِ بدن.
+ *
+ * محورِ بازو عمودی نیست: مانکن بازوهایش را هشت درجه باز نگه می‌دارد، پس مرکزِ
+ * آستین به اندازهٔ نیمِ طولش بیرون‌تر از لولا می‌افتد. این آزمون پیش‌تر همان
+ * محورِ عمودی را قفل کرده بود — یعنی خودِ اشکال را.
  */
 test('آستین روی محورِ بازو چیده می‌شود', () => {
     const body = makeBody();
     const drape = buildDrape(twoSleeves(), body, {});
+    const tilt = body.armTilt ?? 0;
+    const shoulder = body.level.shoulder - 0.035;
 
     for (const { id, patch } of drape.patches) {
         let sum = 0;
+        let want = 0;
 
         for (let v = 0; v < patch.count; v++) {
-            sum += patch.positions[v * 3] / patch.count;
-        }
+            const side = id.endsWith('#0') ? -1 : 1;
+            const along = Math.max(0, (shoulder - patch.positions[v * 3 + 1]) / Math.cos(tilt));
 
-        const want = id.endsWith('#0') ? -body.armOffset : body.armOffset;
+            sum += patch.positions[v * 3] / patch.count;
+            want += (side * (body.armOffset + along * Math.sin(tilt))) / patch.count;
+        }
 
         assert.ok(
             Math.abs(sum - want) < 0.02,
@@ -945,4 +954,66 @@ test('قطعه‌ای که دورِ بدن می‌پیچد تکیه می‌گی�
     }
 
     assert.ok(held > 0, 'کمربند هیچ رأسِ تکیه‌داری نگرفت؛ رها می‌افتد و دامن را با خود می‌برد');
+});
+
+/*
+ * آستین محورِ *مایلِ* بازو را دنبال می‌کند.
+ *
+ * مانکن بازوهایش را هشت درجه باز نگه می‌دارد — armLZ/armRZ در poseAngles، برای
+ * *همهٔ* حالت‌ها از جمله «ایستاده». آستین ولی روی استوانه‌ای عمودی چیده می‌شد، پس
+ * هرچه پایین‌تر می‌رفت از بازو دورتر می‌شد: در ۴۰ سانتی‌متر ۵٫۶ سانتی‌متر و در مچ
+ * نزدیک هشت. روی مانکن آستین کنارِ بازو آویزان می‌ماند و ساعد لخت می‌شد.
+ *
+ * سنجه هم نمی‌دیدش، چون خودش بازو را عمودی می‌ساخت — نُه عددش سالم بود و کاربر
+ * در عکس ایراد را می‌دید. حالا هم چیدن و هم سنجه یک بازو را می‌شناسند.
+ */
+test('آستین محورِ مایلِ بازو را دنبال می‌کند', () => {
+    const body = makeBody();
+    const tilt = body.armTilt ?? 0;
+
+    assert.ok(tilt > 0.05, 'جدولِ مانکن باید شیبِ بازو را بگوید، وگرنه سنجه دروغ می‌گوید');
+
+    const drape = buildDrape(twoSleeves(), body, {});
+    const shoulder = body.level.shoulder - 0.035;
+    let checked = 0;
+
+    for (const { id, piece, patch } of drape.patches) {
+        if ((piece?.placement?.zone || piece?.role) !== 'sleeve') {
+            continue;
+        }
+
+        const side = piece.side === 'left' ? -1 : 1;
+
+        for (const along of [0.1, 0.3]) {
+            const y = shoulder - along * Math.cos(tilt);
+            const want = side * (body.armOffset + along * Math.sin(tilt));
+            let sum = 0;
+            let seen = 0;
+
+            for (let v = 0; v < patch.count; v++) {
+                if (Math.abs(patch.positions[v * 3 + 1] - y) > 0.02) {
+                    continue;
+                }
+
+                sum += patch.positions[v * 3];
+                seen++;
+            }
+
+            if (seen < 8) {
+                continue;
+            }
+
+            checked++;
+
+            const off = Math.abs(sum / seen - want);
+
+            assert.ok(
+                off < 0.02,
+                `${id} در ${(along * 100).toFixed(0)} سانتی‌متر پایینِ شانه ${(off * 100).toFixed(1)}`
+                    + ' سانتی‌متر از محورِ بازو دور است؛ محورِ مایل را دنبال نمی‌کند',
+            );
+        }
+    }
+
+    assert.ok(checked >= 2, 'هیچ مقطعی از آستین سنجیده نشد');
 });
