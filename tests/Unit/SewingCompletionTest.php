@@ -443,4 +443,36 @@ class SewingCompletionTest extends TestCase
 
         $this->assertSame($first, $second, 'خروجی باید قطعی باشد.');
     }
+
+    /**
+     * مچ‌بند نواری است که روی خودش بسته می‌شود.
+     *
+     * تنها درزی که برایش نوشته می‌شد، دوختنش به دمِ آستین بود؛ دو لبهٔ ۱۲
+     * سانتی‌متریِ خودش باز می‌ماند و نوار روی مانکن مثل زبانه‌ای کنارِ مچ آویزان
+     * می‌شد. اندازه‌گیریِ پوششِ دورِ مچ: ۱۰۵ و ۱۶۵ درجه از ۳۶۰، و پس از این درز
+     * ۳۴۵ و ۳۳۰.
+     *
+     * جای دکمه هم همان‌جاست، پس این درز واقعی است نه حدس.
+     */
+    public function test_a_cuff_closes_on_itself(): void
+    {
+        foreach (['shirt_classic', 'shirt_oversized'] as $key) {
+            if (! GeneratorRegistry::has($key)) {
+                continue;
+            }
+
+            $pattern = $this->pattern($key);
+            $relations = SewingRelationBuilder::complete($pattern, SewingRelationBuilder::suggest($pattern));
+            $closed = array_filter(
+                $relations,
+                fn (array $relation) => str_contains($relation['from']['piece'], 'cuff')
+                    && $relation['from']['piece'] === $relation['to']['piece'],
+            );
+
+            $this->assertNotEmpty(
+                $closed,
+                "«{$key}»: نوارِ مچ باید روی خودش بسته شود، وگرنه کنارِ مچ آویزان می‌ماند.",
+            );
+        }
+    }
 }
