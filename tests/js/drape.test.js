@@ -841,3 +841,57 @@ test('سرِ آستین بالاتر از تراز حلقه می‌نشیند', 
         );
     }
 });
+
+/*
+ * آستین روی بازو سُر نمی‌خورد.
+ *
+ * چیدن و بعد جابه‌جاییِ صُلبِ قطعه‌ها، هر دو ارتفاع را بی‌حد عوض می‌کردند. سرِ آستین
+ * کمانی است که دور بازو پخش می‌شود و رأس‌هایش تقریباً هم‌ارتفاع‌اند؛ حلقهٔ تنه ولی
+ * از سرشانه تا زیربغل پایین می‌رود. میانگینِ ارتفاعِ این دو یکی نیست، پس آستین
+ * کشیده می‌شد تا میانهٔ حلقه: روی ترنچ‌کت ۱۴٫۶ سانتی‌متر، از ۱۳۴ به ۱۱۹٫۴، پیش از
+ * آنکه یک قدمِ شبیه‌سازی برداشته شود.
+ *
+ * حد فقط برای پایین رفتن است: آستینی که بالا می‌رود سرِ شانه را می‌پوشاند و همان
+ * خواستهٔ ماست. با حدِ دوطرفه، سرِ بازوی لختِ پیراهن از ۷ به ۸۱ از ۲۸۸ رفت.
+ */
+test('آستین روی بازو پایین سُر نمی‌خورد', () => {
+    const body = makeBody();
+    const payload = twoSleeves();
+    const armhole = body.level.armhole / body.level.top;
+    const shoulder = body.level.shoulder / body.level.top;
+    const want = armhole + 0.5 * (shoulder - armhole);
+
+    for (const piece of payload.pieces) {
+        piece.placement.y_top = want;
+    }
+
+    /*
+     * یک درز که آستین را به کمانی *پایین‌تر* می‌کشد؛ همان کاری که حلقهٔ تنه
+     * می‌کند. بی حد، جابه‌جاییِ صُلب تمامِ اختلاف را اعمال می‌کرد.
+     */
+    payload.seams.push({
+        a: { piece: 'sleeve#0', from: 0, to: 1, length: 28 },
+        b: { piece: 'sleeve#1', from: 0, to: 1, length: 28 },
+        label: 'درزِ آزمایشی',
+        reverse: false,
+        ease: 0,
+        kind: 'seam',
+    });
+
+    const drape = buildDrape(payload, body, {});
+
+    for (const { id, patch } of drape.patches) {
+        let top = -Infinity;
+
+        for (let v = 0; v < patch.count; v++) {
+            top = Math.max(top, patch.positions[v * 3 + 1]);
+        }
+
+        const fell = want * body.level.top - top;
+
+        assert.ok(
+            fell < 0.05,
+            `${id} در چیدن ${(fell * 100).toFixed(1)} سانتی‌متر پایین سُر خورد؛ حد پنج سانتی‌متر است`,
+        );
+    }
+});

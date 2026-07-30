@@ -1276,6 +1276,17 @@ const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 
 const LATERAL_ROOM = 0.06;
 const LIMB_ROOM = 0;
 
+/*
+ * و همین برای سُر خوردنِ *عمودی*، که تا امروز حدی نداشت.
+ *
+ * spinFit جابه‌جاییِ عمودی را از میانگینِ اختلافِ جفت‌رأس‌های درز می‌گیرد و کامل
+ * اعمال می‌کند. سرِ آستین یک کمان است که دور بازو پخش می‌شود و رأس‌هایش تقریباً
+ * هم‌ارتفاع‌اند؛ حلقهٔ تنه ولی از سرشانه تا زیربغل پایین می‌رود. میانگینِ این دو
+ * یکی نیست، پس آستین کشیده می‌شود تا میانهٔ حلقه: روی ترنچ‌کت ۱۴٫۶ سانتی‌متر،
+ * از ۱۳۴ به ۱۱۹٫۴، پیش از آنکه یک قدمِ شبیه‌سازی برداشته شود.
+ */
+const VERTICAL_ROOM = 0.03;
+
 /**
  * ساخت پارچه‌ی دوخته‌شده از بستهٔ سرور.
  *
@@ -1761,7 +1772,21 @@ const seedPlacement = (patches, seams) => {
             }
 
             if (source.length >= 3) {
-                moved += spinFit(patches[link.other].patch, source, target, patches[link.other].axis || 0);
+                /*
+                 * سهمِ سُر خوردن روی خودِ قطعه انبار می‌شود، نه در هر فراخوان.
+                 *
+                 * alignPatches چند دور می‌زند و حدِ درون‌فراخوانی جمع می‌شد: با
+                 * حدِ ۳ سانتی‌متری، آستینِ ترنچ‌کت باز هم ۱۲ سانتی‌متر پایین رفت.
+                 */
+                const spot = patches[link.other];
+                const room = spot.room ?? Infinity;
+                const left = room === Infinity ? Infinity : Math.max(0, room - (spot.slid || 0));
+
+                moved += spinFit(spot.patch, source, target, spot.axis || 0, left, (used) => {
+                    if (used < 0) {
+                        spot.slid = (spot.slid || 0) - used;
+                    }
+                });
             }
 
             placed[link.other] = 1;
@@ -1786,7 +1811,7 @@ const seedPlacement = (patches, seams) => {
  * قطعه دورِ بدن می‌چرخد و سُر می‌خورد تا نشانه‌هایش روبه‌روی نشانه‌های همسایه
  * بیاید — دقیقاً کاری که خیاط با قطعه روی مانکن می‌کند.
  */
-const spinFit = (patch, source, target, axis = 0) => {
+const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null) => {
     const n = source.length / 3;
     let dot = 0;
     let cross = 0;
@@ -1804,7 +1829,23 @@ const spinFit = (patch, source, target, axis = 0) => {
     }
 
     const theta = Math.abs(dot) + Math.abs(cross) < 1e-9 ? 0 : Math.atan2(cross, dot);
-    const lift = rise / Math.max(1, n);
+    /*
+     * سُر خوردنِ عمودی حد دارد، وگرنه آستین از شانه می‌افتد.
+     *
+     * سرِ آستین یک کمان است که دور بازو پخش می‌شود و همه‌ی رأس‌هایش تقریباً یک
+     * ارتفاع دارند؛ حلقهٔ تنه ولی از سرشانه تا زیربغل پایین می‌رود. میانگینِ
+     * ارتفاعِ این دو یکی نیست، پس lift آستین را می‌کشد تا میانه‌ی حلقه — روی
+     * ترنچ‌کت ۱۴٫۶ سانتی‌متر پایین، از ۱۳۴ به ۱۱۹٫۴، پیش از آنکه حتی یک قدمِ
+     * شبیه‌سازی برداشته شود. آستین به *بازو* دوخته است و روی آن سُر نمی‌خورد؛
+     * بازکردنِ حلقه کارِ قیدِ درز است، نه جابه‌جا کردنِ کلِ آستین.
+     */
+    // حد فقط برای پایین رفتن؛ بالا رفتنِ آستین همان پوشاندنِ سرِ شانه است
+    const want = rise / Math.max(1, n);
+    const lift = want < 0 ? Math.max(want, -room) : want;
+
+    if (spent) {
+        spent(lift);
+    }
     const cos = Math.cos(theta);
     const sin = Math.sin(theta);
     const positions = patch.positions;
@@ -1861,6 +1902,8 @@ const alignPatches = (patches, seams, rounds, radial = false) => {
      * از استوانه‌اش بیرون بزند.
      */
     const slid = new Float64Array(patches.length);
+    // سهمِ سُر خوردنِ عمودی، جدا از پهلویی؛ ببینید VERTICAL_ROOM
+    const dropped = new Float64Array(patches.length);
     const want = new Float64Array(patches.length * 3);
     const weight = new Float64Array(patches.length);
     /*
@@ -1992,9 +2035,35 @@ const alignPatches = (patches, seams, rounds, radial = false) => {
 
             slid[p] += step * slide;
 
+            /*
+             * ارتفاع هم سهم دارد، برای قطعهٔ روی اندام.
+             *
+             * جابه‌جاییِ پهلویی از اول بودجه داشت ولی عمودی نه، و همان بی‌حدی
+             * آستینِ ترنچ‌کت را ۱۲ سانتی‌متر پایین می‌کشید — پیش از آنکه یک قدمِ
+             * شبیه‌سازی برداشته شود. سرِ آستین کمانی هم‌ارتفاع است و حلقهٔ تنه از
+             * سرشانه تا زیربغل پایین می‌رود؛ میانگین‌شان یکی نیست، پس این پاس
+             * آستین را می‌بَرد تا میانهٔ حلقه. تنه و دامن حد ندارند: آن‌ها روی
+             * محورِ خودِ بدن‌اند و بالا-پایین رفتنشان همان نشاندنِ لباس است.
+             */
+            /*
+             * و حد فقط برای *پایین* رفتن است، نه بالا.
+             *
+             * آستینی که بالا می‌رود سرِ شانه را می‌پوشاند و همان چیزی است که
+             * می‌خواهیم؛ آستینی که پایین می‌رود از شانه می‌افتد. با حدِ دوطرفه،
+             * سرِ بازوی لختِ پیراهن از ۷ به ۸۱ از ۲۸۸ رفت — آستین نتوانست بالا
+             * بیاید.
+             */
+            const fall = Math.abs(axis[p]) > 1e-6 && dy < 0
+                ? Math.max(dy, -Math.max(0, VERTICAL_ROOM - dropped[p]))
+                : dy;
+
+            if (fall < 0) {
+                dropped[p] -= fall;
+            }
+
             for (let i = 0; i < positions.length; i += 3) {
                 positions[i] += dx * slide;
-                positions[i + 1] += dy;
+                positions[i + 1] += fall;
                 positions[i + 2] += dz * slide;
             }
 
@@ -2183,7 +2252,15 @@ export const buildDrape = (payload, body, options = {}) => {
         };
 
         states.set(piece.id, state);
-        patches.push({ id: piece.id, piece, patch, mesh, axis: placed.axis });
+        patches.push({
+            id: piece.id,
+            piece,
+            patch,
+            mesh,
+            axis: placed.axis,
+            // قطعهٔ روی اندام روی آن سُر نمی‌خورد؛ تنه و دامن جا دارند
+            room: Math.abs(placed.axis) > 1e-6 ? VERTICAL_ROOM : Infinity,
+        });
         meshes.push(mesh);
         stats.triangles += flat.indices.length / 3;
     }
