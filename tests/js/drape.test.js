@@ -116,10 +116,28 @@ test('همه‌ی درزهای یک بالاتنه بعد از نشستن بست
     assert.ok(drape.stats.presettle >= 160);
     settle(drape, drape.stats.presettle);
 
+    /*
+     * دو حد، چون دو چیزِ متفاوت را می‌پایند.
+     *
+     * حلقهٔ حل درز را تا حدِ تعادل می‌بندد، نه کامل: از وقتی درز لولای خمشی هم
+     * دارد، سرشانه — تندترین گوشهٔ لباس — حدود ۲٫۵ میلی‌متر باز می‌ماند. آن لولا
+     * همان چیزی است که نمی‌گذارد آستین روی حلقه تا شود، پس نبودش بدتر است.
+     * چیزی که به کاربر نشان داده می‌شود، پس از weldSeams است و آن باید بسته
+     * باشد. حدِ اول جلوی پس‌رفتِ حل‌کننده را می‌گیرد و حدِ دوم جلوی شکافِ دیدنی.
+     */
+    for (const seam of drape.seams) {
+        assert.ok(
+            seam.error() < 0.004,
+            `درز «${seam.label}» با ${(seam.error() * 1000).toFixed(2)} میلی‌متر باز ماند`,
+        );
+    }
+
+    weldSeams(drape);
+
     for (const seam of drape.seams) {
         assert.ok(
             seam.error() < 0.002,
-            `درز «${seam.label}» با ${(seam.error() * 1000).toFixed(2)} میلی‌متر باز ماند`,
+            `درز «${seam.label}» پس از جوش با ${(seam.error() * 1000).toFixed(2)} میلی‌متر باز ماند`,
         );
     }
 });
@@ -291,5 +309,65 @@ test('جوش دادنِ درز، درز را بازتر نمی‌کند', () => 
     assert.ok(
         world.seamError() <= before + 1e-4,
         `خطای درز از ${(before * 100).toFixed(2)} به ${(world.seamError() * 100).toFixed(2)} سانتی‌متر رفت`,
+    );
+});
+
+/*
+ * پارچه از آن‌سوی درز روی خودش برنمی‌گردد.
+ *
+ * این همان ایرادی است که در عکس «آستین و یقه وصل نیست» دیده می‌شد و هیچ‌کدام
+ * از سنجه‌های قبلی نمی‌گرفتش: فاصلهٔ دو لبه زیر یک سانتی‌متر بود — درز کاملاً
+ * بسته — ولی آستین پشت‌به‌پشتِ حلقه تا خورده بود، پس از بیرون فقط ضخامتِ لبه
+ * دیده می‌شد. علتش هم روشن بود: قید درز فقط *جای* دو لبه را یکی می‌کند و
+ * چیزی دربارهٔ *جهت*ِ ادامهٔ پارچه نمی‌گوید. درز، لولای بی‌سختی بود.
+ *
+ * اندازه: دو رأسِ پشتِ درز باید دست‌کم به اندازهٔ زاویهٔ ۹۰ درجه از هم دور
+ * بمانند. بدونِ لولا، روی همین بالاتنه به ۲٪ آن فاصله می‌رسید.
+ */
+test('پارچه روی درز به پشتِ خودش تا نمی‌خورد', () => {
+    const play = (hinge) => {
+        const drape = buildDrape(bodicePayload(), makeBody(), { seamHinge: hinge });
+
+        settle(drape, drape.stats.presettle);
+
+        let worst = Infinity;
+
+        for (const seam of drape.seams) {
+            if (! seam.hinge) {
+                continue;
+            }
+
+            for (let i = 0; i < seam.hinges; i++) {
+                const goal = seam.hinge[i * 3 + 2];
+
+                if (goal <= 0) {
+                    continue;
+                }
+
+                const a = seam.hinge[i * 3] * 3;
+                const b = seam.hinge[i * 3 + 1] * 3;
+
+                worst = Math.min(worst, Math.hypot(
+                    seam.a.positions[a] - seam.b.positions[b],
+                    seam.a.positions[a + 1] - seam.b.positions[b + 1],
+                    seam.a.positions[a + 2] - seam.b.positions[b + 2],
+                ) / goal);
+            }
+        }
+
+        return worst;
+    };
+
+    const loose = play(0);
+    const held = play(0.5);
+
+    assert.ok(Number.isFinite(loose), 'بستهٔ آزمون باید درزِ لولادار داشته باشد');
+    assert.ok(
+        held > loose * 1.5,
+        `لولا باید تا خوردن را کم کند؛ بی‌لولا ${loose.toFixed(2)} و با لولا ${held.toFixed(2)}`,
+    );
+    assert.ok(
+        held > 0.45,
+        `تندترین تا خوردگی ${held.toFixed(2)} برابرِ حدِ ۹۰ درجه است؛ زیر ۰٫۴۵ یعنی پارچه برگشته`,
     );
 });

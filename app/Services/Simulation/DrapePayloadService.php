@@ -203,6 +203,7 @@ class DrapePayloadService
             $notes[] = "قطعه «{$model->code}» روی تای پارچه است ولی لبه تا ندارد؛ نیمه بریده‌شده به مرورگر رفت.";
         }
 
+        $piece = $this->standUp($piece, $tags, $model);
         $origins = $this->origins($piece);
         $oriented = DrapeGeometry::orient($piece, $origins);
 
@@ -213,6 +214,91 @@ class DrapePayloadService
             'tags' => $tags,
             'unfolded' => $unfolded,
         ];
+    }
+
+    /**
+     * یقهٔ ایستاده روی تن سروته است.
+     *
+     * روی الگو، خط یقهٔ یقه بالای قطعه است و لبهٔ بیرونی پایینش — همان‌طور که
+     * روی کاغذ کشیده می‌شود. روی تن ولی برعکس است: خط یقه پایین می‌نشیند (روی
+     * خط یقهٔ لباس) و یقه از آن‌جا بالا می‌رود. تا وقتی همان ترتیبِ کاغذ را روی
+     * بدن می‌گذاشتیم، لبهٔ بیرونیِ یقه ۷٫۵ سانتی‌متر *زیرِ* خط یقه چیده می‌شد و
+     * قید درز باید نوار را از میان سوراخِ گردن بکشد بالا؛ نوار در همان کشیدن
+     * سروته می‌شد. اندازه گرفتیم: پس از چیدن ۱۰۰٪ مثلث‌های یقه رو به بیرون بود،
+     * پس از دوختن ۶٪. رویِ برگشتهٔ پارچه تیره سایه می‌زند و در عکس مثل شکافِ
+     * دور گردن دیده می‌شد.
+     *
+     * شرطش دقیق است و به مدل گره نخورده: تنها یقه‌ای که خط یقه‌اش در نیمهٔ بالای
+     * کادر خودش است برمی‌گردد. یقهٔ تختِ خوابیده (پیتر‌پن) خط یقه‌اش پایین است و
+     * دست‌نخورده می‌ماند.
+     *
+     * @param  array<int, string>  $tags
+     * @return array<string, mixed>
+     */
+    protected function standUp(array $piece, array $tags, PatternPiece $model): array
+    {
+        if ($this->role($model) !== 'collar') {
+            return $piece;
+        }
+
+        $outline = $piece['outline'] ?? [];
+        [, $minY, , $maxY] = Geometry::bounds($outline);
+        $height = $maxY - $minY;
+
+        if ($height < 0.5) {
+            return $piece;
+        }
+
+        $sum = 0.0;
+        $seen = 0;
+
+        foreach ($tags as $edge => $tag) {
+            if ($tag !== 'neck' || ! isset($outline[$edge])) {
+                continue;
+            }
+
+            $sum += (float) ($outline[$edge]['y'] ?? 0) + (float) ($outline[($edge + 1) % count($outline)]['y'] ?? 0);
+            $seen += 2;
+        }
+
+        if ($seen === 0 || ($sum / $seen) > $minY + ($height / 2)) {
+            return $piece; // خط یقه پایین است؛ یقه همان‌جا که هست درست است
+        }
+
+        $flip = $minY + $maxY;
+
+        foreach (['outline', 'darts', 'notches', 'markers', 'drills'] as $key) {
+            if (! isset($piece[$key]) || ! is_array($piece[$key])) {
+                continue;
+            }
+
+            $piece[$key] = $this->mirrorY($piece[$key], $flip);
+        }
+
+        return $piece;
+    }
+
+    /**
+     * قرینه کردن y هر نقطه‌ای که در یک ساختار تودرتو هست.
+     *
+     * @param  array<mixed>  $data
+     * @return array<mixed>
+     */
+    protected function mirrorY(array $data, float $flip): array
+    {
+        foreach ($data as $key => $value) {
+            if (is_array($value)) {
+                $data[$key] = $this->mirrorY($value, $flip);
+
+                continue;
+            }
+
+            if (($key === 'y' || $key === 'cy' || $key === 'y1' || $key === 'y2') && is_numeric($value)) {
+                $data[$key] = $flip - (float) $value;
+            }
+        }
+
+        return $data;
     }
 
     /**

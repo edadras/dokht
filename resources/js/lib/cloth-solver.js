@@ -1413,6 +1413,9 @@ export class SeamSet {
      * @param {number} [options.rest] فاصله‌ی هدف (متر)؛ صفر یعنی روی هم
      * @param {number} [options.duration] ثانیه‌ی شبیه‌سازی تا کاملاً دوخته شود
      * @param {number} [options.stiffness] سهم هر تکرار از بستن فاصله
+     * @param {ArrayLike<number>} [options.hinge] سه‌گانه‌های [iA, iB, restLength] برای
+     *        نگه‌داشتن جهتِ پارچه روی درز؛ ببینید projectHinge
+     * @param {number} [options.hingeStiffness] سختیِ همان قید
      */
     constructor({
         a,
@@ -1423,6 +1426,8 @@ export class SeamSet {
         rest = 0,
         duration = 0.6,
         stiffness = 0.7,
+        hinge = null,
+        hingeStiffness = 0.25,
     }) {
         this.a = a;
         this.b = b || a;
@@ -1435,6 +1440,29 @@ export class SeamSet {
         this.duration = Math.max(1e-3, duration);
         this.strength = 0;
         this.gap = new Float32Array(this.count);
+
+        /*
+         * درز، لولاست — و لولای بی‌سختی پارچه را روی خودش برمی‌گرداند.
+         *
+         * قیدِ درز فقط جای دو لبه را یکی می‌کند و هیچ چیزی نمی‌گوید که پارچه از
+         * آن‌سو به کدام سمت ادامه پیدا کند. اندازه گرفتیم: روی پیراهنِ نشسته،
+         * فاصلهٔ دو لبه زیر یک سانتی‌متر بود ولی زاویهٔ میان دو رویه روی درزِ
+         * سرآستین ۱۳۶ درجه (بدترین ۱۷۰). ۱۷۰ درجه یعنی آستین پشت‌به‌پشتِ حلقه
+         * تا خورده؛ از بیرون فقط ضخامتِ لبه دیده می‌شود و چشم آن را «آستین وصل
+         * نیست» می‌خواند. کاربر هم دقیقاً همین را دید.
+         *
+         * دوختِ واقعی این‌طور نیست: نخ دو لبه را به هم می‌بندد و دو تکه پارچه
+         * کنارِ هم ادامه پیدا می‌کنند. مدلش همان مدلِ خمشِ درونِ قطعه است — یک
+         * قیدِ فاصله میان دو رأسِ *پشتِ* درز. اگر پارچه صاف باشد آن دو رأس به
+         * اندازهٔ مجموعِ فاصله‌شان از لبه از هم دورند؛ تا خوردن این فاصله را کم
+         * می‌کند، پس قید بازش می‌کند.
+         *
+         * سختی‌اش نرم است (پیش‌فرض ۰٫۲۵): آستین باید بتواند دور بازو بخوابد،
+         * فقط نباید برگردد.
+         */
+        this.hinge = hinge ? Float32Array.from(hinge) : null;
+        this.hinges = this.hinge ? this.hinge.length / 3 : 0;
+        this.hingeStiffness = clamp(hingeStiffness, 0, 1);
 
         this.measure(this.gap);
     }
@@ -1493,6 +1521,16 @@ export class SeamSet {
             return;
         }
 
+        /*
+         * لولا پیش از دوخت پرتاب می‌شود تا حرفِ آخر مالِ دوخت باشد.
+         *
+         * هر دو قید روی همان رأس‌ها کار می‌کنند و کمی با هم می‌جنگند: لولا
+         * می‌خواهد پارچه صاف بماند و دوخت می‌خواهد دو لبه روی هم بیفتند. اول که
+         * لولا را آخر گذاشتیم، درزِ سرشانه ۵٫۸ میلی‌متر باز ماند و آزمون گرفتش.
+         * بستن درز مهم‌تر است؛ صافی چیزی است که تا حدِ ممکن نگه داشته می‌شود.
+         */
+        this.projectHinge(strength);
+
         const { a, b, pairs, gap, rest, count } = this;
         const pa = a.positions;
         const pb = b.positions;
@@ -1544,6 +1582,71 @@ export class SeamSet {
                 pb[ib] += cx * mb;
                 pb[ib + 1] += cy * mb;
                 pb[ib + 2] += cz * mb;
+            }
+        }
+    }
+
+    /**
+     * باز نگه داشتنِ درز: دو رأسِ پشتِ درز از هم دور می‌مانند.
+     *
+     * تنها یک‌سویه عمل می‌کند — فاصله‌ی کمتر از هدف را باز می‌کند و به فاصله‌ی
+     * بیشتر کاری ندارد. چون خواستهٔ ما «تا نخوردن» است، نه «صاف ماندن»: پارچه‌ای
+     * که دور بازو می‌پیچد فاصله‌اش بیشتر نمی‌شود، کمتر می‌شود.
+     */
+    projectHinge(strength) {
+        if (! this.hinge || this.hingeStiffness <= 0) {
+            return;
+        }
+
+        const { a, b, hinge, hinges } = this;
+        const pa = a.positions;
+        const pb = b.positions;
+        const wa = a.invMass;
+        const wb = b.invMass;
+        const k = this.hingeStiffness * strength;
+
+        for (let i = 0; i < hinges; i++) {
+            const na = hinge[i * 3];
+            const nb = hinge[i * 3 + 1];
+            const goal = hinge[i * 3 + 2];
+            const ma = wa[na];
+            const mb = wb[nb];
+            const sum = ma + mb;
+
+            if (sum === 0 || goal <= 0) {
+                continue;
+            }
+
+            const ia = na * 3;
+            const ib = nb * 3;
+            const dx = pa[ia] - pb[ib];
+            const dy = pa[ia + 1] - pb[ib + 1];
+            const dz = pa[ia + 2] - pb[ib + 2];
+            const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+            if (length >= goal) {
+                continue;
+            }
+
+            if (length < 1e-9) {
+                continue; // جهت معلوم نیست؛ تکرارِ بعد بازش می‌کند
+            }
+
+            const scale = ((goal - length) / length) * k / sum;
+            const cx = dx * scale;
+            const cy = dy * scale;
+            const cz = dz * scale;
+
+            if (ma !== 0) {
+                pa[ia] += cx * ma;
+                pa[ia + 1] += cy * ma;
+                pa[ia + 2] += cz * ma;
+            }
+
+            if (mb !== 0) {
+                pb[ib] -= cx * mb;
+                pb[ib + 1] -= cy * mb;
+                pb[ib + 2] -= cz * mb;
             }
         }
     }

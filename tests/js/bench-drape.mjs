@@ -84,6 +84,124 @@ const stretchOf = (drape) => {
     return { worst, bad, tris, slivers };
 };
 
+/*
+ * بازیِ لولای درز: ۱ یعنی پارچه از آن‌سوی درز صاف ادامه دارد، صفر یعنی روی
+ * خودش برگشته. شکافِ درز این را نشان نمی‌دهد — دو لبه می‌توانند دقیقاً روی هم
+ * باشند و پارچه پشت‌به‌پشت تا خورده باشد؛ از بیرون «آستین وصل نیست» دیده می‌شود.
+ */
+const hingeOf = (drape) => {
+    let worst = 1;
+    let sum = 0;
+    let count = 0;
+
+    for (const seam of drape.seams) {
+        if (! seam.hinge) {
+            continue;
+        }
+
+        const pa = seam.a.positions;
+        const pb = seam.b.positions;
+
+        for (let i = 0; i < seam.hinges; i++) {
+            const na = seam.hinge[i * 3];
+            const nb = seam.hinge[i * 3 + 1];
+            const goal = seam.hinge[i * 3 + 2];
+
+            if (goal <= 0) {
+                continue;
+            }
+
+            const ratio = Math.hypot(
+                pa[na * 3] - pb[nb * 3],
+                pa[na * 3 + 1] - pb[nb * 3 + 1],
+                pa[na * 3 + 2] - pb[nb * 3 + 2],
+            ) / goal;
+
+            worst = Math.min(worst, ratio);
+            sum += ratio;
+            count++;
+        }
+    }
+
+    return { worst, mean: count ? sum / count : 1 };
+};
+
+/*
+ * پوستِ بی‌پوشش — سنجه‌ای که با چشمِ کاربر می‌خواند.
+ *
+ * چند بار شد که همهٔ عددها خوب بودند و کاربر گفت «آستین و یقه وصل نیست». علتش
+ * این بود که هیچ‌کدام از سنجه‌ها *پوشش* را نمی‌سنجید: درز می‌توانست کامل بسته
+ * باشد و پارچه سالم، ولی لباس یک‌وری بیفتد و شانه لخت بماند. این‌جا روی پوستِ
+ * بدن نقطه می‌گذاریم و می‌پرسیم نزدیک‌ترین پارچه چقدر دور است.
+ */
+const bareOf = (drape, body) => {
+    const points = [];
+
+    for (const { patch } of drape.patches) {
+        for (let v = 0; v < patch.count; v++) {
+            points.push(patch.positions[v * 3], patch.positions[v * 3 + 1], patch.positions[v * 3 + 2]);
+        }
+    }
+
+    const profile = body.profile.slice().sort((one, two) => one[0] - two[0]);
+    const skinAt = (y) => {
+        for (let i = 1; i < profile.length; i++) {
+            if (y <= profile[i][0]) {
+                const span = Math.max(1e-9, profile[i][0] - profile[i - 1][0]);
+                const t = Math.max(0, (y - profile[i - 1][0]) / span);
+
+                return [
+                    profile[i - 1][1] + (profile[i][1] - profile[i - 1][1]) * t,
+                    profile[i - 1][2] + (profile[i][2] - profile[i - 1][2]) * t,
+                ];
+            }
+        }
+
+        return [profile[profile.length - 1][1], profile[profile.length - 1][2]];
+    };
+
+    let worst = 0;
+    let bare = 0;
+    let seen = 0;
+
+    for (const name of ['shoulder', 'armhole', 'bust', 'waist', 'hip']) {
+        const y = body.level[name];
+        const [rx, rz] = skinAt(y);
+        let atLevel = 0;
+
+        for (let i = 1; i < points.length; i += 3) {
+            if (Math.abs(points[i] - y) < 0.05) {
+                atLevel++;
+            }
+        }
+
+        // ارتفاعی که لباس اصلاً به آن نمی‌رسد سنجیده نمی‌شود؛ دامن شانه ندارد
+        if (atLevel < 10) {
+            continue;
+        }
+
+        for (let k = 0; k < 48; k++) {
+            const u = (k / 48) * Math.PI * 2;
+            const x = Math.cos(u) * rx;
+            const z = Math.sin(u) * rz;
+            let close = Infinity;
+
+            for (let i = 0; i < points.length; i += 3) {
+                close = Math.min(close, Math.hypot(points[i] - x, points[i + 1] - y, points[i + 2] - z));
+            }
+
+            worst = Math.max(worst, close);
+            seen++;
+
+            if (close > 0.04) {
+                bare++;
+            }
+        }
+    }
+
+    return { worst, bare, seen };
+};
+
 /* فاصلهٔ دو سرِ هر درز، پیش از هر شبیه‌سازی */
 const gapsOf = (drape) => {
     let worst = 0;
@@ -112,9 +230,11 @@ const gapsOf = (drape) => {
 
 const bench = (file) => {
     const payload = JSON.parse(readFileSync(file, 'utf8'));
-    const drape = buildDrape(payload.drape, makeBody(payload.avatar), {
+    const body = makeBody(payload.avatar);
+    const drape = buildDrape(payload.drape, body, {
         fabric: payload.fabric,
         warp: process.env.WARP !== '0',
+        ...(process.env.HINGE === undefined ? {} : { seamHinge: Number(process.env.HINGE) }),
     });
 
     const gaps = gapsOf(drape);
@@ -145,6 +265,8 @@ const bench = (file) => {
     weldSeams(drape);
 
     const welded = stretchOf(drape);
+    const hinge = hingeOf(drape);
+    const bare = bareOf(drape, body);
     const name = file.split('/').pop().replace('p-', '').replace('.json', '');
 
     console.log(
@@ -153,7 +275,9 @@ const bench = (file) => {
             ` | خطای درز: دوخت=${(stitched * 100).toFixed(1)} نهایی=${(before * 100).toFixed(1)}` +
             ` جوش=${(world.seamError() * 100).toFixed(1)}` +
             ` | کشش نهایی: ${settled.worst.toFixed(1)}× خراب=${settled.bad}/${settled.tris}` +
-            ` | تیغه‌ای: نشستن=${settled.slivers} جوش=${welded.slivers}`,
+            ` | تیغه‌ای: نشستن=${settled.slivers} جوش=${welded.slivers}` +
+            ` | لولا: میانگین=${hinge.mean.toFixed(2)} بدترین=${hinge.worst.toFixed(2)}` +
+            ` | پوستِ لخت: ${bare.bare}/${bare.seen} بدترین=${(bare.worst * 100).toFixed(1)}`,
     );
 };
 

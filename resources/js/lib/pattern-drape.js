@@ -1196,6 +1196,8 @@ const DEFAULTS = {
     smoothing: 3,
     seamDuration: 0.6,
     seamStiffness: 0.7,
+    // سختیِ لولای درز؛ ۰٫۵ از سنجه آمد: مثلث خراب روی هشت لباس ۴۱ (۰٫۲۵) به ۲۹
+    seamHinge: 0.5,
     support: { band: 0.03, strength: 0.3 },
     // بالاتر از این تعداد رأس، حلقه‌ی حل روی دستگاه معمولی از ۳۰ فریم می‌افتد
     comfortableVertices: 4200,
@@ -2126,6 +2128,9 @@ export const buildDrape = (payload, body, options = {}) => {
             kind,
             duration: settings.seamDuration,
             stiffness: settings.seamStiffness,
+            // ساسون لولا ندارد: دو لبه‌اش عمداً روی هم تا می‌خورند
+            hinge: kind === 'dart' ? null : hingeOf(a, b, pairs),
+            hingeStiffness: settings.seamHinge,
         });
 
         seams.push(set);
@@ -2701,6 +2706,89 @@ const unsquash = (patch, { heads, near, rest }, floor = 0.7, passes = 2) => {
             }
         }
     }
+};
+
+/*
+ * لولای درز: برای هر جفتِ دوخته‌شده، دو رأسِ پشتِ درز و فاصلهٔ صافشان.
+ *
+ * «پشتِ درز» یعنی همسایه‌ای که خودش روی مرز نیست — یک ردیف تو‌رفته. اگر رأسِ
+ * لبه هیچ همسایهٔ درونی نداشته باشد (نوارِ یک‌ردیفه) از آن جفت می‌گذریم؛ لولا
+ * اختیاری است و نبودش چیزی را خراب نمی‌کند.
+ *
+ * فاصلهٔ هدف روی الگوی تخت اندازه گرفته می‌شود: اگر دو قطعه صاف کنارِ هم باشند،
+ * آن دو رأس به اندازهٔ مجموعِ فاصله‌شان از لبه از هم دورند.
+ *
+ * ولی هدف، *صافی* نیست. درزِ سرشانه واقعاً روی شانه گوشه می‌خورد و درز پهلو دور
+ * تن می‌پیچد؛ قیدی که همه را صاف بخواهد با خودِ الگو می‌جنگد — و جنگید: درز
+ * سرشانه ۵٫۸ میلی‌متر باز ماند و آزمون گرفتش. با دو بازوی برابرِ d، فاصلهٔ آن دو
+ * رأس در زاویهٔ θ می‌شود 2d·sin(θ/2)؛ پس ۰٫۷۲ از حالتِ صاف تقریباً همان زاویهٔ
+ * ۹۰ درجه است. هر خمی بازتر از ۹۰ درجه آزاد است و تنها تا شدنِ روی خود بسته
+ * می‌شود — که همان چیزی است که «آستین وصل نیست» را می‌ساخت.
+ */
+const HINGE_FLOOR = 0.72;
+
+const hingeOf = (a, b, pairs) => {
+    const nearA = neighboursOf(a);
+    const nearB = a === b ? nearA : neighboursOf(b);
+    const edgeA = boundaryOf(a);
+    const edgeB = a === b ? edgeA : boundaryOf(b);
+    const out = [];
+
+    for (let i = 0; i < pairs.length; i += 2) {
+        const inA = inward(nearA, edgeA, pairs[i]);
+        const inB = inward(nearB, edgeB, pairs[i + 1]);
+
+        if (inA === null || inB === null) {
+            continue;
+        }
+
+        out.push(inA.vertex, inB.vertex, (inA.rest + inB.rest) * HINGE_FLOOR);
+    }
+
+    return out.length ? out : null;
+};
+
+/* رأس‌های روی مرز: ضلعی که تنها یک مثلث دارد، مرز است */
+const boundaryOf = (entry) => {
+    const { indices } = entry.mesh;
+    const seen = new Map();
+    const edge = new Uint8Array(entry.patch.count);
+
+    for (let t = 0; t < indices.length; t += 3) {
+        for (const [x, y] of [[0, 1], [1, 2], [2, 0]]) {
+            const one = indices[t + x];
+            const two = indices[t + y];
+
+            seen.set(one < two ? `${one},${two}` : `${two},${one}`, (seen.get(one < two ? `${one},${two}` : `${two},${one}`) || 0) + 1);
+        }
+    }
+
+    for (const [key, count] of seen) {
+        if (count === 1) {
+            for (const at of key.split(',')) {
+                edge[Number(at)] = 1;
+            }
+        }
+    }
+
+    return edge;
+};
+
+/* نزدیک‌ترین همسایهٔ غیرِ مرزیِ یک رأس، با فاصله‌اش روی الگوی تخت */
+const inward = ({ heads, near, rest }, edge, vertex) => {
+    let best = null;
+
+    for (let k = heads[vertex]; k < heads[vertex + 1]; k++) {
+        if (edge[near[k]] || rest[k] <= 0) {
+            continue;
+        }
+
+        if (best === null || rest[k] < best.rest) {
+            best = { vertex: near[k], rest: rest[k] };
+        }
+    }
+
+    return best;
 };
 
 /*
