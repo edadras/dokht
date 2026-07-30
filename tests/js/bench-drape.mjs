@@ -203,6 +203,70 @@ const bareOf = (drape, body) => {
 };
 
 /*
+ * پوستِ لختِ سرِ بازو — همان گوه‌ای که کاربر روی سرشانه می‌دید.
+ *
+ * bareOf فقط تنه را می‌سنجد و سرِ بازو در هیچ‌کدام از ترازهایش نیست، پس این
+ * شکاف از دید همهٔ سنجه‌ها پنهان بود: فاصله تا نزدیک‌ترین مثلث روی خودِ تنه
+ * همه‌جا زیر ۲٫۵ سانتی‌متر بود و باز هم در عکس پوست دیده می‌شد. آنچه لخت
+ * می‌ماند سرشانهٔ گوشتی است — بالای بازو، بیرون از بیضیِ تنه.
+ *
+ * لباسِ بی‌آستین طبیعتاً این‌جا لخت است، پس فقط وقتی سنجیده می‌شود که آستینی
+ * در کار باشد.
+ */
+const armCapOf = (drape, body, avatar = {}) => {
+    const sleeves = drape.patches.filter(
+        ({ id, piece }) => (piece?.placement?.zone || piece?.role) === 'sleeve' && ! /cuff|strap/.test(id),
+    );
+
+    if (sleeves.length === 0) {
+        return { bare: 0, seen: 0, worst: 0 };
+    }
+
+    const points = [];
+
+    for (const { patch } of drape.patches) {
+        for (let v = 0; v < patch.count; v++) {
+            points.push(patch.positions[v * 3], patch.positions[v * 3 + 1], patch.positions[v * 3 + 2]);
+        }
+    }
+
+    // مرکزِ گروهِ بازو، همان‌که نماگر می‌سازد
+    const top = body.level.shoulder - 0.035;
+    const radius = body.radii.bicep;
+    let bare = 0;
+    let seen = 0;
+    let worst = 0;
+
+    for (const side of [-1, 1]) {
+        const middle = side * body.armOffset;
+
+        for (let drop = -0.005; drop >= -0.085; drop -= 0.01) {
+            const y = top + drop;
+
+            for (let k = 0; k < 16; k++) {
+                const u = (k / 16) * Math.PI * 2;
+                const x = middle + Math.cos(u) * radius;
+                const z = Math.sin(u) * radius;
+                let close = Infinity;
+
+                for (let i = 0; i < points.length; i += 3) {
+                    close = Math.min(close, Math.hypot(points[i] - x, points[i + 1] - y, points[i + 2] - z));
+                }
+
+                seen++;
+                worst = Math.max(worst, close);
+
+                if (close > 0.04) {
+                    bare++;
+                }
+            }
+        }
+    }
+
+    return { bare, seen, worst };
+};
+
+/*
  * پوششِ آستین دورِ بازو، روی یک حلقهٔ نازک.
  *
  * نوارِ ارتفاعیِ ضخیم این را نمی‌سنجد: زاویه‌های چند ارتفاع روی هم جمع می‌شوند و
@@ -435,6 +499,7 @@ const bench = (file) => {
     const hinge = hingeOf(drape);
     const bare = bareOf(drape, body);
     const sleeve = sleeveOf(drape, body);
+    const cap = armCapOf(drape, body, payload.avatar);
     const name = file.split('/').pop().replace('p-', '').replace('.json', '');
 
     console.log(
@@ -447,7 +512,8 @@ const bench = (file) => {
             ` | لولا: میانگین=${hinge.mean.toFixed(2)} بدترین=${hinge.worst.toFixed(2)}` +
             ` | پوستِ لخت: ${bare.bare}/${bare.seen} بدترین=${(bare.worst * 100).toFixed(1)}` +
             ` | ناقرینگیِ چیدن: میانگین=${(mirror.mean * 100).toFixed(1)} بدترین=${(mirror.worst * 100).toFixed(1)} (${mirror.pairs} جفت)` +
-            (sleeve.worst === null ? '' : ` | آستین: پوشش=${sleeve.worst.toFixed(0)}° سُرخوردن=${(sleeve.sag * 100).toFixed(1)}`),
+            (sleeve.worst === null ? '' : ` | آستین: پوشش=${sleeve.worst.toFixed(0)}° سُرخوردن=${(sleeve.sag * 100).toFixed(1)}`)
+            + (cap.seen === 0 ? '' : ` | سرِ بازوی لخت: ${cap.bare}/${cap.seen}`),
     );
 };
 

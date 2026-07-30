@@ -797,3 +797,47 @@ test('درز پس از جوش و ادامه‌ی شبیه‌سازی باز نم
         `جوش ماندگار نبود: پیش از جوش ${(settled * 1000).toFixed(1)} و پس از آن ${(durable * 1000).toFixed(1)} میلی‌متر`,
     );
 });
+
+/*
+ * سرِ آستین روی سرشانه می‌نشیند، نه ده سانتی‌متر پایین‌تر.
+ *
+ * سرِ آستین همان کمانی است که به حلقه دوخته می‌شود و بالاترین نقطهٔ حلقه سرشانه
+ * است، نه زیربغل. با تراز حلقه، آستین پایین می‌افتاد و «سرشانهٔ گوشتی» — بالای
+ * بازو، بیرون از بیضیِ تنه — لخت می‌ماند. هیچ سنجه‌ای این را نمی‌دید چون همه روی
+ * *تنه* نقطه می‌گذاشتند: فاصله تا نزدیک‌ترین مثلثِ تنه همه‌جا زیر ۲٫۵ سانتی‌متر
+ * بود و باز هم در عکس پوست دیده می‌شد.
+ */
+test('سرِ آستین بالاتر از تراز حلقه می‌نشیند', () => {
+    const body = makeBody();
+    const payload = twoSleeves();
+
+    /* y_top در بسته نسبتی از قدِ بدن است، نه متر */
+    const armhole = body.level.armhole / body.level.top;
+    const shoulder = body.level.shoulder / body.level.top;
+
+    for (const piece of payload.pieces) {
+        piece.placement.y_top = armhole + 0.5 * (shoulder - armhole);
+    }
+
+    const drape = buildDrape(payload, body, {});
+    const lifted = drape.patches.map(({ patch }) => {
+        let top = -Infinity;
+
+        for (let v = 0; v < patch.count; v++) {
+            top = Math.max(top, patch.positions[v * 3 + 1]);
+        }
+
+        return top;
+    });
+
+    for (const top of lifted) {
+        assert.ok(
+            top > body.level.armhole + 0.01,
+            `سرِ آستین روی ${(top * 100).toFixed(1)} است و تراز حلقه ${(body.level.armhole * 100).toFixed(1)}؛ بالا نرفته`,
+        );
+        assert.ok(
+            top < body.level.shoulder + 0.06,
+            `سرِ آستین تا ${(top * 100).toFixed(1)} بالا رفت، بالاتر از سرشانه`,
+        );
+    }
+});
