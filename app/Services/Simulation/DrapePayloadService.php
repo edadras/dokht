@@ -51,6 +51,16 @@ class DrapePayloadService
      */
     protected const SPLIT_TAGS = ['neck', 'armhole', 'shoulder'];
 
+    /**
+     * سهمِ کمانِ یک پنلِ آستین، حداکثر چند برابرِ سهمِ منصفانه‌اش.
+     *
+     * پنل‌ها دقیقاً کنار هم چیده نمی‌شوند: روی پارچه جای درز هست و پهنایشان از
+     * دور بازو بیشتر است. اگر دقیقاً تقسیم شود، هر پنل فشرده می‌شود و آستین
+     * کت‌وشلوار ۸ سانتی‌متر روی بازو سُر می‌خورد و تمام کت را پایین می‌کشد
+     * (پوستِ لخت ۲ ← ۴۰). با اجازهٔ هم‌پوشانی، ۲ ← ۵.
+     */
+    protected const PANEL_OVERLAP = 1.5;
+
     /** شعاع مرجع برای تبدیل اختلاف زاویه به فاصله (سانتی‌متر). */
     protected const REFERENCE_RADIUS = 15.0;
 
@@ -96,6 +106,7 @@ class DrapePayloadService
         }
 
         $this->arrange($instances);
+        $this->arrangeSleeves($instances);
         [$instances, $byCode] = $this->dedupe($instances, $notes);
 
         $relations = [];
@@ -769,6 +780,8 @@ class DrapePayloadService
             // برای چیدن گروهی (فقط سمت سرور؛ در بسته نمی‌آید)
             'center' => $center,
             'span' => $span,
+            'wrap' => $wrap,
+            'radius_body' => $radius,
             'symmetric' => $symmetric,
             'to_right' => $symmetric ? true : $this->centerAtLeft($instance),
             'central' => $symmetric || $this->edgeTagsOf($instance, 'side') === [],
@@ -863,6 +876,110 @@ class DrapePayloadService
                 $instances[$id]['placement']['u1'] = round($u1, 4);
                 $instances[$id]['payload']['placement']['u0'] = round($u0, 4);
                 $instances[$id]['payload']['placement']['u1'] = round($u1, 4);
+            }
+        }
+    }
+
+    /**
+     * پنل‌های یک آستین، کنار هم دور بازو — نه روی هم.
+     *
+     * آستین دوتکه (کت، کت‌وشلوار) دو پنل دارد: بالا و زیر. هر دو «آستین»اند، پس
+     * هر دو وسط‌چین می‌شدند و u = -π..π می‌گرفتند — یعنی هر دو تمامِ دور بازو را
+     * ادعا می‌کردند و از قدم اول در هم فرو می‌رفتند. اندازه گرفته شد: پوششِ آستین
+     * روی کت ۳۰ درجه از ۳۶۰ و روی کت‌وشلوار ۴۵ — بازو عملاً لخت.
+     *
+     * درستش همان کاری است که arrange() برای تنه می‌کند: دور بازو میان پنل‌ها
+     * تقسیم شود، به نسبتِ پهنای خودشان. و شعاع هم مشترک است: پنل‌های یک آستین
+     * روی یک استوانه‌اند، پس شعاعش از *مجموع* پهنایشان می‌آید نه از پهنای هرکدام
+     * جداگانه (وگرنه پنل بالا روی استوانهٔ ۴ سانتی‌متری می‌رفت و پنل زیر روی
+     * ۴٫۵ سانتی‌متری، دو لولهٔ تودرتو).
+     *
+     * @param  array<string, array<string, mixed>>  $instances
+     */
+    protected function arrangeSleeves(array &$instances): void
+    {
+        $groups = [];
+
+        foreach ($instances as $id => $instance) {
+            $place = $instance['placement'];
+
+            if (($instance['payload']['role'] ?? '') !== 'sleeve') {
+                continue;
+            }
+
+            // مچ‌بند دور مچ می‌پیچد و پنلِ آستین نیست؛ سهمش تمامِ دور است
+            if (($instance['payload']['meta']['part'] ?? '') === 'cuff') {
+                continue;
+            }
+
+            $key = implode('|', [
+                $place['zone'],
+                $instance['payload']['layer'],
+                (string) ($instance['payload']['side'] ?? ''),
+                (string) $place['y_top'],
+            ]);
+
+            $groups[$key][] = $id;
+        }
+
+        foreach ($groups as $ids) {
+            if (count($ids) < 2) {
+                continue; // آستین یک‌تکه؛ خودش تمامِ دور را می‌گیرد
+            }
+
+            $total = 0.0;
+
+            foreach ($ids as $id) {
+                $total += max(0.5, (float) $instances[$id]['placement']['wrap']);
+            }
+
+            $radius = 0.0;
+
+            foreach ($ids as $id) {
+                $place = $instances[$id]['placement'];
+                $radius = max($radius, (float) ($place['radius'] ?? 0), (float) $place['radius_body']);
+            }
+
+            $radius = round($radius, 2);
+
+            /*
+             * پنلِ پهن وسط‌چین می‌ماند، بقیه از کنارش پُر می‌کنند.
+             *
+             * سرِ آستین — همان کمانِ خمیده‌ای که به حلقه دوخته می‌شود — بیشترش
+             * روی پنلِ بالاست. اگر چیدن از u = -π شروع شود، آن سر جای دلخواهی
+             * می‌افتد و آستین از درزی کج آویزان می‌ماند: اندازه گرفته شد که
+             * آستین کت‌وشلوار ۸٫۱ سانتی‌متر روی بازو سُر می‌خورد و پوستِ لخت از
+             * ۲ به ۴۰ می‌رفت. آستین یک‌تکه وسط‌چین است و کار می‌کند؛ پس پنلِ
+             * پهن هم همان‌جا می‌ماند.
+             */
+            $order = $ids;
+            $at = -M_PI;
+
+            foreach ($order as $id) {
+                $place = $instances[$id]['placement'];
+                $wrap = max(0.5, (float) $place['wrap']);
+                $share = (2 * M_PI) * $wrap / $total;
+                // پهنای خودِ پنل، فشرده‌نشده: پنل‌ها کمی روی هم می‌آیند، همان‌طور
+                // که جای درز روی پارچه هست
+                $half = min(M_PI, $wrap / (2 * max(0.5, $radius)), ($share / 2) * static::PANEL_OVERLAP);
+                $middle = $at + ($share / 2);
+                $u0 = $middle - $half;
+                $u1 = $middle + $half;
+                $at += $share;
+
+                foreach (['placement', 'payload'] as $where) {
+                    $target = $where === 'payload' ? 'placement' : null;
+                    $slot = &$instances[$id][$where];
+
+                    if ($target !== null) {
+                        $slot = &$slot[$target];
+                    }
+
+                    $slot['u0'] = round($u0, 4);
+                    $slot['u1'] = round($u1, 4);
+                    $slot['radius'] = $radius;
+                    unset($slot);
+                }
             }
         }
     }

@@ -726,4 +726,63 @@ class DrapePayloadTest extends TestCase
             $this->assertGreaterThan(0, $checked, "«{$key}» باید یقه‌اش به خط یقه دوخته شود.");
         }
     }
+    /**
+     * پنل‌های یک آستین کنار هم می‌نشینند، نه روی هم.
+     *
+     * آستین دوتکه دو پنل دارد و هر دو «آستین»اند؛ پیش از این هر دو وسط‌چین
+     * می‌شدند و u = -π..π می‌گرفتند، یعنی هر دو تمامِ دور بازو را ادعا می‌کردند
+     * و از قدم اول در هم فرو می‌رفتند. پوششِ آستین روی کت ۴۵ درجه از ۳۶۰
+     * اندازه گرفته شد و روی کت‌وشلوار ۶۰ — بازو عملاً لخت.
+     */
+    public function test_sleeve_panels_share_the_arm(): void
+    {
+        $seen = 0;
+
+        foreach (['blazer', 'suit_jacket'] as $key) {
+            if (! GeneratorRegistry::has($key)) {
+                continue;
+            }
+
+            $payload = $this->payload($key);
+            $arms = [];
+
+            foreach ($payload['pieces'] as $piece) {
+                if (($piece['role'] ?? '') !== 'sleeve' || ($piece['meta']['part'] ?? '') === 'cuff') {
+                    continue;
+                }
+
+                $arms[$piece['side'].'|'.$piece['placement']['y_top']][] = $piece;
+            }
+
+            foreach ($arms as $panels) {
+                if (count($panels) < 2) {
+                    continue;
+                }
+
+                $seen++;
+                $span = 0.0;
+
+                foreach ($panels as $panel) {
+                    $one = (float) $panel['placement']['u0'];
+                    $two = (float) $panel['placement']['u1'];
+                    $span += $two - $one;
+
+                    $this->assertLessThan(
+                        2 * M_PI - 0.01,
+                        $two - $one,
+                        "«{$key}»: پنلِ {$panel['id']} تمامِ دور بازو را برداشته؛ پنلِ دیگر جایی ندارد.",
+                    );
+                }
+
+                // هم‌پوشانی مجاز است (جای درز)، ولی نه دو برابرِ دورِ بازو
+                $this->assertLessThan(
+                    2 * (2 * M_PI),
+                    $span,
+                    "«{$key}»: مجموعِ کمانِ پنل‌ها دو برابرِ دورِ بازو شد؛ روی هم افتاده‌اند.",
+                );
+            }
+        }
+
+        $this->assertGreaterThan(0, $seen, 'هیچ آستین دوتکه‌ای پیدا نشد؛ آزمون چیزی را نسنجید.');
+    }
 }

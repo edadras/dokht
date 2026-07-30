@@ -210,28 +210,69 @@ const bareOf = (drape, body) => {
  * گرفتم در حالی که مرورگر ۲۱۰ می‌داد و بازو در عکس لخت بود.
  */
 const sleeveOf = (drape, body) => {
-    let worst = 360;
-    let count = 0;
+    /*
+     * پوشش برای هر *آستین* شمرده می‌شود، نه هر قطعه.
+     *
+     * آستین دوتکه دو پنل دارد و هیچ‌کدام تنها تمامِ دور بازو را نمی‌پوشاند —
+     * پنل بالا ۲۳۹ درجه و پنل زیر ۱۲۱. سنجهٔ قبلی هر قطعه را جدا می‌سنجید و
+     * *کمینه* را می‌گرفت، پس آستینِ سالمِ دوتکه هم ۱۲۱ درجه گزارش می‌شد و وقتی
+     * پنل‌ها باریک‌تر شدند اصلاً «قطعه‌ای پیدا نشد» داد. سبد را برای دو سوی بدن
+     * جدا نگه می‌داریم و پنل‌های هر سو را روی هم می‌ریزیم.
+     */
+    const arms = new Map();
 
     for (const { id, piece, patch } of drape.patches) {
-        if ((piece?.placement?.zone || piece?.role) !== 'sleeve' || /cuff/.test(id)) {
+        if ((piece?.placement?.zone || piece?.role) !== 'sleeve' || /cuff|strap/.test(id)) {
             continue;
         }
 
-        const middle = piece.side === 'left' ? -body.armOffset : body.armOffset;
+        const side = piece.side === 'left' ? 'left' : 'right';
+        const arm = arms.get(side) || { patches: [], top: -Infinity };
+
+        arm.patches.push(patch);
+
+        for (let v = 0; v < patch.count; v++) {
+            arm.top = Math.max(arm.top, patch.positions[v * 3 + 1]);
+        }
+
+        arms.set(side, arm);
+    }
+
+    let worst = 360;
+    let count = 0;
+    let sag = 0;
+
+    for (const [side, arm] of arms) {
+        const middle = side === 'left' ? -body.armOffset : body.armOffset;
+
+        /*
+         * حلقه را آن‌جا می‌گذاریم که پارچه هست.
+         *
+         * ارتفاعِ ثابتِ «۱۲ سانتی‌متر زیر حلقهٔ آستین» فرض می‌کرد آستین سرِ جایش
+         * است. آستینِ ترنچ‌کت ۵ سانتی‌متر از شانه سُر خورده بود و حلقه بالای
+         * پارچه می‌افتاد، پس سنجه «قطعه‌ای پیدا نشد» می‌داد — بی‌خبری، نه قبولی.
+         * حالا حلقه چهار سانتی‌متر زیر سرِ خودِ آستین است (و نه بالاتر از حلقهٔ
+         * استاندارد)، و سُر خوردن جدا گزارش می‌شود.
+         */
+        const standard = body.level.armhole - 0.12;
+        const ring = Math.min(standard, arm.top - 0.04);
         const bins = new Uint8Array(24);
         let seen = 0;
 
-        for (let v = 0; v < patch.count; v++) {
-            if (Math.abs(patch.positions[v * 3 + 1] - (body.level.armhole - 0.12)) > 0.025) {
-                continue;
+        for (const patch of arm.patches) {
+            for (let v = 0; v < patch.count; v++) {
+                if (Math.abs(patch.positions[v * 3 + 1] - ring) > 0.025) {
+                    continue;
+                }
+
+                const u = Math.atan2(patch.positions[v * 3 + 2], patch.positions[v * 3] - middle);
+
+                bins[Math.min(23, Math.floor((u + Math.PI) / (2 * Math.PI) * 24))] = 1;
+                seen++;
             }
-
-            const u = Math.atan2(patch.positions[v * 3 + 2], patch.positions[v * 3] - middle);
-
-            bins[Math.min(23, Math.floor((u + Math.PI) / (2 * Math.PI) * 24))] = 1;
-            seen++;
         }
+
+        sag = Math.max(sag, body.level.armhole - arm.top);
 
         if (seen < 8) {
             continue;
@@ -241,7 +282,7 @@ const sleeveOf = (drape, body) => {
         count++;
     }
 
-    return { worst: count ? worst : null, count };
+    return { worst: count ? worst : null, count, sag };
 };
 
 /*
@@ -406,7 +447,7 @@ const bench = (file) => {
             ` | لولا: میانگین=${hinge.mean.toFixed(2)} بدترین=${hinge.worst.toFixed(2)}` +
             ` | پوستِ لخت: ${bare.bare}/${bare.seen} بدترین=${(bare.worst * 100).toFixed(1)}` +
             ` | ناقرینگیِ چیدن: میانگین=${(mirror.mean * 100).toFixed(1)} بدترین=${(mirror.worst * 100).toFixed(1)} (${mirror.pairs} جفت)` +
-            (sleeve.worst === null ? '' : ` | پوششِ آستین: ${sleeve.worst.toFixed(0)}°`),
+            (sleeve.worst === null ? '' : ` | آستین: پوشش=${sleeve.worst.toFixed(0)}° سُرخوردن=${(sleeve.sag * 100).toFixed(1)}`),
     );
 };
 
