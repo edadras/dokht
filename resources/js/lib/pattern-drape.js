@@ -2489,6 +2489,70 @@ const surfaceStitches = (state, host, reach) => {
     return pairs;
 };
 
+/*
+ * بستنِ کاملِ درز پیش از نمایش.
+ *
+ * حل‌کننده درز را «تا حد ممکن» می‌بندد، نه کامل: بیشترین بازشدگی روی پیراهن
+ * ۱٫۷ سانتی‌متر می‌ماند. برای فیزیک اهمیتی ندارد، ولی روی مانکن همان یک‌ونیم
+ * سانتی‌متر یعنی نواری از پوستِ بدن که از لای درز دیده می‌شود — و چشم آن را
+ * «پارچهٔ پاره» می‌خواند، نه «درزِ کمی باز». کاربر هم دقیقاً همین را دید.
+ *
+ * درزِ دوخته‌شده در واقعیت صفر فاصله دارد: دو لبه روی هم می‌افتند. پس در پایانِ
+ * نشستن، هر جفت رأس را به میانهٔ خودشان می‌بریم. این کار فرمِ لباس را عوض
+ * نمی‌کند (جابه‌جایی در حد میلی‌متر است) و فقط شکافِ دیدنی را می‌بندد.
+ *
+ * چند تکرار لازم است چون رأسی که روی دو درز است، هر بار میانهٔ یکی را می‌گیرد.
+ */
+export const weldSeams = (drape, rounds = 8) => {
+    let worst = 0;
+
+    for (let round = 0; round < rounds; round++) {
+        worst = 0;
+
+        for (const seam of drape.seams) {
+            const pa = seam.a.positions;
+            const pb = (seam.b || seam.a).positions;
+            const wa = seam.a.invMass;
+            const wb = (seam.b || seam.a).invMass;
+
+            for (let i = 0; i < seam.count; i++) {
+                const at = seam.pairs[i * 2] * 3;
+                const to = seam.pairs[i * 2 + 1] * 3;
+                const ma = wa[seam.pairs[i * 2]];
+                const mb = wb[seam.pairs[i * 2 + 1]];
+                const sum = ma + mb;
+
+                if (sum <= 0) {
+                    continue; // هر دو سر میخکوب‌اند؛ دست‌نزدنی
+                }
+
+                const dx = pb[to] - pa[at];
+                const dy = pb[to + 1] - pa[at + 1];
+                const dz = pb[to + 2] - pa[at + 2];
+
+                worst = Math.max(worst, Math.hypot(dx, dy, dz));
+
+                // سهم هر سر به نسبت آزادیِ خودش؛ رأس میخکوب تکان نمی‌خورد
+                const ka = ma / sum;
+                const kb = mb / sum;
+
+                pa[at] += dx * ka;
+                pa[at + 1] += dy * ka;
+                pa[at + 2] += dz * ka;
+                pb[to] -= dx * kb;
+                pb[to + 1] -= dy * kb;
+                pb[to + 2] -= dz * kb;
+            }
+        }
+    }
+
+    for (const { patch } of drape.patches) {
+        patch.remember();
+    }
+
+    return worst;
+};
+
 /**
  * «نگه‌دارنده»ی لبه‌ی بالا — بعد از دوخته شدن لباس صدا زده می‌شود.
  *

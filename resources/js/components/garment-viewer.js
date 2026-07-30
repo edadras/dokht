@@ -1192,6 +1192,9 @@ export default (config = {}) => ({
         ctx.world.presettle(40);
         ctx.world.iterations = iterations;
 
+        // درزِ نیم‌باز روی مانکن «پارچهٔ پاره» دیده می‌شود؛ کاملش می‌بندیم
+        DRAPE.weldSeams(drape);
+
         ctx.cloth.forEach((item) => {
             item.geometry.attributes.position.needsUpdate = true;
             item.geometry.computeVertexNormals();
