@@ -1273,6 +1273,7 @@ const warpToSeams = (patches, seams, rounds = 400) => {
         const count = patch.count;
         const move = new Float64Array(count * 3);
         const anchored = new Uint8Array(count);
+        let joins = 0;
 
         for (const seam of seams) {
             if (! seam.b || seam.b === seam.a) {
@@ -1290,6 +1291,8 @@ const warpToSeams = (patches, seams, rounds = 400) => {
             if (at.get(theirs) === undefined) {
                 continue;
             }
+
+            joins++;
 
             for (let i = 0; i < seam.count; i++) {
                 const v = seam.pairs[i * 2 + (mineFirst ? 0 : 1)];
@@ -1375,7 +1378,16 @@ const warpToSeams = (patches, seams, rounds = 400) => {
             spread += Math.hypot(move[v * 3] - mx, move[v * 3 + 1] - my, move[v * 3 + 2] - mz);
         }
 
-        if (need / anchors < 0.02 || spread / anchors < 0.015) {
+        /*
+         * قطعه‌ای که ده‌ها درزِ جدا دارد، جای خم‌کردن نیست.
+         *
+         * این را از داده گرفتم: کمربندِ دامن کلوش به دوازده کمانِ پخش‌شده دور
+         * تمام کمر دوخته است. خم‌کردنش نوار را می‌کشد و بعد جابه‌جاییِ صُلبِ
+         * بعدی، پنل‌های دامن را دنبال نوارِ کشیده می‌برد؛ اندازه‌گیری: درز
+         * پهلوی دامن از ۱۳ به ۳۸ سانتی‌متر باز می‌شد. خم‌کردن برای ناجوریِ
+         * موضعی است — یقه و سرآستین — نه برای جابه‌جا کردنِ نوارِ بلند.
+         */
+        if (joins > 4 || need / anchors < 0.02 || spread / anchors < 0.015) {
             continue;
         }
 
