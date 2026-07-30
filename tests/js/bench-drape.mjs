@@ -367,6 +367,7 @@ const bench = (file) => {
     world.law.gravity = gravity;
     world.presettle(40);
     world.iterations = drape.stats.solver.iterations;
+    world.seamPasses = drape.stats.solver.seamPasses ?? world.seamPasses;
     world.presettle(300);
 
     const settled = stretchOf(drape);
@@ -375,6 +376,20 @@ const bench = (file) => {
     // همان کاری که نماگر پیش از نمایش می‌کند؛ اگر خراب کند، همین‌جا دیده شود
     weldSeams(drape);
 
+    const snapped = world.seamError();
+
+    /*
+     * جوش، *قید* نیست — رأس‌ها را جابه‌جا می‌کند و بس.
+     *
+     * سنجه تا امروز همین‌جا اندازه می‌گرفت و ۰٫۱ سانتی‌متر می‌دید، ولی نماگر پس
+     * از جوش هم شبیه‌سازی را ادامه می‌دهد: قیدِ درز نرم است و پارچه دوباره
+     * می‌کشدش. اندازه گرفته شد — پیراهن پس از ۱۲۰ قدم به ۵٫۵ سانتی‌متر
+     * برمی‌گشت، یعنی همان «یقه آزاد است»ی که روی مانکن دیده می‌شد. عددی که به
+     * کار می‌آید، عددِ *ماندگار* است نه عددِ لحظهٔ جوش.
+     */
+    world.presettle(150);
+
+    const durable = world.seamError();
     const welded = stretchOf(drape);
     const hinge = hingeOf(drape);
     const bare = bareOf(drape, body);
@@ -385,7 +400,7 @@ const bench = (file) => {
         `${name.padEnd(20)} چیدن: بدترین=${(gaps.worst * 100).toFixed(1)} میانگین=${(gaps.mean * 100).toFixed(1)}` +
             ` | کشش چیدن: ${placed.worst.toFixed(1)}× خراب=${placed.bad}` +
             ` | خطای درز: دوخت=${(stitched * 100).toFixed(1)} نهایی=${(before * 100).toFixed(1)}` +
-            ` جوش=${(world.seamError() * 100).toFixed(1)}` +
+            ` جوش=${(snapped * 100).toFixed(1)} ماندگار=${(durable * 100).toFixed(1)}` +
             ` | کشش نهایی: ${settled.worst.toFixed(1)}× خراب=${settled.bad}/${settled.tris}` +
             ` | تیغه‌ای: نشستن=${settled.slivers} جوش=${welded.slivers}` +
             ` | لولا: میانگین=${hinge.mean.toFixed(2)} بدترین=${hinge.worst.toFixed(2)}` +

@@ -1138,6 +1138,7 @@ export default (config = {}) => ({
         if (drape.stats?.solver) {
             ctx.world.substeps = drape.stats.solver.substeps ?? ctx.world.substeps;
             ctx.world.iterations = drape.stats.solver.iterations ?? ctx.world.iterations;
+            ctx.world.seamPasses = drape.stats.solver.seamPasses ?? ctx.world.seamPasses;
         }
 
         drape.patches.forEach((item) => {

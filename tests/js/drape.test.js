@@ -751,3 +751,49 @@ test('یقه روی خط خواب تا می‌شود و جوش تا را باز 
         `جوش یقه را از ${on.radius.toFixed(1)} به ${welded.radius.toFixed(1)} سانتی‌متر باز کرد`,
     );
 });
+
+/*
+ * درز، پس از جوش هم بسته می‌ماند.
+ *
+ * جوش قید نیست — رأس‌ها را جابه‌جا می‌کند و بس. سنجه تا امروز درست بعد از جوش
+ * اندازه می‌گرفت و ۰٫۱ سانتی‌متر می‌دید، ولی نماگر شبیه‌سازی را ادامه می‌دهد و
+ * قیدِ نرمِ درز دوباره باز می‌شد: روی کت ۱۲٫۷ سانتی‌متر، روی ترنچ ۱۲٫۷، روی
+ * قپائو ۱۰٫۲. کاربر همین را دید و گفت «یقه در سمت به لباس وصل نیست، آزاده».
+ *
+ * درمانش پاسِ اضافیِ درز بود، نه سخت‌ترکردنش (با سختیِ ۱٫۰ کت به ۱۵٫۸ بدتر شد).
+ * این آزمون همان را قفل می‌کند: عددِ *ماندگار*، نه عددِ لحظهٔ جوش.
+ */
+test('درز پس از جوش و ادامه‌ی شبیه‌سازی باز نمی‌شود', () => {
+    const drape = buildDrape(bodicePayload(), makeBody(), {});
+
+    assert.ok(
+        (drape.stats.solver?.seamPasses ?? 1) > 1,
+        'پاسِ اضافیِ درز در تنظیماتِ حل‌کننده نیست؛ نماگر آن را برنمی‌دارد',
+    );
+
+    const world = settle(drape, drape.stats.presettle);
+
+    world.seamPasses = drape.stats.solver.seamPasses;
+    world.presettle(120);
+
+    const settled = world.seamError();
+
+    weldSeams(drape);
+
+    const snapped = world.seamError();
+
+    assert.ok(snapped < 0.002, `جوش درز را نبست: ${(snapped * 1000).toFixed(1)} میلی‌متر`);
+
+    world.presettle(150);
+
+    const durable = world.seamError();
+
+    assert.ok(
+        durable < 0.006,
+        `درز پس از جوش دوباره تا ${(durable * 1000).toFixed(1)} میلی‌متر باز شد`,
+    );
+    assert.ok(
+        durable <= settled + 0.001,
+        `جوش ماندگار نبود: پیش از جوش ${(settled * 1000).toFixed(1)} و پس از آن ${(durable * 1000).toFixed(1)} میلی‌متر`,
+    );
+});
