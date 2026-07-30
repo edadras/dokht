@@ -19,8 +19,8 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { buildDrape, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
-import { ClothWorld } from '../../resources/js/lib/cloth-solver.js';
-import { makeBody } from './fixtures/payload.js';
+import { ClothWorld, Collider } from '../../resources/js/lib/cloth-solver.js';
+import { bodyColliders, makeBody } from './fixtures/payload.js';
 
 const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
@@ -297,6 +297,8 @@ const bench = (file) => {
 
     drape.patches.forEach((entry) => world.addPatch(entry.patch));
     drape.seams.forEach((seam) => world.addSeam(seam));
+    // بدن، با بازو و پا — بی این‌ها آستین چیزی برای نشستن ندارد
+    world.setColliders(bodyColliders(Collider, body, payload.avatar));
     world.iterations = 6;
 
     // اول در بی‌وزنی دوخته می‌شود، بعد سرشانه گرفته و وزن برمی‌گردد

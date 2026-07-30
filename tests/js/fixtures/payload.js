@@ -358,3 +358,83 @@ export const twoSleeves = () => {
         meta: {},
     };
 };
+
+/*
+ * برخوردگرهای بدن — همان‌هایی که نماگر می‌سازد، برای سنجه.
+ *
+ * سنجه تا امروز هیچ بدنی نداشت: قطعه‌ها را می‌دوخت و رها می‌کرد، پس عددهای
+ * «افتادن» و «پوستِ لخت» بدبینانه بودند و از همه مهم‌تر، *بازو* در آن وجود
+ * نداشت. کاربر همین را دید و گفت «مانکن دست نداره شاید مشکل از اینه» — و درست
+ * بود: آستین چیزی نداشته که رویش بنشیند.
+ *
+ * ماتریسِ هر برخوردگر ثابت است (ژستِ ایستاده)، پس همین‌جا دستی ساخته می‌شود.
+ */
+export const bodyColliders = (Collider, body, avatar = {}) => {
+    const level = body.level;
+    const r = body.radii;
+    const height = level.top;
+    const armLength = (avatar.arm_length || 58) / 100;
+    const out = [];
+    const at = (sections, name, offset = [0, 0, 0], caps = {}) => {
+        const collider = new Collider({ sections, name, ...caps });
+        const matrix = new Float32Array([
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            offset[0], offset[1], offset[2], 1,
+        ]);
+        const inverse = new Float32Array(matrix);
+
+        inverse[12] = -offset[0];
+        inverse[13] = -offset[1];
+        inverse[14] = -offset[2];
+
+        collider.setTransform(matrix, inverse, 0.03);
+        out.push(collider);
+    };
+
+    at(body.profile.filter(([y]) => y >= level.crotch - 1e-6), 'torso');
+    at([[level.neck - 0.02, r.neck * 1.05, r.neck * 1.05], [level.chin, r.neck * 0.92, r.neck * 0.92]], 'neck');
+
+    const headR = (height - level.chin) * 0.62;
+    const headY = level.chin + (height - level.chin) * 0.55;
+
+    at([
+        [headY - headR * 0.95, headR * 0.39, headR * 0.41],
+        [headY, headR * 0.86, headR * 0.9],
+        [headY + headR * 0.95, headR * 0.39, headR * 0.41],
+    ], 'head');
+
+    // بازوها: «چپ» روی x منفی، همان قراردادی که سرور برای زاویه دارد
+    for (const [name, side] of [['armL', -1], ['armR', 1]]) {
+        at([
+            [-armLength - r.wrist * 0.5, r.wrist * 1.1, r.wrist * 1.1],
+            [-armLength * 0.55, r.bicep * 0.74, r.bicep * 0.74],
+            [-armLength * 0.12, r.bicep * 1.02, r.bicep * 1.02],
+            [0, r.bicep * 1.06, r.bicep * 1.06],
+            [r.bicep * 0.5, r.bicep * 0.86, r.bicep * 0.86],
+        ], name, [side * r.shoulder * 0.87, level.shoulder - 0.035, 0]);
+    }
+
+    const thighDrop = level.crotch - level.knee;
+    const shinDrop = level.knee - level.ankle;
+
+    for (const [name, side] of [['legL', -1], ['legR', 1]]) {
+        const hip = r.hip * 0.42;
+
+        at([
+            [-thighDrop, r.knee * 1.02, r.knee * 1.02],
+            [-thighDrop * 0.5, r.thigh * 0.84, r.thigh * 0.84],
+            [-0.02, r.thigh * 1.02, r.thigh * 1.02],
+            [0, r.thigh * 1.04, r.thigh * 1.04],
+        ], 'thigh' + name, [side * hip, level.crotch, 0]);
+
+        at([
+            [-shinDrop, r.ankle * 1.1, r.ankle * 1.1],
+            [-shinDrop * 0.6, r.ankle * 1.42, r.ankle * 1.42],
+            [0, r.knee * 0.98, r.knee * 0.98],
+        ], 'shin' + name, [side * hip, level.knee, 0]);
+    }
+
+    return out;
+};

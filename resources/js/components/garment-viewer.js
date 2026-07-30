@@ -396,9 +396,19 @@ export default (config = {}) => ({
             [0, r.bicep * 1.02],
         ];
 
+        /*
+         * «چپ» روی x منفی می‌نشیند، هم‌قرارداد با بستهٔ دوخت.
+         *
+         * سرور زاویهٔ منفی را چپ می‌نامد و چیدنِ قطعه زاویه را با سینوس به x
+         * می‌برد، پس آستینِ چپ روی x منفی است. بازوی مانکن ولی برعکس ساخته
+         * می‌شد: armL روی x مثبت. یعنی آستین روی بازوی خالی می‌افتاد و بازو از
+         * آستینِ سمتِ دیگر بیرون می‌زد — چیزی برای نشستنِ آستین نبود. کاربر
+         * همین را دید: «مانکن دست نداره شاید مشکل از اینه». دست بود، سرِ سمتِ
+         * اشتباه.
+         */
         [
-            [ctx.armL, 1],
-            [ctx.armR, -1],
+            [ctx.armL, -1],
+            [ctx.armR, 1],
         ].forEach(([group, side]) => {
             group.position.set(side * r.shoulder * 0.87, level.shoulder - 0.035, 0);
 
@@ -434,9 +444,10 @@ export default (config = {}) => ({
         });
 
         // ---- پاها: لولای ران و لولای زانو ----
+        // «چپ» روی x منفی، همان قرارداد بازو و بستهٔ دوخت
         [
-            [ctx.legL, ctx.kneeL, 1],
-            [ctx.legR, ctx.kneeR, -1],
+            [ctx.legL, ctx.kneeL, -1],
+            [ctx.legR, ctx.kneeR, 1],
         ].forEach(([group, kneeGroup, side]) => {
             group.position.set(side * r.hip * 0.42, level.crotch, 0);
 
