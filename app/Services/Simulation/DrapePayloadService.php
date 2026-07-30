@@ -49,7 +49,16 @@ class DrapePayloadService
      * نام می‌برند، و ریزتر شدنِ مرز فقط همان اشکالِ قدیمی را بزرگ‌تر نشان داد
      * (مثلث تیغه‌ای ۸ به ۱۷). آن اشکال جای دیگری دارد.
      */
-    protected const SPLIT_TAGS = ['neck', 'armhole', 'shoulder'];
+    protected const SPLIT_TAGS = ['neck', 'armhole', 'shoulder', 'waist'];
+
+    /**
+     * گامِ شکستنِ لبهٔ کمر، سانتی‌متر — ریزتر از بقیه.
+     *
+     * کمربند یک نوارِ راست است و شریک‌هایش زیاد: کمرِ دامنِ کلوش ۱۲ کمان دارد و
+     * نوار باید میان همه‌شان تقسیم شود. با گامِ ۵ سانتی‌متری نوارِ ۴۲٫۵ سانتی‌متری
+     * ۸ پاره می‌گیرد، splitArc نمی‌تواند ۱۲ تکه بسازد و بی‌صدا رد می‌شود.
+     */
+    protected const WAIST_STEP = 2.0;
 
     /**
      * سهمِ کمانِ یک پنلِ آستین، حداکثر چند برابرِ سهمِ منصفانه‌اش.
@@ -395,7 +404,11 @@ class DrapePayloadService
 
         foreach ($origins as $edge => $origin) {
             $tag = $origin !== null ? ($prepared['tags'][$origin] ?? 'default') : 'default';
-            $breakable[$edge] = in_array($tag, static::SPLIT_TAGS, true);
+            $breakable[$edge] = match (true) {
+                ! in_array($tag, static::SPLIT_TAGS, true) => false,
+                $tag === 'waist' => static::WAIST_STEP,
+                default => true,
+            };
         }
 
         $flat = DrapeGeometry::flattenWithSpans(

@@ -63,7 +63,7 @@ final class DrapeGeometry
             $edge = $i - 1;
 
             if ($i === $count && ! Geometry::isCurve($target)) {
-                foreach (static::stepsBetween($from, $target, ($split[$edge] ?? false) ? $step : 0.0) as $point) {
+                foreach (static::stepsBetween($from, $target, static::stepOf($split, $edge, $step)) as $point) {
                     $polygon[] = $point;
                 }
 
@@ -89,7 +89,7 @@ final class DrapeGeometry
                     $end = count($polygon) - 1;
                 }
             } else {
-                foreach (static::stepsBetween($from, $target, ($split[$edge] ?? false) ? $step : 0.0) as $point) {
+                foreach (static::stepsBetween($from, $target, static::stepOf($split, $edge, $step)) as $point) {
                     $polygon[] = $point;
                 }
 
@@ -104,6 +104,28 @@ final class DrapeGeometry
         ksort($spans);
 
         return ['polygon' => $polygon, 'spans' => $spans];
+    }
+
+    /**
+     * گامِ شکستنِ یک لبه: عددِ خودِ لبه، یا گامِ پیش‌فرض، یا هیچ.
+     *
+     * `$split[$edge]` هم «بشکن» را می‌پذیرد (true) و هم «با این ریزی بشکن» (عدد).
+     * لبه‌ای که چند شریک دارد به همان تعداد رأس نیاز دارد: کمانِ کمربندِ دامنِ
+     * کلوش ۴۲٫۵ سانتی‌متر است و باید میان ۱۲ کمانِ خط کمر تقسیم شود، ولی با گامِ
+     * ۵ سانتی‌متری تنها ۸ پاره می‌گیرد. splitArc نمی‌تواند ۱۲ تکه بسازد و بی‌صدا
+     * رد می‌شود — نتیجه اینکه ده رابطه همان یک کمان را کامل ادعا می‌کنند.
+     *
+     * @param  array<int, bool|float|int>  $split
+     */
+    protected static function stepOf(array $split, int $edge, float $step): float
+    {
+        $want = $split[$edge] ?? false;
+
+        return match (true) {
+            is_numeric($want) => max(0.0, (float) $want),
+            $want === true => $step,
+            default => 0.0,
+        };
     }
 
     /**

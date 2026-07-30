@@ -785,4 +785,47 @@ class DrapePayloadTest extends TestCase
 
         $this->assertGreaterThan(0, $seen, 'هیچ آستین دوتکه‌ای پیدا نشد؛ آزمون چیزی را نسنجید.');
     }
+    /**
+     * هیچ کمانی دو بار کامل ادعا نمی‌شود.
+     *
+     * کمربندِ دامنِ کلوش یک نوارِ راستِ ۴۲٫۵ سانتی‌متری است و خط کمرِ دامن ۱۲
+     * کمان؛ سازندهٔ رابطه‌ها برای هر کمان یک رابطه می‌نویسد و در همه‌شان همان یک
+     * نوار را می‌گذارد. share() باید نوار را میانشان ببُرد — ولی بریدن روی رأس
+     * انجام می‌شود و نوارِ راست با گامِ ۵ سانتی‌متری تنها ۸ پاره داشت. splitArc
+     * نمی‌توانست ۱۲ تکه بسازد و بی‌صدا رد می‌شد، پس هر دوازده رابطه کلِ ۴۲٫۵
+     * سانتی‌متر را می‌گرفتند: نوار از دوازده جا هم‌زمان کشیده می‌شد و اختلاف طولِ
+     * درز به ۳۶ سانتی‌متر می‌رسید.
+     */
+    public function test_no_arc_is_claimed_twice(): void
+    {
+        $seen = 0;
+
+        foreach (['skirt_circle_full', 'dress_wrap', 'shirt_classic'] as $key) {
+            if (! GeneratorRegistry::has($key)) {
+                continue;
+            }
+
+            $payload = $this->payload($key);
+            $claims = [];
+
+            foreach ($payload['seams'] as $seam) {
+                foreach (['a', 'b'] as $end) {
+                    $claims[$seam[$end]['piece'].'|'.$seam[$end]['from'].'..'.$seam[$end]['to']][] = $seam['label'];
+                }
+            }
+
+            foreach ($claims as $arc => $labels) {
+                $seen++;
+
+                $this->assertLessThan(
+                    2,
+                    count($labels),
+                    "«{$key}»: کمانِ {$arc} را ".count($labels).' رابطه کامل ادعا کرده‌اند ('
+                        .implode('، ', array_unique($labels)).')؛ باید میانشان بریده شود.',
+                );
+            }
+        }
+
+        $this->assertGreaterThan(0, $seen, 'هیچ درزی سنجیده نشد.');
+    }
 }
