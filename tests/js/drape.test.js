@@ -502,3 +502,60 @@ test('آستین روی محورِ بازو چیده می‌شود', () => {
         );
     }
 });
+
+/*
+ * هیچ سوزنی نوارِ پارچه را روی یک نقطه جمع نمی‌کند.
+ *
+ * این همان چیزی بود که کاربر «لبه‌های تیکه‌تیکه» می‌خواندش، و هیچ سنجهٔ دیگری
+ * نمی‌گرفتش: درز بسته بود، لباس قرینه، آستین روی بازو — ولی جفت‌سازیِ سوزن‌ها
+ * بادبزنی بود. هرجا یک سمتِ درز رأس‌های ریزتری داشت، چند رأسش روی *یک* رأسِ سمتِ
+ * دیگر می‌افتاد؛ روی درزِ سرشانه دو سوزنِ پی‌درپی یک سمت ۱٫۴۴ سانتی‌متر جلو
+ * می‌رفت و سمتِ دیگر صفر. آن نوار لِه می‌شد و همسایه‌اش جِر می‌خورد: مثلثِ
+ * سی‌برابر کشیده در سرشانه و حلقه.
+ *
+ * حالا سرِ دومِ سوزن می‌تواند نقطه‌ای روی پاره‌خطِ میانِ دو رأس باشد، پس هر رأس
+ * شریکِ خودش را دارد. این آزمون روی *الگوی تخت* می‌سنجد — فیزیک دخالتی ندارد و
+ * اگر روزی جفت‌ساز به بادبزن برگردد، همین‌جا لو می‌رود.
+ */
+test('سوزن‌های پی‌درپی، هر دو سمت را به یک اندازه جلو می‌برند', () => {
+    const drape = buildDrape(bodicePayload(), makeBody(), {});
+
+    assert.ok(drape.seams.length > 0);
+
+    for (const seam of drape.seams) {
+        const ga = seam.a.grain || drape.patches.find((entry) => entry.patch === seam.a).mesh.grain;
+        const host = seam.b || seam.a;
+        const gb = drape.patches.find((entry) => entry.patch === host).mesh.grain;
+
+        const spot = (i) => {
+            const w = seam.second && seam.weight ? seam.weight[i] : 0;
+            const one = seam.pairs[i * 2 + 1];
+            const two = w > 0 ? seam.second[i] : one;
+
+            return [
+                gb[one * 2] * (1 - w) + gb[two * 2] * w,
+                gb[one * 2 + 1] * (1 - w) + gb[two * 2 + 1] * w,
+            ];
+        };
+
+        for (let i = 1; i < seam.count; i++) {
+            const before = seam.pairs[(i - 1) * 2];
+            const now = seam.pairs[i * 2];
+            const step = Math.hypot(ga[now * 2] - ga[before * 2], ga[now * 2 + 1] - ga[before * 2 + 1]);
+            const [x0, y0] = spot(i - 1);
+            const [x1, y1] = spot(i);
+            const other = Math.hypot(x1 - x0, y1 - y0);
+
+            if (step < 1e-5 && other < 1e-5) {
+                continue;
+            }
+
+            assert.ok(
+                Math.max(step, other) / Math.max(1e-5, Math.min(step, other)) < 6,
+                `درز «${seam.label}» سوزنِ ${i}: یک سمت ${(step * 100).toFixed(2)} و سمتِ دیگر `
+                    + `${(other * 100).toFixed(2)} سانتی‌متر جلو رفت؛ اختلافِ بیش از شش‌برابر یعنی `
+                    + 'پارچه زیرِ یک سوزن جمع می‌شود',
+            );
+        }
+    }
+});

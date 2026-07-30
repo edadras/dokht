@@ -1428,11 +1428,32 @@ export class SeamSet {
         stiffness = 0.7,
         hinge = null,
         hingeStiffness = 0.25,
+        second = null,
+        weight = null,
     }) {
         this.a = a;
         this.b = b || a;
         this.pairs = pairs instanceof Uint32Array ? pairs : Uint32Array.from(pairs);
         this.count = this.pairs.length / 2;
+
+        /*
+         * سوزن می‌تواند میانِ دو رأس بنشیند، نه فقط روی یک رأس.
+         *
+         * دو سمتِ یک درز هیچ‌وقت رأس‌های هم‌ردیف ندارند. تا وقتی هر سوزن باید سرِ
+         * یک رأس می‌خورد، جایی که یک سمت ریزتر بود چند رأسش روی *یک* رأسِ سمتِ
+         * دیگر می‌افتاد و درز نوارِ پارچه را روی یک نقطه جمع می‌کرد. اندازه گرفته
+         * شد، روی الگوی تخت و بی هیچ فیزیکی: در درزِ سرشانه دو سوزنِ پی‌درپی یک
+         * سمتش ۱٫۴۴ سانتی‌متر جلو می‌رفت و سمتِ دیگرش صفر — یعنی ۱٫۴ سانتی‌متر
+         * پارچه زیرِ یک سوزن لِه می‌شد و همسایه‌اش جِر می‌خورد. روی مانکن: مثلثِ
+         * سی‌برابر کشیده در سرشانه و حلقه، و لبه‌های تیکه‌تیکه.
+         *
+         * حالا سرِ دومِ هر سوزن می‌تواند نقطه‌ای روی پاره‌خطِ میانِ دو رأس باشد:
+         * P = (1-w)·B₀ + w·B₁. پس هر رأسِ سمتِ ریز شریکِ خودش را دارد، بی بادبزن
+         * و بی کم شدنِ شمارِ سوزن. جرمِ مؤثرِ آن نقطه هم به همان نسبت پخش می‌شود،
+         * همان کاری که قیدِ باریسنتریک می‌کند.
+         */
+        this.second = second ? (second instanceof Uint32Array ? second : Uint32Array.from(second)) : null;
+        this.weight = weight ? (weight instanceof Float32Array ? weight : Float32Array.from(weight)) : null;
         this.label = label;
         this.kind = kind;
         this.rest = Math.max(0, rest);
@@ -1467,18 +1488,44 @@ export class SeamSet {
         this.measure(this.gap);
     }
 
+    /* جای سرِ دومِ سوزنِ شماره i؛ اگر شریکِ کسری باشد، نقطه‌ای روی پاره‌خط */
+    target(i, out) {
+        const { b, pairs, second, weight } = this;
+        const ib = pairs[i * 2 + 1] * 3;
+        const w = weight ? weight[i] : 0;
+
+        if (! second || w <= 0) {
+            out[0] = b.positions[ib];
+            out[1] = b.positions[ib + 1];
+            out[2] = b.positions[ib + 2];
+
+            return out;
+        }
+
+        const ic = second[i] * 3;
+
+        out[0] = b.positions[ib] * (1 - w) + b.positions[ic] * w;
+        out[1] = b.positions[ib + 1] * (1 - w) + b.positions[ic + 1] * w;
+        out[2] = b.positions[ib + 2] * (1 - w) + b.positions[ic + 2] * w;
+
+        return out;
+    }
+
     /* فاصله‌ی امروزِ هر جفت؛ مبنای رمپِ دوختن و هم معیار سلامت درز */
     measure(out = null) {
-        const { a, b, pairs, count } = this;
+        const { a, pairs, count } = this;
+        const point = [0, 0, 0];
         let total = 0;
 
         for (let i = 0; i < count; i++) {
             const ia = pairs[i * 2] * 3;
-            const ib = pairs[i * 2 + 1] * 3;
+
+            this.target(i, point);
+
             const length = Math.hypot(
-                a.positions[ia] - b.positions[ib],
-                a.positions[ia + 1] - b.positions[ib + 1],
-                a.positions[ia + 2] - b.positions[ib + 2],
+                a.positions[ia] - point[0],
+                a.positions[ia + 1] - point[1],
+                a.positions[ia + 2] - point[2],
             );
 
             if (out) {
@@ -1531,18 +1578,28 @@ export class SeamSet {
          */
         this.projectHinge(strength);
 
-        const { a, b, pairs, gap, rest, count } = this;
+        const { a, b, pairs, second, weight, gap, rest, count } = this;
         const pa = a.positions;
         const pb = b.positions;
         const wa = a.invMass;
         const wb = b.invMass;
         const k = this.stiffness * strength;
+        const point = [0, 0, 0];
 
         for (let i = 0; i < count; i++) {
             const na = pairs[i * 2];
             const nb = pairs[i * 2 + 1];
+            const w = second && weight ? weight[i] : 0;
+            const nc = w > 0 ? second[i] : nb;
             const ma = wa[na];
-            const mb = wb[nb];
+
+            /*
+             * جرمِ مؤثرِ نقطه‌ی کسری: (1-w)²·w₀ + w²·w₁ — همان چیزی که قیدِ
+             * باریسنتریک می‌دهد. اگر w صفر باشد، همان جرمِ خودِ رأس درمی‌آید.
+             */
+            const mb = w > 0
+                ? ((1 - w) * (1 - w) * wb[nb]) + (w * w * wb[nc])
+                : wb[nb];
             const sum = ma + mb;
 
             if (sum === 0) {
@@ -1550,10 +1607,12 @@ export class SeamSet {
             }
 
             const ia = na * 3;
-            const ib = nb * 3;
-            const dx = pa[ia] - pb[ib];
-            const dy = pa[ia + 1] - pb[ib + 1];
-            const dz = pa[ia + 2] - pb[ib + 2];
+
+            this.target(i, point);
+
+            const dx = pa[ia] - point[0];
+            const dy = pa[ia + 1] - point[1];
+            const dz = pa[ia + 2] - point[2];
             const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
             if (length < 1e-9) {
@@ -1578,7 +1637,21 @@ export class SeamSet {
                 pa[ia + 2] -= cz * ma;
             }
 
-            if (mb !== 0) {
+            if (w > 0) {
+                const share = (1 - w) * wb[nb];
+                const rest2 = w * wb[nc];
+                const ib = nb * 3;
+                const ic = nc * 3;
+
+                pb[ib] += cx * share;
+                pb[ib + 1] += cy * share;
+                pb[ib + 2] += cz * share;
+                pb[ic] += cx * rest2;
+                pb[ic + 1] += cy * rest2;
+                pb[ic + 2] += cz * rest2;
+            } else if (mb !== 0) {
+                const ib = nb * 3;
+
                 pb[ib] += cx * mb;
                 pb[ib + 1] += cy * mb;
                 pb[ib + 2] += cz * mb;

@@ -981,45 +981,82 @@ const arcOf = (state, from, to) => {
  */
 const pairArcs = (arcA, arcB, reverse) => {
     const tb = reverse ? Float64Array.from(arcB.t, (value) => 1 - value) : arcB.t;
+    const order = reverse
+        ? Array.from(tb, (_, i) => i).sort((one, two) => tb[one] - tb[two])
+        : Array.from(tb, (_, i) => i);
     const pairs = [];
+    const second = [];
+    const weight = [];
     const seen = new Set();
 
-    const nearest = (table, value) => {
-        let best = 0;
-        let bestGap = Infinity;
+    /*
+     * سوزن روی پاره‌خطِ سمتِ روبه‌رو می‌نشیند، نه لزوماً سرِ یک رأس.
+     *
+     * پیش‌تر هر رأس به نزدیک‌ترین رأسِ سمتِ دیگر بسته می‌شد. جایی که یک سمت ریزتر
+     * بود، چند رأسش روی *یک* رأس می‌افتادند و درز نوارِ پارچه را روی یک نقطه جمع
+     * می‌کرد. اندازه گرفته شد روی الگوی تخت، پس فیزیک دخالتی نداشت: در درزِ
+     * سرشانه دو سوزنِ پی‌درپی یک سمتش ۱٫۴۴ سانتی‌متر جلو می‌رفت و سمتِ دیگرش صفر.
+     * آن نوار لِه می‌شد و همسایه‌اش جِر می‌خورد — روی مانکن مثلثِ سی‌برابر کشیده
+     * در سرشانه و حلقه، و لبه‌های تیکه‌تیکه.
+     *
+     * حالا برای هر رأسِ این سمت، جای هم‌کسرش روی کمانِ آن سمت پیدا می‌شود: کدام
+     * پاره‌خط، و چه کسری از آن. پس هر سوزن شریکِ خودش را دارد — نه بادبزن، و نه
+     * کم شدنِ شمارِ سوزن (که خودش لباس را شُل می‌کرد و لباسِ بی‌بند را می‌انداخت).
+     */
+    const at = (value) => {
+        let low = 0;
+        let high = order.length - 1;
 
-        for (let i = 0; i < table.length; i++) {
-            const gap = Math.abs(table[i] - value);
+        while (low < high) {
+            const middle = (low + high) >> 1;
 
-            if (gap < bestGap) {
-                bestGap = gap;
-                best = i;
+            if (tb[order[middle]] < value) {
+                low = middle + 1;
+            } else {
+                high = middle;
             }
         }
 
-        return best;
+        const after = Math.max(1, low);
+        const before = after - 1;
+        const span = tb[order[after]] - tb[order[before]];
+
+        return {
+            from: order[before],
+            to: order[after],
+            share: span > 1e-9 ? clamp((value - tb[order[before]]) / span, 0, 1) : 0,
+        };
     };
 
-    const add = (ia, ib) => {
-        const key = `${ia}:${ib}`;
+    const add = (ia, ib, ic, w) => {
+        // سوزنی که عملاً سرِ یک رأس می‌نشیند، همان جفتِ ساده بماند
+        const snapped = w < 0.02 ? 0 : (w > 0.98 ? 1 : w);
+        const one = snapped === 1 ? ic : ib;
+        const two = snapped === 1 ? ib : ic;
+        const value = snapped === 1 ? 0 : snapped;
+        const key = `${ia}:${one}:${value.toFixed(2)}`;
 
-        if (ia === ib || seen.has(key)) {
+        if (ia === one && value === 0) {
+            return;
+        }
+
+        if (seen.has(key)) {
             return;
         }
 
         seen.add(key);
-        pairs.push(ia, ib);
+        pairs.push(ia, one);
+        second.push(two);
+        weight.push(value);
     };
 
     for (let i = 0; i < arcA.t.length; i++) {
-        add(arcA.vertices[i], arcB.vertices[nearest(tb, arcA.t[i])]);
+        const spot = at(arcA.t[i]);
+
+        add(arcA.vertices[i], arcB.vertices[spot.from], arcB.vertices[spot.to], spot.share);
     }
 
-    for (let j = 0; j < tb.length; j++) {
-        add(arcA.vertices[nearest(arcA.t, tb[j])], arcB.vertices[j]);
-    }
-
-    return pairs;
+    return { pairs, second, weight };
 };
 
 /* ---------------------------------------------------------------------------
@@ -2191,21 +2228,23 @@ export const buildDrape = (payload, body, options = {}) => {
     /* ---- درزها ---- */
     const seams = [];
 
-    const sew = ({ a, b, pairs, label, kind }) => {
-        if (! pairs.length) {
+    const sew = ({ a, b, stitch, label, kind }) => {
+        if (! stitch || ! stitch.pairs.length) {
             return null;
         }
 
         const set = new SeamSet({
             a: a.patch,
             b: b === a ? null : b.patch,
-            pairs,
+            pairs: stitch.pairs,
+            second: stitch.second,
+            weight: stitch.weight,
             label,
             kind,
             duration: settings.seamDuration,
             stiffness: settings.seamStiffness,
             // ساسون لولا ندارد: دو لبه‌اش عمداً روی هم تا می‌خورند
-            hinge: kind === 'dart' ? null : hingeOf(a, b, pairs),
+            hinge: kind === 'dart' ? null : hingeOf(a, b, stitch.pairs),
             hingeStiffness: settings.seamHinge,
         });
 
@@ -2223,7 +2262,7 @@ export const buildDrape = (payload, body, options = {}) => {
         sew({
             a: state,
             b: state,
-            pairs: pairArcs(left, right, true),
+            stitch: pairArcs(left, right, true),
             label: 'ساسون',
             kind: 'dart',
         });
@@ -2282,11 +2321,23 @@ export const buildDrape = (payload, body, options = {}) => {
             }
         }
 
-        const pairs = pairArcs(arcA, arcB, Boolean(seam.reverse));
+        /*
+         * سرِ سوزن روی سمتِ ریزتر می‌نشیند و شریکش روی پاره‌خطِ سمتِ درشت‌تر.
+         *
+         * چون هر رأسِ سمتِ سوزن یک سوزن می‌گیرد، اگر سمتِ کم‌رأس را انتخاب کنیم
+         * رأس‌های سمتِ ریز بی‌سوزن می‌مانند و پارچه از درز بیرون می‌زند. دو سرِ
+         * درز در حل‌کننده قرینه‌اند، پس جابه‌جا کردنشان بی‌خطر است و «وارونه» هم
+         * قرینه است: اگر A روبه‌جلو با B وارونه بخواند، B روبه‌جلو هم با A وارونه
+         * می‌خواند.
+         */
+        const flip = arcB.vertices.length > arcA.vertices.length;
+        const stitch = flip
+            ? pairArcs(arcB, arcA, Boolean(seam.reverse))
+            : pairArcs(arcA, arcB, Boolean(seam.reverse));
         const set = sew({
-            a: stateA,
-            b: stateB,
-            pairs,
+            a: flip ? stateB : stateA,
+            b: flip ? stateA : stateB,
+            stitch,
             label: seam.label || 'درز',
             kind: seam.kind === 'dart' ? 'dart' : 'seam',
         });
@@ -2635,44 +2686,60 @@ export const weldSeams = (drape, rounds = 8) => {
             const pb = (seam.b || seam.a).positions;
             const wa = seam.a.invMass;
             const wb = (seam.b || seam.a).invMass;
+            const point = [0, 0, 0];
 
             for (let i = 0; i < seam.count; i++) {
-                const at = seam.pairs[i * 2] * 3;
-                const to = seam.pairs[i * 2 + 1] * 3;
-                const ma = wa[seam.pairs[i * 2]];
-                const mb = wb[seam.pairs[i * 2 + 1]];
+                const na = seam.pairs[i * 2];
+                const nb = seam.pairs[i * 2 + 1];
+                const w = seam.second && seam.weight ? seam.weight[i] : 0;
+                const nc = w > 0 ? seam.second[i] : nb;
+                const at = na * 3;
+                const ma = wa[na];
+                // جرمِ مؤثرِ نقطهٔ کسری، همان‌که قیدِ درز به کار می‌برد
+                const mb = w > 0
+                    ? ((1 - w) * (1 - w) * wb[nb]) + (w * w * wb[nc])
+                    : wb[nb];
                 const sum = ma + mb;
 
                 if (sum <= 0) {
                     continue; // هر دو سر میخکوب‌اند؛ دست‌نزدنی
                 }
 
-                const dx = pb[to] - pa[at];
-                const dy = pb[to + 1] - pa[at + 1];
-                const dz = pb[to + 2] - pa[at + 2];
+                seam.target(i, point);
+
+                const dx = point[0] - pa[at];
+                const dy = point[1] - pa[at + 1];
+                const dz = point[2] - pa[at + 2];
 
                 worst = Math.max(worst, Math.hypot(dx, dy, dz));
 
                 // سهم هر سر به نسبت آزادیِ خودش؛ رأس میخکوب تکان نمی‌خورد
                 const ka = ma / sum;
-                const kb = mb / sum;
+                const kb = 1 / sum;
 
                 pa[at] += dx * ka;
                 pa[at + 1] += dy * ka;
                 pa[at + 2] += dz * ka;
-                pb[to] -= dx * kb;
-                pb[to + 1] -= dy * kb;
-                pb[to + 2] -= dz * kb;
 
                 const sideA = index.get(seam.a);
                 const sideB = index.get(seam.b || seam.a);
 
                 if (sideA !== undefined) {
-                    spread[sideA].moved[seam.pairs[i * 2]] = 1;
+                    spread[sideA].moved[na] = 1;
                 }
 
-                if (sideB !== undefined) {
-                    spread[sideB].moved[seam.pairs[i * 2 + 1]] = 1;
+                for (const [vertex, share] of w > 0
+                    ? [[nb, (1 - w) * wb[nb] * kb], [nc, w * wb[nc] * kb]]
+                    : [[nb, wb[nb] * kb]]) {
+                    const to = vertex * 3;
+
+                    pb[to] -= dx * share;
+                    pb[to + 1] -= dy * share;
+                    pb[to + 2] -= dz * share;
+
+                    if (sideB !== undefined) {
+                        spread[sideB].moved[vertex] = 1;
+                    }
                 }
             }
         }
