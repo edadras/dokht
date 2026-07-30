@@ -45,6 +45,8 @@ export const makeBody = (avatar = {}) => {
     };
 
     const legOffset = radii.hip * 0.42;
+    // محورِ بازو مماس بر تنه: شعاع تنه در حلقه + شعاع بازو
+    const armOffset = radii.bust * 1.02 + radii.bicep;
     const legAnkle = legOffset + radii.ankle * 1.25;
     const legKnee = legOffset + radii.knee;
     const armLength = (avatar.arm_length || 58) / 100;
@@ -53,6 +55,7 @@ export const makeBody = (avatar = {}) => {
         level,
         radii,
         armLength,
+        armOffset,
         armTable: [
             [-armLength, radii.wrist],
             [-armLength * 0.55, radii.bicep * 0.72],
@@ -413,7 +416,7 @@ export const bodyColliders = (Collider, body, avatar = {}) => {
             [-armLength * 0.12, r.bicep * 1.02, r.bicep * 1.02],
             [0, r.bicep * 1.06, r.bicep * 1.06],
             [r.bicep * 0.5, r.bicep * 0.86, r.bicep * 0.86],
-        ], name, [side * r.shoulder * 0.87, level.shoulder - 0.035, 0]);
+        ], name, [side * (body.armOffset ?? r.shoulder * 0.87), level.shoulder - 0.035, 0]);
     }
 
     const thighDrop = level.crotch - level.knee;

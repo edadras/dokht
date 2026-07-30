@@ -852,7 +852,8 @@ const placePiece = (piece, flat, body, options) => {
 
             rx = radius + gap;
             rz = radius + gap;
-            center = side * body.radii.shoulder * 0.87;
+            // محورِ بازو مماس بر تنه است؛ ببینید armOffset در نماگر
+            center = side * (body.armOffset ?? (body.radii.shoulder * 0.87));
         } else if (legs) {
             const row = sampleTable(legs, world);
 
@@ -1223,6 +1224,20 @@ const DEFAULTS = {
 };
 
 const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+
+/*
+ * بیشترین جابه‌جاییِ پهلوییِ جمع‌شدهٔ یک قطعه در جفت‌وجورِ صُلب، متر.
+ *
+ * قطعهٔ روی محورِ خودِ بدن (تنه، دامن) جا دارد: بدن ۱۵ سانتی‌متر شعاع دارد و شش
+ * سانتی‌متر جابه‌جایی اصلاحِ کوچکی است که درزِ سرشانه را مچ می‌کند — بی آن،
+ * سرشانه ۱۸٫۷ سانتی‌متر باز شروع می‌کند.
+ *
+ * قطعهٔ روی اندام (آستین، پاچه) جا ندارد: بازو ۴٫۵ سانتی‌متر شعاع دارد و حتی سه
+ * سانتی‌متر لغزش آستین را از رویش کنار می‌برد؛ اندازه گرفتیم، پوششِ دورِ بازو از
+ * ۳۶۰ درجه به ۵۰ افتاد و بازو لخت بیرون ماند. پس برای اندام صفر.
+ */
+const LATERAL_ROOM = 0.06;
+const LIMB_ROOM = 0;
 
 /**
  * ساخت پارچه‌ی دوخته‌شده از بستهٔ سرور.
@@ -1781,7 +1796,7 @@ const spinFit = (patch, source, target, axis = 0) => {
  * ساسون (دو کمان از یک قطعه) کنار گذاشته می‌شود: جابه‌جایی صُلب ساسون را نمی‌بندد
  * و فقط کل قطعه را بی‌دلیل می‌کشد.
  */
-const alignPatches = (patches, seams, rounds) => {
+const alignPatches = (patches, seams, rounds, radial = false) => {
     if (! patches.length || ! seams.length) {
         return;
     }
@@ -1797,6 +1812,18 @@ const alignPatches = (patches, seams, rounds) => {
      * یک‌وری می‌نشیند. اندازه: ناقرینگیِ آستین با چرخشِ دورِ تنه ۶٫۲ سانتی‌متر.
      */
     const axis = patches.map((entry) => entry.axis || 0);
+    /*
+     * جابه‌جاییِ پهلوییِ هر قطعه سقف دارد.
+     *
+     * بی سقف، قطعه از استوانهٔ خودش بیرون می‌رود و برنمی‌گردد — برخوردگر فقط
+     * پارچه را از بدن بیرون می‌راند. آستین ۴ سانتی‌متر کنارِ بازو می‌رفت و بازو
+     * لخت می‌ماند. با بستنِ کاملِ جابه‌جایی هم درزِ سرشانه ۱۸٫۷ سانتی‌متر باز
+     * شروع می‌کرد، چون چرخش و ارتفاع تنها، سرشانه را مچ نمی‌کنند.
+     *
+     * پس سقفِ کوچک: به اندازهٔ مچ‌کردنِ سرشانه بس است، و کمتر از آن است که قطعه
+     * از استوانه‌اش بیرون بزند.
+     */
+    const slid = new Float64Array(patches.length);
     const want = new Float64Array(patches.length * 3);
     const weight = new Float64Array(patches.length);
     /*
@@ -1908,10 +1935,30 @@ const alignPatches = (patches, seams, rounds) => {
                 }
             }
 
+            /*
+             * جابه‌جایی فقط در ارتفاع — همان درسی که spinFit گرفته بود.
+             *
+             * هر قطعه روی استوانه‌ای پیچیده است (تنه دورِ بدن، آستین دورِ بازو).
+             * کشیدنش به پهلو آن را از استوانه بیرون می‌برد و هیچ چیزی برنمی‌گرداند:
+             * برخوردگر فقط پارچه را از بدن بیرون می‌راند، پس آستینی که کنارِ بازو
+             * رفت همان‌جا می‌ماند. اندازه گرفتیم: مقطعِ آستین ۶ سانتی‌متر از محورِ
+             * بازو جابه‌جا بود و تنها ۱۱۰ درجه از ۳۶۰ درجهٔ دورِ بازو را می‌پوشاند —
+             * بازو لخت از آستین بیرون می‌زد و در عکس همین دیده می‌شد.
+             *
+             * بستنِ درز کارِ چرخش (دورِ محورِ خودِ قطعه) و ارتفاع است؛ باقی‌اش را
+             * حل‌کننده می‌بندد.
+             */
+            const budget = Math.abs(axis[p]) > 1e-6 ? LIMB_ROOM : LATERAL_ROOM;
+            const room = Math.max(0, budget - slid[p]);
+            const step = Math.hypot(dx, dz);
+            const slide = radial ? 1 : (step > 1e-9 ? Math.min(1, room / step) : 0);
+
+            slid[p] += step * slide;
+
             for (let i = 0; i < positions.length; i += 3) {
-                positions[i] += dx;
+                positions[i] += dx * slide;
                 positions[i + 1] += dy;
-                positions[i + 2] += dz;
+                positions[i + 2] += dz * slide;
             }
 
             patch.remember();
@@ -2353,7 +2400,7 @@ export const buildDrape = (payload, body, options = {}) => {
      */
     stats.seeded = seedPlacement(patches, seams);
     stats.bent = settings.warp === false ? 0 : warpToSeams(patches, seams);
-    alignPatches(patches, seams, settings.alignRounds ?? 60);
+    alignPatches(patches, seams, settings.alignRounds ?? 60, settings.alignSlide ?? false);
 
     stats.presettle = Math.ceil(settings.seamDuration * 60) + 140;
 

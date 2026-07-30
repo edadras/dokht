@@ -389,6 +389,22 @@ export default (config = {}) => ({
 
         // ---- دست‌ها: هر دست یک گروه با لولا روی سرشانه ----
         const armLength = ctx.armLength;
+
+        /*
+         * محورِ بازو از هندسه می‌آید، نه از ضریب.
+         *
+         * پیش‌تر ۰٫۸۷ × نیم‌پهنای شانه بود: روی سایز ۴۰ می‌شود ۱۷٫۰ سانتی‌متر، در
+         * حالی که شعاع تنه در حلقه ۱۴٫۹ و شعاع بازو ۴٫۵ است. یعنی بازو ۲٫۴
+         * سانتی‌متر *داخلِ* تنه بود و جایی برای آستین نمی‌ماند. اندازه گرفتیم:
+         * آستین در چیدن و دوختن روی بازو می‌نشست و با برگشتنِ وزن ۴ سانتی‌متر
+         * بیرون می‌رفت، چون برخوردگرِ تنه سمتِ داخلی‌اش را پس می‌زد. آن وقت بازو
+         * لخت از آستین بیرون می‌ماند — همان چیزی که در عکس دیده می‌شد.
+         *
+         * جای درستِ بازو مماس بر تنه است: شعاع تنه در حلقه + شعاع بازو. روی همین
+         * بدن ۱۹٫۴ درمی‌آید، تقریباً همان نیم‌پهنای شانه (۱۹٫۵) — که با آناتومی
+         * هم می‌خواند: بازو از نوکِ شانه آویزان است.
+         */
+        ctx.armOffset = sample(ctx.profile, level.armhole)[0] + r.bicep;
         ctx.armTable = [
             [-armLength, r.wrist],
             [-armLength * 0.55, r.bicep * 0.72],
@@ -410,7 +426,7 @@ export default (config = {}) => ({
             [ctx.armL, -1],
             [ctx.armR, 1],
         ].forEach(([group, side]) => {
-            group.position.set(side * r.shoulder * 0.87, level.shoulder - 0.035, 0);
+            group.position.set(side * ctx.armOffset, level.shoulder - 0.035, 0);
 
             const arm = new THREE.Mesh(
                 new THREE.LatheGeometry(
@@ -1090,6 +1106,7 @@ export default (config = {}) => ({
                     level: ctx.level,
                     radii: ctx.radii,
                     profile: ctx.profile,
+                    armOffset: ctx.armOffset,
                     armTable: ctx.armTable,
                     armLength: ctx.armLength,
                 },

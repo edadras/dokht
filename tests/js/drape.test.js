@@ -7,9 +7,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ClothWorld } from '../../resources/js/lib/cloth-solver.js';
+import { ClothWorld, Collider } from '../../resources/js/lib/cloth-solver.js';
 import { buildDrape, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
-import { bodicePayload, makeBody, twoSleeves, twoSquares } from './fixtures/payload.js';
+import { bodyColliders, bodicePayload, makeBody, twoSleeves, twoSquares } from './fixtures/payload.js';
 
 const settle = (drape, steps = 260) => {
     const world = new ClothWorld({ fabric: {} });
@@ -426,4 +426,70 @@ test('آستینِ چپ و راست آینهٔ هم چیده می‌شوند', (
         Math.abs(one[1] - two[1]) < 0.02,
         `ارتفاعِ دو آستین یکی نیست: ${(one[1] * 100).toFixed(1)} و ${(two[1] * 100).toFixed(1)}`,
     );
+});
+
+/*
+ * بازو داخلِ تنه نیست — و همین بود که آستین را از روی بازو کنار می‌برد.
+ *
+ * محورِ بازو ۰٫۸۷ × نیم‌پهنای شانه بود: روی سایز ۴۰ می‌شود ۱۷٫۰ سانتی‌متر، در
+ * حالی که شعاع تنه در حلقه ۱۴٫۹ و شعاع بازو ۴٫۵ است — یعنی بازو ۲٫۴ سانتی‌متر
+ * *داخلِ* تنه. آن وقت لولهٔ آستین جا نداشت: برخوردگرِ تنه سمتِ داخلی‌اش را پس
+ * می‌زد و آستین با برگشتنِ وزن ۴ سانتی‌متر بیرون می‌رفت و بازو لخت می‌ماند.
+ *
+ * اندازه‌گیری روی پیراهنِ سنجه: پوششِ لولهٔ آستین دورِ بازو ۱۱۰ درجه از ۳۶۰ بود
+ * و ۳۶۰ شد؛ مقطعش ۶ سانتی‌متر از محورِ بازو فاصله داشت و به صفر رسید.
+ *
+ * قاعده‌اش هندسی و شمردنی است، پس همین‌جا قفل می‌شود: بازو باید بیرونِ تنه
+ * بایستد. اگر روزی کسی ضریب را برگرداند، این آزمون می‌گیردش.
+ */
+test('بازوی مانکن بیرونِ تنه می‌ایستد، نه داخلش', () => {
+    for (const avatar of [{}, { bust: 78, shoulder_width: 34 }, { bust: 118, shoulder_width: 46 }]) {
+        const body = makeBody(avatar);
+        const at = (y) => {
+            const rows = body.profile.slice().sort((one, two) => one[0] - two[0]);
+
+            for (let i = 1; i < rows.length; i++) {
+                if (y <= rows[i][0]) {
+                    const span = Math.max(1e-9, rows[i][0] - rows[i - 1][0]);
+                    const t = (y - rows[i - 1][0]) / span;
+
+                    return rows[i - 1][1] + (rows[i][1] - rows[i - 1][1]) * t;
+                }
+            }
+
+            return rows[rows.length - 1][1];
+        };
+
+        const torso = at(body.level.armhole);
+        const inner = body.armOffset - body.radii.bicep;
+
+        assert.ok(
+            inner >= torso - 1e-6,
+            `لبهٔ داخلیِ بازو روی ${(inner * 100).toFixed(1)} است و تنه تا ${(torso * 100).toFixed(1)}؛ `
+                + `بازو ${((torso - inner) * 100).toFixed(1)} سانتی‌متر داخلِ تنه فرو رفته و جایی برای آستین نمی‌ماند`,
+        );
+    }
+});
+
+/*
+ * و قطعهٔ آستین روی همان محور چیده می‌شود، نه روی محورِ بدن.
+ */
+test('آستین روی محورِ بازو چیده می‌شود', () => {
+    const body = makeBody();
+    const drape = buildDrape(twoSleeves(), body, {});
+
+    for (const { id, patch } of drape.patches) {
+        let sum = 0;
+
+        for (let v = 0; v < patch.count; v++) {
+            sum += patch.positions[v * 3] / patch.count;
+        }
+
+        const want = id.endsWith('#0') ? -body.armOffset : body.armOffset;
+
+        assert.ok(
+            Math.abs(sum - want) < 0.02,
+            `مرکزِ «${id}» روی ${(sum * 100).toFixed(1)} است، محورِ بازو روی ${(want * 100).toFixed(1)}`,
+        );
+    }
 });
