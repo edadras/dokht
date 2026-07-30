@@ -783,6 +783,17 @@ const placePiece = (piece, flat, body, options) => {
     }
 
     const spanX = Math.max(1e-6, maxX - minX);
+
+    /*
+     * محورِ عمودی‌ای که این قطعه دورش پیچیده — نه همیشه محورِ مانکن.
+     *
+     * تنه دورِ خودِ بدن می‌پیچد، ولی آستین دورِ بازو و پاچه دورِ ران؛ آن‌ها روی
+     * محوری به فاصلهٔ چند ده سانتی‌متر از مرکزِ بدن نشسته‌اند. spinFit باید قطعه
+     * را دورِ همین محور بچرخاند، وگرنه آستین را دورِ تنه می‌گرداند و از عمق
+     * جابه‌جا می‌کند. اندازه گرفتیم: مرکزِ آستینِ چپ z=−۹٫۲ و راست z=+۶٫۰ — یعنی
+     * یکی پشتِ بدن و دیگری جلوی آن، و لباس یک‌وری می‌نشیند.
+     */
+    let axis = 0;
     const height = body.level.top;
     const top = (placement.y_top ?? 0.8) * height;
     /*
@@ -799,9 +810,16 @@ const placePiece = (piece, flat, body, options) => {
      * کدام سمت بدن؟ اول حرف خودِ بسته (`side`)، بعد آینه بودن نمونه، و در آخر
      * شماره‌ی نمونه. سرور قطعه‌ی آینه‌شده را خودش آینه کرده، پس اینجا فقط جای
      * نشستنش عوض می‌شود، نه شکلش.
+     *
+     * علامتش باید با قرارداد خودِ سرور بخواند: زاویهٔ منفی سمتِ چپ است
+     * (`u < 0 ? 'left' : 'right'`) و زاویه به x با سینوس می‌رسد، پس چپ یعنی x
+     * منفی. این‌جا برعکس نوشته شده بود و هر دو آستین سرِ سمتِ اشتباه چیده
+     * می‌شدند؛ بعد قیدِ درز آن‌ها را از روی تنه به سمتِ درست می‌کشید و هر کدام
+     * از راهی می‌رفت. همین بود که لباس یک‌وری می‌نشست: مرکزِ آستینِ چپ در عمق
+     * z=−۹٫۲ و راست z=+۶٫۰ — یکی پشتِ بدن، یکی جلویش.
      */
     const side =
-        piece.side === 'right' ? -1 : piece.side === 'left' ? 1 : placement.flip || piece.instance % 2 ? -1 : 1;
+        piece.side === 'right' ? 1 : piece.side === 'left' ? -1 : placement.flip || piece.instance % 2 ? -1 : 1;
     const legs = zone.startsWith('leg') ? legTable(body) : null;
     /*
      * اگر بسته شعاع خودش را گفته باشد، همان حرف آخر است.
@@ -860,9 +878,10 @@ const placePiece = (piece, flat, body, options) => {
         positions[i * 3] = center + rx * nudge * Math.sin(u);
         positions[i * 3 + 1] = world;
         positions[i * 3 + 2] = rz * nudge * Math.cos(u);
+        axis += center / count;
     }
 
-    return { positions, grain, minX, maxX, minY, maxY, top };
+    return { positions, grain, minX, maxX, minY, maxY, top, axis };
 };
 
 /* ---------------------------------------------------------------------------
@@ -1690,7 +1709,7 @@ const seedPlacement = (patches, seams) => {
             }
 
             if (source.length >= 3) {
-                moved += spinFit(patches[link.other].patch, source, target);
+                moved += spinFit(patches[link.other].patch, source, target, patches[link.other].axis || 0);
             }
 
             placed[link.other] = 1;
@@ -1715,16 +1734,16 @@ const seedPlacement = (patches, seams) => {
  * قطعه دورِ بدن می‌چرخد و سُر می‌خورد تا نشانه‌هایش روبه‌روی نشانه‌های همسایه
  * بیاید — دقیقاً کاری که خیاط با قطعه روی مانکن می‌کند.
  */
-const spinFit = (patch, source, target) => {
+const spinFit = (patch, source, target, axis = 0) => {
     const n = source.length / 3;
     let dot = 0;
     let cross = 0;
     let rise = 0;
 
     for (let i = 0; i < n; i++) {
-        const bx = source[i * 3];
+        const bx = source[i * 3] - axis;
         const bz = source[i * 3 + 2];
-        const ax = target[i * 3];
+        const ax = target[i * 3] - axis;
         const az = target[i * 3 + 2];
 
         dot += ax * bx + az * bz;
@@ -1739,10 +1758,10 @@ const spinFit = (patch, source, target) => {
     const positions = patch.positions;
 
     for (let i = 0; i < positions.length; i += 3) {
-        const x = positions[i];
+        const x = positions[i] - axis;
         const z = positions[i + 2];
 
-        positions[i] = x * cos + z * sin;
+        positions[i] = axis + (x * cos + z * sin);
         positions[i + 1] += lift;
         positions[i + 2] = -x * sin + z * cos;
     }
@@ -1771,6 +1790,13 @@ const alignPatches = (patches, seams, rounds) => {
 
     patches.forEach((entry, at) => index.set(entry.patch, at));
 
+    /*
+     * چرخش هر قطعه دورِ محورِ خودش، نه دورِ محورِ مانکن — همان درسِ spinFit.
+     * آستین روی محورِ بازو نشسته و چرخاندنش دورِ تنه آن را در عمق جابه‌جا می‌کند؛
+     * چون دو آستین دو طرفِ بدن‌اند، چرخشِ قرینه‌شان عمقِ مخالف می‌سازد و لباس
+     * یک‌وری می‌نشیند. اندازه: ناقرینگیِ آستین با چرخشِ دورِ تنه ۶٫۲ سانتی‌متر.
+     */
+    const axis = patches.map((entry) => entry.axis || 0);
     const want = new Float64Array(patches.length * 3);
     const weight = new Float64Array(patches.length);
     /*
@@ -1820,11 +1846,14 @@ const alignPatches = (patches, seams, rounds) => {
                 dy += ey;
                 dz += ez;
 
-                // گشتاور چرخش دور محور بدن: Δx ≈ θz و Δz ≈ −θx
-                spin[ia] += pa[at + 2] * ex - pa[at] * ez;
-                inertia[ia] += pa[at] * pa[at] + pa[at + 2] * pa[at + 2];
-                spin[ib] += pb[to] * ez - pb[to + 2] * ex;
-                inertia[ib] += pb[to] * pb[to] + pb[to + 2] * pb[to + 2];
+                // گشتاور چرخش دور محور خودِ قطعه: Δx ≈ θz و Δz ≈ −θx
+                const ax = pa[at] - axis[ia];
+                const bx = pb[to] - axis[ib];
+
+                spin[ia] += pa[at + 2] * ex - ax * ez;
+                inertia[ia] += ax * ax + pa[at + 2] * pa[at + 2];
+                spin[ib] += bx * ez - pb[to + 2] * ex;
+                inertia[ib] += bx * bx + pb[to + 2] * pb[to + 2];
             }
 
             const n = Math.max(1, seam.count);
@@ -1871,10 +1900,10 @@ const alignPatches = (patches, seams, rounds) => {
                 const sin = Math.sin(theta);
 
                 for (let i = 0; i < positions.length; i += 3) {
-                    const x = positions[i];
+                    const x = positions[i] - axis[p];
                     const z = positions[i + 2];
 
-                    positions[i] = x * cos + z * sin;
+                    positions[i] = axis[p] + (x * cos + z * sin);
                     positions[i + 2] = -x * sin + z * cos;
                 }
             }
@@ -2070,7 +2099,7 @@ export const buildDrape = (payload, body, options = {}) => {
         };
 
         states.set(piece.id, state);
-        patches.push({ id: piece.id, piece, patch, mesh });
+        patches.push({ id: piece.id, piece, patch, mesh, axis: placed.axis });
         meshes.push(mesh);
         stats.triangles += flat.indices.length / 3;
     }

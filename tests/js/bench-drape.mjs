@@ -202,6 +202,59 @@ const bareOf = (drape, body) => {
     return { worst, bare, seen };
 };
 
+/*
+ * قرینگی: قطعهٔ آینه‌شده باید آینهٔ جفتِ خودش باشد.
+ *
+ * لباس یک‌وری نشستن با هیچ‌کدام از سنجه‌های دیگر دیده نمی‌شد — درز بسته بود،
+ * پارچه سالم، ولی یک آستین پایین‌تر از دیگری. این‌جا برای هر جفتِ آینه (همان کد،
+ * یکی mirrored) فاصلهٔ هر رأس تا نزدیک‌ترین رأسِ آینه‌شدهٔ جفتش سنجیده می‌شود.
+ */
+const mirrorOf = (drape) => {
+    const byCode = new Map();
+
+    for (const entry of drape.patches) {
+        const code = entry.id.split('#')[0];
+
+        byCode.set(code, [...(byCode.get(code) || []), entry]);
+    }
+
+    let worst = 0;
+    let sum = 0;
+    let pairs = 0;
+
+    for (const group of byCode.values()) {
+        if (group.length !== 2) {
+            continue;
+        }
+
+        const [one, two] = group;
+        let inner = 0;
+
+        for (let v = 0; v < one.patch.count; v++) {
+            const x = -one.patch.positions[v * 3];
+            const y = one.patch.positions[v * 3 + 1];
+            const z = one.patch.positions[v * 3 + 2];
+            let best = Infinity;
+
+            for (let w = 0; w < two.patch.count; w++) {
+                best = Math.min(best, Math.hypot(
+                    two.patch.positions[w * 3] - x,
+                    two.patch.positions[w * 3 + 1] - y,
+                    two.patch.positions[w * 3 + 2] - z,
+                ));
+            }
+
+            inner += best / one.patch.count;
+        }
+
+        worst = Math.max(worst, inner);
+        sum += inner;
+        pairs++;
+    }
+
+    return { worst, mean: pairs ? sum / pairs : 0, pairs };
+};
+
 /* فاصلهٔ دو سرِ هر درز، پیش از هر شبیه‌سازی */
 const gapsOf = (drape) => {
     let worst = 0;
@@ -237,6 +290,7 @@ const bench = (file) => {
         ...(process.env.HINGE === undefined ? {} : { seamHinge: Number(process.env.HINGE) }),
     });
 
+    const mirror = mirrorOf(drape);
     const gaps = gapsOf(drape);
     const placed = stretchOf(drape);
     const world = new ClothWorld({ fabric: payload.fabric, skin: 0.006 });
@@ -277,7 +331,8 @@ const bench = (file) => {
             ` | کشش نهایی: ${settled.worst.toFixed(1)}× خراب=${settled.bad}/${settled.tris}` +
             ` | تیغه‌ای: نشستن=${settled.slivers} جوش=${welded.slivers}` +
             ` | لولا: میانگین=${hinge.mean.toFixed(2)} بدترین=${hinge.worst.toFixed(2)}` +
-            ` | پوستِ لخت: ${bare.bare}/${bare.seen} بدترین=${(bare.worst * 100).toFixed(1)}`,
+            ` | پوستِ لخت: ${bare.bare}/${bare.seen} بدترین=${(bare.worst * 100).toFixed(1)}` +
+            ` | ناقرینگیِ چیدن: میانگین=${(mirror.mean * 100).toFixed(1)} بدترین=${(mirror.worst * 100).toFixed(1)} (${mirror.pairs} جفت)`,
     );
 };
 

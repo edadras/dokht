@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 
 import { ClothWorld } from '../../resources/js/lib/cloth-solver.js';
 import { buildDrape, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
-import { bodicePayload, makeBody, twoSquares } from './fixtures/payload.js';
+import { bodicePayload, makeBody, twoSleeves, twoSquares } from './fixtures/payload.js';
 
 const settle = (drape, steps = 260) => {
     const world = new ClothWorld({ fabric: {} });
@@ -369,5 +369,61 @@ test('پارچه روی درز به پشتِ خودش تا نمی‌خورد', (
     assert.ok(
         held > 0.45,
         `تندترین تا خوردگی ${held.toFixed(2)} برابرِ حدِ ۹۰ درجه است؛ زیر ۰٫۴۵ یعنی پارچه برگشته`,
+    );
+});
+
+/*
+ * لباس یک‌وری نمی‌نشیند: قطعهٔ آینه‌شده آینهٔ جفتِ خودش می‌ماند.
+ *
+ * دو ایراد این را می‌شکست و هر دو با اندازه‌گیری پیدا شدند، چون درز و کشش و
+ * پارگی هیچ‌کدام نشانش نمی‌دادند:
+ *
+ *   ۱. قراردادِ سمت برعکس بود. سرور زاویهٔ منفی را «چپ» می‌نامد و زاویه با
+ *      سینوس به x می‌رسد، پس چپ یعنی x منفی؛ این‌جا 'left' روی x مثبت چیده
+ *      می‌شد. هر دو آستین سرِ سمتِ اشتباه می‌نشستند و بعد قیدِ درز آن‌ها را از
+ *      روی تنه به سمتِ درست می‌کشید، هر کدام از راهی.
+ *   ۲. جفت‌وجورِ صُلب هر قطعه را دورِ محورِ *مانکن* می‌چرخاند. آستین روی محورِ
+ *      بازو نشسته و چرخشش دورِ تنه، آن را در عمق جابه‌جا می‌کند؛ دو آستینِ دو
+ *      طرفِ بدن عمقِ مخالف می‌گیرند. اندازه: مرکزِ آستینِ چپ z=−۹٫۲ و راست
+ *      z=+۶٫۰ — یکی پشتِ بدن و یکی جلویش.
+ *
+ * روی پیراهنِ سنجه، ناقرینگیِ چیدن ۹٫۳ سانتی‌متر بود و ۳٫۹ شد.
+ */
+test('آستینِ چپ و راست آینهٔ هم چیده می‌شوند', () => {
+    const drape = buildDrape(twoSleeves(), makeBody(), {});
+    const [left, right] = drape.patches;
+
+    assert.equal(drape.patches.length, 2);
+
+    const middle = (patch) => {
+        const out = [0, 0, 0];
+
+        for (let v = 0; v < patch.count; v++) {
+            for (let k = 0; k < 3; k++) {
+                out[k] += patch.positions[v * 3 + k] / patch.count;
+            }
+        }
+
+        return out;
+    };
+
+    const one = middle(left.patch);
+    const two = middle(right.patch);
+
+    assert.ok(one[0] < -0.05, `آستینِ چپ باید روی x منفی بنشیند، نشست روی ${(one[0] * 100).toFixed(1)}`);
+    assert.ok(two[0] > 0.05, `آستینِ راست باید روی x مثبت بنشیند، نشست روی ${(two[0] * 100).toFixed(1)}`);
+
+    // آینهٔ x: عمق و ارتفاع باید یکی باشند و x قرینه
+    assert.ok(
+        Math.abs(one[0] + two[0]) < 0.02,
+        `x دو آستین قرینه نیست: ${(one[0] * 100).toFixed(1)} و ${(two[0] * 100).toFixed(1)}`,
+    );
+    assert.ok(
+        Math.abs(one[2] - two[2]) < 0.02,
+        `عمقِ دو آستین یکی نیست: ${(one[2] * 100).toFixed(1)} و ${(two[2] * 100).toFixed(1)}`,
+    );
+    assert.ok(
+        Math.abs(one[1] - two[1]) < 0.02,
+        `ارتفاعِ دو آستین یکی نیست: ${(one[1] * 100).toFixed(1)} و ${(two[1] * 100).toFixed(1)}`,
     );
 });

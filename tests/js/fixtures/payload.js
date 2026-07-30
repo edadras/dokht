@@ -320,3 +320,41 @@ export const twoSquares = (gapCm = 6) => ({
     ],
     budget: { target_edge: 2, max_vertices: 6000 },
 });
+
+/*
+ * دو آستین، آینهٔ هم — کوچک‌ترین بسته‌ای که «لباس یک‌وری نمی‌نشیند» را می‌سنجد.
+ *
+ * هر دو از یک الگو بریده شده‌اند، یکی برای دست چپ و یکی برای راست، و به هم
+ * دوخته نمی‌شوند. پس هر ناقرینگی‌ای که در خروجی دیده شود کارِ خودِ چیدن است.
+ */
+export const twoSleeves = () => {
+    const tube = [
+        [0, 0],
+        [28, 0],
+        [28, 55],
+        [0, 55],
+    ];
+
+    const sleeve = (id, side, mirrored) => ({
+        id,
+        code: 'sleeve',
+        name: 'آستین',
+        role: 'sleeve',
+        side,
+        instance: mirrored ? 1 : 0,
+        mirrored,
+        layer: 'outer',
+        polygon: mirrored ? tube.map(([x, y]) => [28 - x, y]).reverse() : tube,
+        edges: [{ tag: 'armhole', start: 0, end: 1, length: 28 }],
+        darts: [],
+        placement: { zone: 'sleeve', u0: -Math.PI, u1: Math.PI, y_top: 0.775, radius_hint: 'bicep' },
+    });
+
+    return {
+        scale: 0.01,
+        pieces: [sleeve('sleeve#0', 'left', false), sleeve('sleeve#1', 'right', true)],
+        seams: [],
+        budget: { target_edge: 4, max_vertices: 6000 },
+        meta: {},
+    };
+};
