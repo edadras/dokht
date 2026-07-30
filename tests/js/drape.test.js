@@ -193,14 +193,23 @@ test('نگه‌دارنده بعد از دوخته شدن، لبه‌ی بالا
     assert.equal(held.length, 2, 'لبه‌ی بالای قطعه‌های تنه گرفته نشد');
 });
 
+/*
+ * صرفه‌جویی از تکرار گرفته می‌شود، نه از زیرگام.
+ *
+ * زیرگام ۱ لولهٔ آستین را روی بازو می‌خواباند — پوششِ دورِ بازو از ۳۴۰ درجه به
+ * ۲۱۰ می‌افتاد و بازو لخت بیرون می‌ماند. تکرار در آن ماجرا اثری نداشت. پس مشِ
+ * سنگین تکرارش کم می‌شود و زیرگامش نه.
+ */
 test('پیشنهاد تنظیم حل‌کننده با سنگینی مش عوض می‌شود', () => {
     const light = buildDrape(bodicePayload(), makeBody(), {});
 
     assert.equal(light.stats.solver.substeps, 2);
+    assert.equal(light.stats.solver.iterations, 3);
 
     const heavy = buildDrape(bodicePayload(), makeBody(), { comfortableVertices: 10 });
 
-    assert.equal(heavy.stats.solver.substeps, 1);
+    assert.equal(heavy.stats.solver.substeps, 2, 'زیرگام نباید زیر دو برود');
+    assert.equal(heavy.stats.solver.iterations, 2);
     assert.ok(heavy.stats.warnings.some((line) => line.includes('رأس')));
 });
 

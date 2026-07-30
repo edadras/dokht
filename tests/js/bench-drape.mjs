@@ -203,6 +203,48 @@ const bareOf = (drape, body) => {
 };
 
 /*
+ * پوششِ آستین دورِ بازو، روی یک حلقهٔ نازک.
+ *
+ * نوارِ ارتفاعیِ ضخیم این را نمی‌سنجد: زاویه‌های چند ارتفاع روی هم جمع می‌شوند و
+ * آستینِ نیم‌باز هم ۳۶۰ درجه نشان می‌دهد. یک بار همین اشتباه را کردم و عددِ ۳۶۰
+ * گرفتم در حالی که مرورگر ۲۱۰ می‌داد و بازو در عکس لخت بود.
+ */
+const sleeveOf = (drape, body) => {
+    let worst = 360;
+    let count = 0;
+
+    for (const { id, piece, patch } of drape.patches) {
+        if ((piece?.placement?.zone || piece?.role) !== 'sleeve' || /cuff/.test(id)) {
+            continue;
+        }
+
+        const middle = piece.side === 'left' ? -body.armOffset : body.armOffset;
+        const bins = new Uint8Array(24);
+        let seen = 0;
+
+        for (let v = 0; v < patch.count; v++) {
+            if (Math.abs(patch.positions[v * 3 + 1] - (body.level.armhole - 0.12)) > 0.025) {
+                continue;
+            }
+
+            const u = Math.atan2(patch.positions[v * 3 + 2], patch.positions[v * 3] - middle);
+
+            bins[Math.min(23, Math.floor((u + Math.PI) / (2 * Math.PI) * 24))] = 1;
+            seen++;
+        }
+
+        if (seen < 8) {
+            continue;
+        }
+
+        worst = Math.min(worst, bins.reduce((sum, value) => sum + value, 0) / 24 * 360);
+        count++;
+    }
+
+    return { worst: count ? worst : null, count };
+};
+
+/*
  * قرینگی: قطعهٔ آینه‌شده باید آینهٔ جفتِ خودش باشد.
  *
  * لباس یک‌وری نشستن با هیچ‌کدام از سنجه‌های دیگر دیده نمی‌شد — درز بسته بود،
@@ -299,7 +341,18 @@ const bench = (file) => {
     drape.seams.forEach((seam) => world.addSeam(seam));
     // بدن، با بازو و پا — بی این‌ها آستین چیزی برای نشستن ندارد
     world.setColliders(bodyColliders(Collider, body, payload.avatar));
-    world.iterations = 6;
+
+    /*
+     * همان تنظیمی که نماگر به کار می‌برد.
+     *
+     * تا امروز سنجه پیشنهادِ stats.solver را نادیده می‌گرفت و با زیرگامِ پیش‌فرض
+     * کار می‌کرد؛ نماگر ولی برای مشِ سنگین زیرگام را کم می‌کرد. نتیجه‌اش این شد
+     * که سنجه پوششِ آستین دورِ بازو را ۳۶۰ درجه می‌دید و مرورگر ۲۱۰ — و چند بار
+     * روی عددِ سنجه تکیه کردم در حالی که کاربر خرابی را در عکس می‌دید. سنجه‌ای که
+     * مثل نماگر رفتار نکند، دروغ می‌گوید.
+     */
+    world.substeps = drape.stats.solver.substeps;
+    world.iterations = Math.max(6, drape.stats.solver.iterations);
 
     // اول در بی‌وزنی دوخته می‌شود، بعد سرشانه گرفته و وزن برمی‌گردد
     const gravity = world.law.gravity;
@@ -312,7 +365,9 @@ const bench = (file) => {
     supportGarment(drape, { band: 0.08, strength: 1 });
     drape.patches.forEach((entry) => entry.patch.applyPins(IDENTITY));
     world.law.gravity = gravity;
-    world.presettle(60);
+    world.presettle(40);
+    world.iterations = drape.stats.solver.iterations;
+    world.presettle(300);
 
     const settled = stretchOf(drape);
     const before = world.seamError();
@@ -323,6 +378,7 @@ const bench = (file) => {
     const welded = stretchOf(drape);
     const hinge = hingeOf(drape);
     const bare = bareOf(drape, body);
+    const sleeve = sleeveOf(drape, body);
     const name = file.split('/').pop().replace('p-', '').replace('.json', '');
 
     console.log(
@@ -334,7 +390,8 @@ const bench = (file) => {
             ` | تیغه‌ای: نشستن=${settled.slivers} جوش=${welded.slivers}` +
             ` | لولا: میانگین=${hinge.mean.toFixed(2)} بدترین=${hinge.worst.toFixed(2)}` +
             ` | پوستِ لخت: ${bare.bare}/${bare.seen} بدترین=${(bare.worst * 100).toFixed(1)}` +
-            ` | ناقرینگیِ چیدن: میانگین=${(mirror.mean * 100).toFixed(1)} بدترین=${(mirror.worst * 100).toFixed(1)} (${mirror.pairs} جفت)`,
+            ` | ناقرینگیِ چیدن: میانگین=${(mirror.mean * 100).toFixed(1)} بدترین=${(mirror.worst * 100).toFixed(1)} (${mirror.pairs} جفت)` +
+            (sleeve.worst === null ? '' : ` | پوششِ آستین: ${sleeve.worst.toFixed(0)}°`),
     );
 };
 

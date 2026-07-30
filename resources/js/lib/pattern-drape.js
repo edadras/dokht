@@ -2404,12 +2404,25 @@ export const buildDrape = (payload, body, options = {}) => {
 
     stats.presettle = Math.ceil(settings.seamDuration * 60) + 140;
 
-    stats.solver =
-        stats.vertices > settings.comfortableVertices * 1.5
-            ? { substeps: 1, iterations: 2, reason: 'مش سنگین' }
-            : stats.vertices > settings.comfortableVertices
-              ? { substeps: 1, iterations: 3, reason: 'مش نسبتاً سنگین' }
-              : { substeps: 2, iterations: 3, reason: 'مش سبک' };
+    /*
+     * زیرگام کفِ ۲ دارد؛ صرفه‌جویی از تکرار گرفته می‌شود، نه از زیرگام.
+     *
+     * پیش‌تر مشِ سنگین زیرگام را به ۱ می‌رساند و همان یک زیرگام لولهٔ آستین را
+     * لِه می‌کرد: با گامِ بزرگ، برخوردِ بازو و قیدهای کشش در یک گام جبران نمی‌شوند
+     * و مقطعِ آستین روی بازو می‌خوابد. اندازه گرفتیم — پوششِ آستین دورِ بازو:
+     *
+     *   زیرگام ۱، تکرار ۳ → ۲۱۰°–۲۵۰° از ۳۶۰  (بازو لخت بیرون می‌ماند)
+     *   زیرگام ۲، تکرار ۲ → ۳۴۰°
+     *   زیرگام ۲، تکرار ۳ → ۳۴۰°–۳۶۰°
+     *   زیرگام ۳، تکرار ۲ → ۳۴۰°–۳۶۰°
+     *
+     * یعنی تکرار در این ماجرا نقشی ندارد و زیرگام همه‌کاره است. پیراهنِ سنجه با
+     * ۴۵۳۳ رأس فقط ۸٪ از حدِ راحت رد می‌شد و همین یک پله، آستین را از روی بازو
+     * برمی‌داشت. بهایش: ۲×۲ پرتاب در هر فریم به‌جای ۱×۳.
+     */
+    stats.solver = stats.vertices > settings.comfortableVertices
+        ? { substeps: 2, iterations: 2, reason: 'مش سنگین: تکرار کم شد، زیرگام نه' }
+        : { substeps: 2, iterations: 3, reason: 'مش سبک' };
 
     if (stats.vertices > settings.comfortableVertices) {
         stats.warnings.push(
