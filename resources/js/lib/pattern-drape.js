@@ -2481,7 +2481,7 @@ export const buildDrape = (payload, body, options = {}) => {
         );
     }
 
-    return { patches, seams, meshes, stats };
+    return { patches, seams, meshes, stats, body };
 };
 
 /*
@@ -2843,22 +2843,34 @@ const unsquash = (patch, { heads, near, rest }, floor = 0.7, passes = 2) => {
                     continue;
                 }
 
-                if (length < 1e-9) {
-                    // کاملاً روی هم؛ جهتِ باز کردن را از الگوی تخت می‌گیریم
+                if (length < 1e-6) {
+                    // کاملاً روی هم؛ جهتِ باز کردن دلبخواه است، فقط باید بازش کند
                     dx = 1;
                     dy = 0;
                     dz = 0;
                     length = 1;
                 }
 
-                const push = ((goal - length) / length) / sum;
+                /*
+                 * جابه‌جایی روی بردارِ یکه، نه با تقسیم بر طول.
+                 *
+                 * ضریبِ پیشین (goal-length)/length بود؛ هرجا دو رأس تقریباً روی هم
+                 * می‌آمدند — تای یقه، یا نشاندنِ نوارِ نگه‌داشته روی بدن — همان تقسیم
+                 * رأس را پرت می‌کرد. اندازه گرفتیم روی یقه: دورترین شعاعش پیش از جوش
+                 * ۱۰٫۴ سانتی‌متر بود و پس از جوش ۶۱٫۶. حالا بیشترین جابه‌جایی خودِ
+                 * goal است و از آن بیشتر نمی‌شود.
+                 */
+                const move = (goal - length) / sum;
+                const ux = dx / length;
+                const uy = dy / length;
+                const uz = dz / length;
 
-                positions[ia] += dx * push * wa;
-                positions[ia + 1] += dy * push * wa;
-                positions[ia + 2] += dz * push * wa;
-                positions[ib] -= dx * push * wb;
-                positions[ib + 1] -= dy * push * wb;
-                positions[ib + 2] -= dz * push * wb;
+                positions[ia] += ux * move * wa;
+                positions[ia + 1] += uy * move * wa;
+                positions[ia + 2] += uz * move * wa;
+                positions[ib] -= ux * move * wb;
+                positions[ib + 1] -= uy * move * wb;
+                positions[ib + 2] -= uz * move * wb;
             }
         }
     }
@@ -3006,6 +3018,71 @@ const neighboursOf = (entry) => {
  * @param {{patches: object[]}} drape خروجی buildDrape پس از نشستن
  * @param {object} [options] { band: متر، strength: ۰ تا ۱، inverse: ماتریس وارونِ گروه بدن }
  */
+/*
+ * نشاندنِ نوارِ نگه‌داشته روی خودِ بدن، پیش از میخ زدن.
+ *
+ * میخ، جای امروزِ پارچه را ثبت می‌کند. اگر لباس در پایانِ دوختِ بی‌وزنی چند
+ * سانتی‌متر بالای شانه مانده باشد، میخ همان بلندی را برای همیشه قفل می‌کند و وزن
+ * هم پایینش نمی‌آورد. اندازه گرفتیم: در نوکِ شانه ۳۶ رأس بیش از دو سانتی‌متر از
+ * بدن دور بودند و *همه‌شان* میخکوب — هیچ رأسِ آزادی آن‌جا نبود، بدترینشان ۵٫۴
+ * سانتی‌متر. از لای همان بلندی، پوستِ شانه دیده می‌شد.
+ *
+ * لباس روی خودِ شانه می‌ایستد، نه چند سانتی‌متر بالای آن. پس پیش از میخ زدن،
+ * رأسِ نوار به سطحِ بدن (به‌اضافهٔ فاصلهٔ پوست) کشیده می‌شود — و فقط به سمتِ
+ * داخل: لباسِ گشاد از تن جدا می‌ماند و این کار تنگش نمی‌کند. شدتِ کشیدن همان
+ * وزنِ نگه‌دارنده است، پس مرزِ نوار چینِ تیز نمی‌گیرد.
+ */
+const seatOnBody = (patch, body, zone) => {
+    if (! body || ! patch.follow) {
+        return;
+    }
+
+    const gap = DEFAULTS.gap;
+    const arm = zone === 'sleeve' || zone.startsWith('sleeve_');
+
+    for (let i = 0; i < patch.count; i++) {
+        const hold = patch.follow[i];
+
+        if (hold <= 0) {
+            continue;
+        }
+
+        const at = i * 3;
+        const x = patch.positions[at];
+        const y = patch.positions[at + 1];
+        const z = patch.positions[at + 2];
+
+        let cx = 0;
+        let rx;
+        let rz;
+
+        if (arm && body.armTable) {
+            cx = x < 0 ? -(body.armOffset ?? 0) : (body.armOffset ?? 0);
+            rx = sampleTable(body.armTable, y - (body.level.shoulder - 0.035))[0] + gap;
+            rz = rx;
+        } else {
+            const row = sampleTable(body.profile, y);
+
+            rx = row[0] + gap;
+            rz = row[1] + gap;
+        }
+
+        const dx = x - cx;
+        const reach = Math.hypot(dx / Math.max(1e-6, rx), z / Math.max(1e-6, rz));
+
+        if (reach <= 1) {
+            continue; // همین حالا روی بدن یا داخلش است؛ کاری نداریم
+        }
+
+        const pull = hold * (1 - 1 / reach);
+
+        patch.positions[at] = x - dx * pull;
+        patch.positions[at + 2] = z - z * pull;
+    }
+
+    patch.remember();
+};
+
 export const supportGarment = (drape, options = {}) => {
     const band = options.band ?? DEFAULTS.support.band;
     const strength = options.strength ?? DEFAULTS.support.strength;
@@ -3042,6 +3119,7 @@ export const supportGarment = (drape, options = {}) => {
             patch.follow[i] = depth > band ? 0 : strength * (1 - depth / band);
         }
 
+        seatOnBody(patch, drape.body, zone);
         patch.capturePins(inverse);
     }
 };

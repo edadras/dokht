@@ -559,3 +559,86 @@ test('سوزن‌های پی‌درپی، هر دو سمت را به یک اند
         }
     }
 });
+
+/*
+ * نوارِ نگه‌داشته روی خودِ بدن میخ می‌شود، نه هرجا که پارچه رسیده.
+ *
+ * میخ جای امروزِ پارچه را ثبت می‌کند. اگر لباس در پایانِ دوختِ بی‌وزنی چند
+ * سانتی‌متر بالای شانه مانده باشد، میخ همان بلندی را قفل می‌کند و وزن هم پایینش
+ * نمی‌آورد. اندازه گرفتیم روی پیراهن: در نوکِ شانه ۳۶ رأس بیش از دو سانتی‌متر از
+ * بدن دور بودند و *همه‌شان* میخکوب — بدترینشان ۵٫۴ سانتی‌متر، و از لای همان
+ * بلندی پوستِ شانه دیده می‌شد. پس از این اصلاح ۳٫۹.
+ */
+test('نگه‌دارنده، نوارِ بالا را روی بدن می‌نشاند', () => {
+    const drape = buildDrape(bodicePayload(), makeBody(), {});
+    const body = drape.body;
+
+    assert.ok(body, 'خروجی باید بدن را همراه داشته باشد، وگرنه نشاندن ممکن نیست');
+
+    // پارچه را عمداً از تن دور می‌کنیم تا کار نگه‌دارنده دیده شود
+    for (const { patch } of drape.patches) {
+        for (let v = 0; v < patch.count; v++) {
+            patch.positions[v * 3] *= 1.6;
+            patch.positions[v * 3 + 2] *= 1.6;
+        }
+
+        patch.remember();
+    }
+
+    const reach = (patch, v) => {
+        const y = patch.positions[v * 3 + 1];
+        const rows = body.profile.slice().sort((one, two) => one[0] - two[0]);
+        let rx = rows[rows.length - 1][1];
+        let rz = rows[rows.length - 1][2];
+
+        for (let i = 1; i < rows.length; i++) {
+            if (y <= rows[i][0]) {
+                const t = (y - rows[i - 1][0]) / Math.max(1e-9, rows[i][0] - rows[i - 1][0]);
+
+                rx = rows[i - 1][1] + (rows[i][1] - rows[i - 1][1]) * t;
+                rz = rows[i - 1][2] + (rows[i][2] - rows[i - 1][2]) * t;
+
+                break;
+            }
+        }
+
+        return Math.hypot(patch.positions[v * 3] / rx, patch.positions[v * 3 + 2] / rz);
+    };
+
+    const before = drape.patches.map(({ patch }) => {
+        let worst = 0;
+
+        for (let v = 0; v < patch.count; v++) {
+            worst = Math.max(worst, reach(patch, v));
+        }
+
+        return worst;
+    });
+
+    supportGarment(drape, { band: 0.08, strength: 1 });
+
+    let checked = 0;
+
+    drape.patches.forEach(({ patch }, at) => {
+        let worst = 0;
+
+        for (let v = 0; v < patch.count; v++) {
+            if (patch.follow[v] > 0.9) {
+                worst = Math.max(worst, reach(patch, v));
+            }
+        }
+
+        if (worst === 0) {
+            return;
+        }
+
+        checked++;
+
+        assert.ok(
+            worst < 1.2 && worst < before[at],
+            `نوارِ نگه‌داشته روی ${worst.toFixed(2)} برابرِ سطحِ بدن ماند (پیش از نشاندن ${before[at].toFixed(2)})`,
+        );
+    });
+
+    assert.ok(checked > 0, 'هیچ قطعه‌ای نوارِ نگه‌داشته نداشت؛ آزمون چیزی را نسنجید');
+});
