@@ -2504,10 +2504,37 @@ const surfaceStitches = (state, host, reach) => {
  * چند تکرار لازم است چون رأسی که روی دو درز است، هر بار میانهٔ یکی را می‌گیرد.
  */
 export const weldSeams = (drape, rounds = 8) => {
+    /*
+     * جابه‌جاییِ لبه باید به درونِ قطعه پخش شود.
+     *
+     * نسخهٔ اول این تابع فقط رأس‌های خودِ درز را به میانه می‌بُرد و همسایه‌شان
+     * را سر جایش می‌گذاشت؛ مثلثِ میان این دو تیغه می‌شد. با سنجهٔ چهارمرحله‌ای
+     * دیده شد: پس از چیدن و دوختن و وزن، صفر مثلث تیغه‌ای — و بعد از همین
+     * تابع، ۴۵ تا. شکافِ پوست بسته می‌شد و به‌جایش زبانه ساخته می‌شد.
+     *
+     * حالا هر بار که لبه تکان می‌خورد، همان جابه‌جایی با یک پخشِ کوتاه به
+     * همسایه‌های درونی هم می‌رسد — همان کاری که برای خم‌کردنِ قطعه کردیم و
+     * جواب داد. پارچه نزدیک درز به‌جای تیغه شدن، نرم می‌آید.
+     *
+     * و یک قانون که جایش خالی بود: پارچه لِه نمی‌شود. جفت‌کردنِ رأس‌های درز
+     * چند-به-یک است — دو رأسِ کنارِ هم از یک لبه می‌توانند شریکِ مشترک داشته
+     * باشند — و بستنِ کاملِ هر دو، هر دو را روی همان یک نقطه می‌نشاند. اندازه
+     * گرفتیم: در آن ۴۵ مثلث، کوتاه‌ترین ضلع صفرِ صفر بود، نه کشیده. پس کشش
+     * مسئله نبود؛ فروریختن بود. بعد از هر دور، هر ضلعی که از ۴۰٪ اندازهٔ خودش
+     * روی الگوی تخت کوتاه‌تر شده باشد پس زده می‌شود. درز کمی باز می‌ماند —
+     * همان‌قدر که ضخامتِ پارچه اجازه می‌دهد — و این درست است.
+     */
+    const spread = drape.patches.map((entry) => neighboursOf(entry));
+    const index = new Map();
+
+    drape.patches.forEach((entry, at) => index.set(entry.patch, at));
+
     let worst = 0;
 
     for (let round = 0; round < rounds; round++) {
         worst = 0;
+
+        const before = drape.patches.map((entry) => Float64Array.from(entry.patch.positions));
 
         for (const seam of drape.seams) {
             const pa = seam.a.positions;
@@ -2542,7 +2569,65 @@ export const weldSeams = (drape, rounds = 8) => {
                 pb[to] -= dx * kb;
                 pb[to + 1] -= dy * kb;
                 pb[to + 2] -= dz * kb;
+
+                const sideA = index.get(seam.a);
+                const sideB = index.get(seam.b || seam.a);
+
+                if (sideA !== undefined) {
+                    spread[sideA].moved[seam.pairs[i * 2]] = 1;
+                }
+
+                if (sideB !== undefined) {
+                    spread[sideB].moved[seam.pairs[i * 2 + 1]] = 1;
+                }
             }
+        }
+
+        /*
+         * پخشِ همان جابه‌جایی به درون: هر رأسِ آزادِ غیرِ درزی، نیمی از میانگینِ
+         * جابه‌جاییِ همسایه‌هایش را می‌گیرد. دو پاس کافی است — بیشتر از آن،
+         * فرمِ لباس را هم جابه‌جا می‌کند.
+         */
+        for (let p = 0; p < drape.patches.length; p++) {
+            const patch = drape.patches[p].patch;
+            const positions = patch.positions;
+            const was = before[p];
+            const { heads, near, moved } = spread[p];
+
+            for (let pass = 0; pass < 2; pass++) {
+                for (let v = 0; v < patch.count; v++) {
+                    if (moved[v] || patch.invMass[v] === 0) {
+                        continue;
+                    }
+
+                    const from = heads[v];
+                    const to = heads[v + 1];
+
+                    if (to === from) {
+                        continue;
+                    }
+
+                    let dx = 0;
+                    let dy = 0;
+                    let dz = 0;
+
+                    for (let k = from; k < to; k++) {
+                        const n = near[k] * 3;
+
+                        dx += positions[n] - was[n];
+                        dy += positions[n + 1] - was[n + 1];
+                        dz += positions[n + 2] - was[n + 2];
+                    }
+
+                    const n = to - from;
+
+                    positions[v * 3] += (dx / n) * 0.5;
+                    positions[v * 3 + 1] += (dy / n) * 0.5;
+                    positions[v * 3 + 2] += (dz / n) * 0.5;
+                }
+            }
+
+            unsquash(patch, spread[p]);
         }
     }
 
@@ -2551,6 +2636,113 @@ export const weldSeams = (drape, rounds = 8) => {
     }
 
     return worst;
+};
+
+/*
+ * پس زدنِ ضلع‌های لِه‌شده.
+ *
+ * تنها کارِ این تابع نگه داشتنِ ضخامت است: ضلعی که روی الگوی تخت ۸ میلی‌متر
+ * بوده نباید روی مانکن ۰ شود. زیرِ ۷۰٪ را به همان ۷۰٪ برمی‌گردانیم، دو پاس،
+ * و رأسِ میخکوب دست‌نخورده می‌ماند.
+ *
+ * ۷۰٪ از اندازه‌گیری آمد، نه از حدس: با ۴۰٪ روی هشت لباسِ سنجه ۳۱ مثلث تیغه‌ای
+ * می‌ماند، با ۵۵٪ سیزده، و با ۷۰٪ صفر — به‌جز دامنِ کلوش که پیش از جوش هم
+ * تیغه دارد و مشکلش جای دیگری است. بهایش چند دهم میلی‌متر بازتر ماندنِ درز
+ * است. دو پاس هم از چهار پاس تفاوتی نداشت.
+ */
+const unsquash = (patch, { heads, near, rest }, floor = 0.7, passes = 2) => {
+    const { positions, invMass, count } = patch;
+
+    for (let pass = 0; pass < passes; pass++) {
+        for (let v = 0; v < count; v++) {
+            for (let k = heads[v]; k < heads[v + 1]; k++) {
+                const n = near[k];
+
+                if (n < v) {
+                    continue; // هر ضلع یک بار
+                }
+
+                const goal = rest[k] * floor;
+
+                if (goal <= 0) {
+                    continue;
+                }
+
+                const ia = v * 3;
+                const ib = n * 3;
+                let dx = positions[ia] - positions[ib];
+                let dy = positions[ia + 1] - positions[ib + 1];
+                let dz = positions[ia + 2] - positions[ib + 2];
+                let length = Math.hypot(dx, dy, dz);
+                const wa = invMass[v];
+                const wb = invMass[n];
+                const sum = wa + wb;
+
+                if (length >= goal || sum <= 0) {
+                    continue;
+                }
+
+                if (length < 1e-9) {
+                    // کاملاً روی هم؛ جهتِ باز کردن را از الگوی تخت می‌گیریم
+                    dx = 1;
+                    dy = 0;
+                    dz = 0;
+                    length = 1;
+                }
+
+                const push = ((goal - length) / length) / sum;
+
+                positions[ia] += dx * push * wa;
+                positions[ia + 1] += dy * push * wa;
+                positions[ia + 2] += dz * push * wa;
+                positions[ib] -= dx * push * wb;
+                positions[ib + 1] -= dy * push * wb;
+                positions[ib + 2] -= dz * push * wb;
+            }
+        }
+    }
+};
+
+/*
+ * همسایگیِ رأس‌ها از مثلث‌ها: heads/near فهرستِ فشرده، rest اندازهٔ همان ضلع
+ * روی الگوی تخت (سانتی‌متر تبدیل‌شده به متر، همان یکایِ grain)، و moved نشانهٔ
+ * «این رأس روی درز است».
+ */
+const neighboursOf = (entry) => {
+    const count = entry.patch.count;
+    const indices = entry.mesh.indices;
+    const grain = entry.mesh.grain;
+    const heads = new Int32Array(count + 1);
+
+    for (let t = 0; t < indices.length; t += 3) {
+        for (let k = 0; k < 3; k++) {
+            heads[indices[t + k] + 1] += 2;
+        }
+    }
+
+    for (let v = 0; v < count; v++) {
+        heads[v + 1] += heads[v];
+    }
+
+    const fill = heads.slice(0, count);
+    const near = new Int32Array(heads[count]);
+    const rest = new Float32Array(heads[count]);
+
+    for (let t = 0; t < indices.length; t += 3) {
+        const tri = [indices[t], indices[t + 1], indices[t + 2]];
+
+        for (let k = 0; k < 3; k++) {
+            for (const other of [tri[(k + 1) % 3], tri[(k + 2) % 3]]) {
+                rest[fill[tri[k]]] = Math.hypot(
+                    grain[other * 2] - grain[tri[k] * 2],
+                    grain[other * 2 + 1] - grain[tri[k] * 2 + 1],
+                );
+                near[fill[tri[k]]++] = other;
+            }
+        }
+    }
+
+    return { heads, near, rest, moved: new Uint8Array(count) };
 };
 
 /**

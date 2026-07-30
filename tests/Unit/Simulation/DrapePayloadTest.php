@@ -610,4 +610,120 @@ class DrapePayloadTest extends TestCase
         $this->assertSame([], $payload['pieces']);
         $this->assertNotEmpty($payload['meta']['notes'], 'قطعهٔ ناقص باید گزارش شود، نه اینکه بی‌صدا بیفتد.');
     }
+    /**
+     * حلقهٔ آستینِ یوک بی‌دوخت نمی‌ماند.
+     *
+     * پیراهنِ یوک‌دار: سرِ آستین باید هم به حلقهٔ تنه برسد و هم به آن تکه از
+     * حلقه که روی یوک افتاده. رابطه‌های سازنده یک درز می‌نویسند و لبهٔ ۵٫۹
+     * سانتی‌متریِ یوک بی‌شریک می‌ماند؛ آن وقت ۱۸٫۴ سانتی‌متر سرآستین روی ۱۱٫۴
+     * سانتی‌متر حلقه چپانده می‌شود و روی مانکن یک زبانهٔ آزاد سر شانه می‌ماند.
+     * این همان چیزی بود که در نمای سه‌بعدی دیده شد.
+     */
+    public function test_the_yoke_armhole_finds_its_sleeve(): void
+    {
+        $payload = $this->payload('shirt_classic');
+        $joined = [];
+
+        foreach ($payload['seams'] as $seam) {
+            foreach ([['a', 'b'], ['b', 'a']] as [$one, $two]) {
+                if (str_starts_with($seam[$one]['piece'], 'yoke') && str_starts_with($seam[$two]['piece'], 'sleeve')) {
+                    $joined[$seam[$two]['piece']] = $seam;
+                }
+            }
+        }
+
+        $this->assertCount(2, $joined, 'هر دو آستین باید به حلقهٔ یوکِ سمت خودشان دوخته شوند.');
+
+        foreach ($joined as $sleeve => $seam) {
+            $this->assertEqualsWithDelta(
+                $seam['a']['length'],
+                $seam['b']['length'],
+                0.25 * max($seam['a']['length'], $seam['b']['length']),
+                "درز یوک و «{$sleeve}» باید دو کمانِ هم‌اندازه را جفت کند.",
+            );
+        }
+
+        // و سرِ آستین دیگر روی حلقهٔ کوچکِ تنه چپانده نمی‌شود
+        foreach ($payload['seams'] as $seam) {
+            if (! str_starts_with($seam['a']['piece'], 'sleeve') || ! str_contains($seam['b']['piece'], 'back')) {
+                continue;
+            }
+
+            $longer = max($seam['a']['length'], $seam['b']['length']);
+
+            $this->assertLessThan(
+                0.25,
+                abs($seam['ease']) / $longer,
+                'حلقهٔ آستین به تنهٔ پشت باید هم‌اندازه باشد؛ اضافه‌اش سهمِ یوک است.',
+            );
+        }
+    }
+
+    /**
+     * کمانِ روی مرکزِ پشت به هیچ سمتی تعلق ندارد.
+     *
+     * تا وقتی سمت را از خودِ قطعه می‌گرفتیم، هر دو حلقهٔ یوک «چپ» بودند و
+     * جریمهٔ سمتِ مخالف آستینِ راست را از یوک دور می‌کرد. سمت، مالِ کمان است
+     * نه مالِ قطعه.
+     */
+    public function test_a_centre_piece_reaches_both_sides_of_the_body(): void
+    {
+        $payload = $this->payload('shirt_classic');
+        $sides = [];
+
+        foreach ($payload['seams'] as $seam) {
+            foreach ([['a', 'b'], ['b', 'a']] as [$one, $two]) {
+                if (str_starts_with($seam[$one]['piece'], 'yoke') && str_starts_with($seam[$two]['piece'], 'sleeve')) {
+                    $sides[] = $seam[$two]['piece'];
+                }
+            }
+        }
+
+        $this->assertCount(2, array_unique($sides), 'یوکِ روی تای پارچه باید به آستینِ چپ و راست، هر دو، برسد.');
+    }
+
+    /**
+     * یقه از خط یقه‌اش دوخته می‌شود، نه از لبهٔ بیرونی.
+     *
+     * پنج جای کاتالوگ یقه را با برچسبِ جابه‌جا می‌ساختند: لبهٔ بیرونیِ آزاد
+     * «neck» و خط یقه «default». نمای سه‌بعدی به همان برچسب اعتماد می‌کند، پس
+     * یقه را وارونه می‌دوخت — ۲۷٫۸ سانتی‌متر لبهٔ بیرونی روی خط یقهٔ ۲۴
+     * سانتی‌متری — و دور گردن چین می‌خورد و بالا می‌زد.
+     *
+     * ملاک اندازه‌پذیر است: کمانی که به خط یقهٔ تنه دوخته می‌شود باید هم‌اندازهٔ
+     * آن باشد، و کوتاه‌ترین لبهٔ یقه هم نباید به تنه برسد.
+     */
+    public function test_a_collar_is_sewn_by_its_neck_edge(): void
+    {
+        foreach (['shirt_classic', 'shirt_band_collar', 'shirt_oversized'] as $key) {
+            if (! GeneratorRegistry::has($key)) {
+                continue;
+            }
+
+            $payload = $this->payload($key);
+            $checked = 0;
+
+            foreach ($payload['seams'] as $seam) {
+                foreach ([['a', 'b'], ['b', 'a']] as [$one, $two]) {
+                    if (! str_contains($seam[$one]['piece'], 'collar')) {
+                        continue;
+                    }
+
+                    if (! preg_match('/front|back|yoke/', $seam[$two]['piece'])) {
+                        continue;
+                    }
+
+                    $checked++;
+
+                    $this->assertLessThan(
+                        0.3,
+                        abs($seam['ease']) / max(0.01, max($seam['a']['length'], $seam['b']['length'])),
+                        "«{$key}»: کمانِ یقه و خط یقه باید هم‌اندازه باشند؛ اگر نیست یعنی یقه از لبهٔ اشتباه دوخته شده.",
+                    );
+                }
+            }
+
+            $this->assertGreaterThan(0, $checked, "«{$key}» باید یقه‌اش به خط یقه دوخته شود.");
+        }
+    }
 }

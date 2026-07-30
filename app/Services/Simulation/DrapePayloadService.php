@@ -40,8 +40,27 @@ class DrapePayloadService
     /** جریمه جفت‌شدن دو کمان از دو سمت بدن. */
     protected const SIDE_PENALTY = 1000.0;
 
+    /**
+     * لبه‌هایی که درزشان میان چند شریک تقسیم می‌شود، پس رأسِ میانی لازم دارند.
+     *
+     * خط یقه و حلقهٔ آستین و سرشانه، چون یقه میان دو تنه و یوک تقسیم می‌شود و
+     * سرآستین میان تنه و یوک. «کمر» و «پهلو» عمداً نیستند: امتحانشان کردیم و
+     * دامنِ کلوش بدتر شد — نوارِ کمرش دوازده رابطه دارد که همه‌شان کلِ نوار را
+     * نام می‌برند، و ریزتر شدنِ مرز فقط همان اشکالِ قدیمی را بزرگ‌تر نشان داد
+     * (مثلث تیغه‌ای ۸ به ۱۷). آن اشکال جای دیگری دارد.
+     */
+    protected const SPLIT_TAGS = ['neck', 'armhole', 'shoulder'];
+
     /** شعاع مرجع برای تبدیل اختلاف زاویه به فاصله (سانتی‌متر). */
     protected const REFERENCE_RADIUS = 15.0;
+
+    /**
+     * بیشترین ناهم‌طولیِ دو سرِ یک درز که با آزادیِ پارچه توضیح داده می‌شود.
+     *
+     * سرآستین را با ۵ تا ۱۰ درصد پُری می‌برند تا سر شانه بخوابد، و کمرِ چین‌دار
+     * از این هم بیشتر. بالای این حد ولی توضیحِ دیگری دارد: شریکِ جامانده.
+     */
+    protected const EASE_SHARE = 0.18;
 
     /**
      * بسته کامل دوخت سه‌بعدی.
@@ -106,6 +125,12 @@ class DrapePayloadService
             $seams = array_merge($seams, $this->adopt($instances, $seams));
         } catch (Throwable $error) {
             $notes[] = 'دوختن قطعه‌های جامانده انجام نشد: '.$error->getMessage();
+        }
+
+        try {
+            $seams = $this->splice($instances, $seams);
+        } catch (Throwable $error) {
+            $notes[] = 'شریکِ جاماندهٔ درزها پیدا نشد: '.$error->getMessage();
         }
 
         return [
@@ -257,7 +282,29 @@ class DrapePayloadService
         DrapeBody $body,
     ): array {
         $model = $prepared['model'];
-        $flat = DrapeGeometry::flattenWithSpans($piece['outline']);
+        /*
+         * فقط لبه‌های دوختنیِ راست رأسِ میانی می‌گیرند.
+         *
+         * درز روی رأس بریده می‌شود، پس لبهٔ راستِ بی‌رأسِ میانی هرگز میان دو
+         * شریک تقسیم نمی‌شود — خط یقهٔ یقهٔ پیراهن همین بود و همهٔ ۲۵٫۸
+         * سانتی‌مترش روی خط یقهٔ ۱۴٫۴ سانتی‌متریِ یک تنه می‌رفت.
+         *
+         * ولی شکستنِ همهٔ لبه‌های راست را هم اندازه گرفتیم و بدتر بود: روی هشت
+         * لباسِ سنجه شمار مثلث خراب از ۲۵ به ۵۱ رفت، چون مرزِ لبهٔ بی‌درز هم
+         * ریزتر می‌شد و مثلث‌بندی و جفت‌کردنِ رأس‌ها را به‌هم می‌زد. پس همان‌جا
+         * که لازم است: لبه‌ای که دوخته می‌شود.
+         */
+        $breakable = [];
+
+        foreach ($origins as $edge => $origin) {
+            $tag = $origin !== null ? ($prepared['tags'][$origin] ?? 'default') : 'default';
+            $breakable[$edge] = in_array($tag, static::SPLIT_TAGS, true);
+        }
+
+        $flat = DrapeGeometry::flattenWithSpans(
+            $piece['outline'],
+            split: $breakable,
+        );
         $polygon = $flat['polygon'];
         $spans = $flat['spans'];
 
@@ -298,6 +345,7 @@ class DrapePayloadService
             'edges' => $edges,
             'origins' => $origins,
             'unfolded' => $prepared['unfolded'],
+            'meta' => $piece['meta'] ?? [],
         ];
 
         $placement = $this->placement($instance, $model, $body);
@@ -1247,16 +1295,247 @@ class DrapePayloadService
                 'from' => $info['start'],
                 'to' => $info['end'],
                 'length' => $info['length'],
+                'tag' => (string) ($info['tag'] ?? 'default'),
                 'instance' => $instance,
-                'at' => $this->onBody($instance, $middle),
+                'at' => $at = $this->onBody($instance, $middle),
                 'frame' => $this->frame($instance['role']),
-                'body_side' => $this->bodySide($instance),
+                'body_side' => $this->arcSide($instance, $at),
             ];
         }
 
         usort($arcs, fn (array $a, array $b) => $b['length'] <=> $a['length']);
 
         return $arcs;
+    }
+
+    /**
+     * سمتِ بدنِ یک کمان — نه سمتِ قطعه‌ای که کمان رویش است.
+     *
+     * یوکِ پشت روی تای پارچه بریده می‌شود و از شانهٔ چپ تا شانهٔ راست می‌رسد؛
+     * پس دو حلقهٔ آستین دارد، یکی چپ و یکی راست. تا وقتی سمت را از خودِ قطعه
+     * می‌گرفتیم، هر دو «چپ» بودند و جریمهٔ سمتِ مخالف (هزار) آستینِ راست را از
+     * یوک دور می‌کرد؛ اندازه‌گیری هزینهٔ ۱۰۰۹ را نشان داد. کمان جای خودش را
+     * روی بدن دارد، پس سمتش را هم خودش دارد.
+     *
+     * آستین و پا استثناءاند: زاویهٔ آنها دور بازو و ران می‌چرخد، نه دور تن.
+     *
+     * @param  array{u: float, y: float}  $at
+     */
+    protected function arcSide(array $instance, array $at): ?string
+    {
+        if (in_array($instance['role'], ['sleeve', 'leg'], true)) {
+            return $this->bodySide($instance);
+        }
+
+        $u = $this->wrap((float) ($at['u'] ?? 0));
+
+        // نزدیکِ مرکزِ جلو یا مرکزِ پشت، کمان به هیچ سمتی تعلق ندارد
+        if (abs($u) < 0.15 || abs(abs($u) - M_PI) < 0.15) {
+            return null;
+        }
+
+        return $u < 0 ? 'left' : 'right';
+    }
+
+    /**
+     * درزی که یک شریکش را جا گذاشته.
+     *
+     * پیراهنِ یوک‌دار نمونهٔ روشنش است: سرآستین باید هم به حلقهٔ تنه و هم به آن
+     * تکه از حلقه که روی یوک افتاده دوخته شود. رابطه‌های سازنده ولی یک درز
+     * می‌نویسند — سرآستین به حلقهٔ پشت — و لبهٔ ۵٫۹ سانتی‌متریِ حلقهٔ یوک بی‌دوخت
+     * می‌ماند. نتیجه روی مانکن: ۱۸٫۴ سانتی‌متر سرآستین روی ۱۱٫۴ سانتی‌متر حلقه
+     * چپانده می‌شود و یک زبانهٔ آزاد سر شانه تکان می‌خورد. در عکسِ کاربر همین
+     * دیده می‌شد.
+     *
+     * قاعده‌ای که این را می‌گیرد اندازه‌پذیر است و به هیچ مدلی گره نخورده:
+     * درزی که دو سرش بیش از حدِ آزادیِ پارچه ناهم‌طول‌اند، و کمانِ آزادی با همان
+     * برچسب کنارش هست که تفاوت را پر می‌کند، شریکش را جا گذاشته. آن وقت کمانِ
+     * بلند به نسبتِ طول میان دو شریک بریده می‌شود.
+     *
+     * @param  array<string, array<string, mixed>>  $instances
+     * @param  array<int, array<string, mixed>>  $seams
+     * @return array<int, array<string, mixed>>
+     */
+    protected function splice(array $instances, array $seams): array
+    {
+        $free = $this->freeArcs($instances, $seams);
+
+        if ($free === []) {
+            return $seams;
+        }
+
+        foreach ($seams as $index => $seam) {
+            if (($seam['kind'] ?? 'seam') !== 'seam') {
+                continue;
+            }
+
+            $long = $seam['a']['length'] >= $seam['b']['length'] ? 'a' : 'b';
+            $short = $long === 'a' ? 'b' : 'a';
+            $excess = (float) $seam[$long]['length'] - (float) $seam[$short]['length'];
+
+            if ($excess < 2.0 || $excess / max(0.01, (float) $seam[$long]['length']) < static::EASE_SHARE) {
+                continue; // در حدِ آزادیِ پارچه؛ درز سالم است
+            }
+
+            $arcs = $this->arcsOf($instances, $seam);
+
+            if ($arcs === null) {
+                continue;
+            }
+
+            // چینِ اعلام‌شده خودش توضیحِ اضافه‌طول است؛ آن‌جا شریکی جا نمانده
+            if ($excess <= $this->declaredFullness($arcs[$long]['instance']) + 1.0) {
+                continue;
+            }
+
+            $best = null;
+
+            foreach ($free as $key => $candidate) {
+                if ($candidate['piece'] === $seam['a']['piece'] || $candidate['piece'] === $seam['b']['piece']) {
+                    continue;
+                }
+
+                /*
+                 * برچسبِ کمانِ آزاد باید همان برچسبِ سرِ کوتاه باشد. سرِ کوتاه
+                 * همان چیزی است که کم آورده — حلقهٔ آستینِ تنه — و شریکِ جامانده
+                 * هم حتماً حلقهٔ آستین است. با پذیرفتنِ برچسبِ سرِ بلند هم،
+                 * لبهٔ بی‌نامِ پاتلت به خط یقهٔ پشت دوخته شد؛ اندازه‌گیری نشانش داد.
+                 */
+                if ($candidate['tag'] !== $arcs[$short]['tag'] || $candidate['tag'] === 'default') {
+                    continue;
+                }
+
+                // باید همان کمبود را پر کند، نه چیز دیگری را
+                if (abs($candidate['length'] - $excess) / max($candidate['length'], $excess) > 0.4) {
+                    continue;
+                }
+
+                $cost = $this->cost($candidate, $arcs[$long]);
+
+                if ($cost > 25.0) {
+                    continue;
+                }
+
+                if ($best === null || $cost < $best['cost']) {
+                    $best = ['cost' => $cost, 'arc' => $candidate, 'key' => $key];
+                }
+            }
+
+            if ($best === null) {
+                continue;
+            }
+
+            $partners = [$arcs[$short], $best['arc']];
+            $parts = $this->splitArc($arcs[$long], $this->shares($partners));
+
+            if (count($parts) !== 2) {
+                continue;
+            }
+
+            // کدام تکه به کدام شریک؟ هزینهٔ هر دو حالت سنجیده می‌شود
+            $straight = $this->cost($parts[0], $partners[0]) + $this->cost($parts[1], $partners[1]);
+            $swapped = $this->cost($parts[0], $partners[1]) + $this->cost($parts[1], $partners[0]);
+
+            if ($swapped < $straight) {
+                $parts = [$parts[1], $parts[0]];
+            }
+
+            $seams[$index] = $this->seam($parts[0], $partners[0], (string) ($seam['label'] ?? 'درز'), $seam['relation'] ?? null, $seam);
+            $seams[] = $this->seam($parts[1], $partners[1], (string) ($seam['label'] ?? 'درز'), $seam['relation'] ?? null, $seam);
+
+            unset($free[$best['key']]);
+        }
+
+        return array_values($seams);
+    }
+
+    /** پُریِ اعلام‌شدهٔ یک قطعه: چین و پیلی، سانتی‌متر. */
+    protected function declaredFullness(array $instance): float
+    {
+        $total = 0.0;
+
+        foreach (['gathers', 'pleats'] as $key) {
+            foreach ((array) ($instance['meta'][$key] ?? []) as $entry) {
+                $total += abs((float) ($entry['amount'] ?? ($entry['depth'] ?? 0)));
+            }
+        }
+
+        return $total;
+    }
+
+    /**
+     * کمان‌های دوختنیِ بی‌درز، روی همهٔ قطعه‌ها.
+     *
+     * @param  array<string, array<string, mixed>>  $instances
+     * @param  array<int, array<string, mixed>>  $seams
+     * @return array<int, array<string, mixed>>
+     */
+    protected function freeArcs(array $instances, array $seams): array
+    {
+        $used = [];
+
+        foreach ($seams as $seam) {
+            foreach (['a', 'b'] as $end) {
+                $used[$seam[$end]['piece'].'|'.$seam[$end]['from'].'|'.$seam[$end]['to']] = true;
+            }
+        }
+
+        $free = [];
+
+        foreach ($instances as $id => $instance) {
+            foreach ($this->sewableArcs($instance) as $arc) {
+                if (! isset($used[$id.'|'.$arc['from'].'|'.$arc['to']])) {
+                    $free[] = $arc;
+                }
+            }
+        }
+
+        return $free;
+    }
+
+    /**
+     * دو سر یک درز، به شکلِ کمانِ کامل (با نمونه و جای روی بدن).
+     *
+     * @param  array<string, array<string, mixed>>  $instances
+     * @return array{a: array<string, mixed>, b: array<string, mixed>}|null
+     */
+    protected function arcsOf(array $instances, array $seam): ?array
+    {
+        $out = [];
+
+        foreach (['a', 'b'] as $end) {
+            $instance = $instances[$seam[$end]['piece']] ?? null;
+
+            if ($instance === null) {
+                return null;
+            }
+
+            $from = (int) $seam[$end]['from'];
+            $to = (int) $seam[$end]['to'];
+            $tag = 'default';
+
+            foreach ($instance['edges'] as $info) {
+                if ((int) $info['start'] === $from) {
+                    $tag = (string) ($info['tag'] ?? 'default');
+
+                    break;
+                }
+            }
+
+            $out[$end] = [
+                'piece' => $seam[$end]['piece'],
+                'from' => $from,
+                'to' => $to,
+                'length' => (float) $seam[$end]['length'],
+                'tag' => $tag,
+                'instance' => $instance,
+                'at' => $this->onBody($instance, DrapeGeometry::arcMidpoint($instance['polygon'], $from, $to)),
+                'frame' => $this->frame($instance['role']),
+                'body_side' => $this->bodySide($instance),
+            ];
+        }
+
+        return $out;
     }
 
     /**
@@ -1396,6 +1675,7 @@ class DrapePayloadService
     protected function share(array $resolved): array
     {
         foreach (['left', 'right'] as $side) {
+            $other = $side === 'left' ? 'right' : 'left';
             $users = [];
 
             foreach ($resolved as $index => $entry) {
@@ -1412,7 +1692,17 @@ class DrapePayloadService
                     continue;
                 }
 
-                $other = $side === 'left' ? 'right' : 'left';
+                $band = $resolved[$indexes[0]][$side];
+
+                if (count($band) === 1) {
+                    $split = $this->shareAlong($resolved, $indexes, $side, $other, $band[0]);
+
+                    if ($split !== null) {
+                        $resolved = $split;
+
+                        continue;
+                    }
+                }
 
                 // ترتیب روی بدن، نه ترتیب فهرست؛ وگرنه تکه‌ی کمر جلو به پشت می‌رود
                 usort($indexes, fn (int $a, int $b) => $this->arcAnchor($resolved[$a][$other])
@@ -1427,7 +1717,7 @@ class DrapePayloadService
 
                 // هر کمانِ این سمت به همان نسبت‌ها بریده می‌شود؛ کمربندِ دوتکه
                 // هم دو کمان دارد و هر دو باید میان همان رابطه‌ها پخش شوند
-                foreach ($resolved[$indexes[0]][$side] as $position => $arc) {
+                foreach ($band as $position => $arc) {
                     $pieces = $this->splitArc($arc, $ratios);
 
                     if (count($pieces) !== count($indexes)) {
@@ -1442,6 +1732,103 @@ class DrapePayloadService
         }
 
         return $resolved;
+    }
+
+    /**
+     * بریدنِ یک کمانِ مشترک به ترتیبی که خودِ کمان دارد، نه به ترتیبِ زاویهٔ بدن.
+     *
+     * خط یقهٔ یقهٔ پیراهن این را لازم کرد. کمانِ یقه از نوکِ چپ می‌رود، از مرکز
+     * پشت می‌گذرد و به نوکِ راست می‌رسد؛ پس تکهٔ «پشت» وسطِ کمان است، نه یک
+     * سرش. با مرتب‌کردن رابطه‌ها بر پایهٔ میانگینِ زاویهٔ سرِ مقابل، میانگینِ دو
+     * تنهٔ جلو صفر درمی‌آید — مرکزِ جلو — و کمان به [جلو][پشت] بریده می‌شود.
+     * نتیجه: ۲۲٫۵ سانتی‌متر یقه روی خط یقهٔ ۱۹٫۲ سانتی‌متریِ پشت.
+     *
+     * پس جای هر سرِ مقابل روی خودِ کمان پیدا می‌شود: نزدیک‌ترین رأسِ کمان به آن،
+     * و فاصله‌اش از سرِ کمان. آن وقت بریدن به ترتیبِ راه رفتنِ روی کمان است و
+     * تکه‌های یک رابطه لازم نیست پشت‌سرِ هم باشند.
+     *
+     * @param  array<int, array{left: array, right: array, relation: array}>  $resolved
+     * @param  array<int, int>  $indexes
+     * @return array<int, array{left: array, right: array, relation: array}>|null
+     */
+    protected function shareAlong(array $resolved, array $indexes, string $side, string $other, array $arc): ?array
+    {
+        $targets = [];
+
+        foreach ($indexes as $index) {
+            foreach ($resolved[$index][$other] as $position => $partner) {
+                $targets[] = [
+                    'index' => $index,
+                    'position' => $position,
+                    'along' => $this->along($arc, $partner),
+                    'length' => max(0.01, (float) $partner['length']),
+                ];
+            }
+        }
+
+        if (count($targets) < 2) {
+            return null;
+        }
+
+        usort($targets, fn (array $a, array $b) => $a['along'] <=> $b['along']);
+
+        $total = array_sum(array_column($targets, 'length'));
+        $parts = $this->splitArc($arc, array_map(
+            fn (array $target) => $target['length'] / $total,
+            $targets,
+        ));
+
+        if (count($parts) !== count($targets)) {
+            return null; // کمان جای بریدن نداشت؛ دست‌نخورده بماند
+        }
+
+        $byRelation = [];
+
+        foreach ($targets as $order => $target) {
+            $byRelation[$target['index']][$target['position']] = $parts[$order];
+        }
+
+        foreach ($byRelation as $index => $list) {
+            ksort($list);
+            $resolved[$index][$side] = array_values($list);
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * جای یک کمانِ روبه‌رو روی این کمان: فاصلهٔ نزدیک‌ترین رأس از سرِ کمان.
+     *
+     * @return float سانتی‌متر از سرِ کمان
+     */
+    protected function along(array $arc, array $partner): float
+    {
+        $polygon = $arc['instance']['polygon'];
+        $count = count($polygon);
+        $same = $arc['frame'] === $partner['frame'];
+        $best = INF;
+        $at = 0.0;
+        $walked = 0.0;
+        $index = $arc['from'];
+
+        for ($step = 0; $step < $count; $step++) {
+            $here = $this->distance($this->onBody($arc['instance'], $polygon[$index]), $partner['at'], $same);
+
+            if ($here < $best) {
+                $best = $here;
+                $at = $walked;
+            }
+
+            if ($index === $arc['to']) {
+                break;
+            }
+
+            $next = ($index + 1) % $count;
+            $walked += Geometry::distance($polygon[$index], $polygon[$next]);
+            $index = $next;
+        }
+
+        return $at;
     }
 
     /** جای یک سرِ رابطه روی بدن، برای مرتب کردن تکه‌های یک کمانِ مشترک. */
@@ -1530,7 +1917,9 @@ class DrapePayloadService
                 $next = ($index + 1) % $count;
                 $step = Geometry::distance($polygon[$index], $polygon[$next]);
 
-                if ($walked + $step > $target) {
+                // نزدیک‌ترین رأس، نه رأسِ پیش از هدف: با گردکردن به پایین، برشِ
+                // خط یقه یک رأسِ کامل عقب می‌افتاد و ۲٫۶ سانتی‌متر جابه‌جا می‌شد
+                if ($walked + ($step / 2) > $target) {
                     break;
                 }
 

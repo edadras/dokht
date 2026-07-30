@@ -19,6 +19,9 @@ use App\Services\Pattern\Geometry;
  */
 final class DrapeGeometry
 {
+    /** بلندترین پاره‌خطِ یک لبهٔ راست روی خط شکستهٔ دوخت، سانتی‌متر. */
+    public const STRAIGHT_STEP = 5.0;
+
     /**
      * خط شکسته یک مسیر، به همراه بازه رأس هر لبه اصلی.
      *
@@ -27,10 +30,22 @@ final class DrapeGeometry
      * اگر خط راست باشد رأس تازه‌ای نمی‌سازد و اگر منحنی باشد رأس پایانی‌اش همان
      * رأس صفر است؛ در هر دو حال end آن لبه صفر می‌شود.
      *
+     * لبهٔ راست هم شکسته می‌شود، و این تفاوتِ دومش با Geometry::flatten است.
+     * چرا: درز روی رأس بریده می‌شود، پس لبه‌ای که رأس میانی ندارد اصلاً قابل
+     * تقسیم نیست. خط یقهٔ یقهٔ پیراهن یک پاره‌خطِ راستِ ۲۵٫۸ سانتی‌متری بود؛
+     * باید میان تنهٔ جلو و یوک تقسیم می‌شد و نمی‌شد، پس همهٔ ۲۵٫۸ روی خط یقهٔ
+     * ۱۴٫۴ سانتی‌متریِ جلو می‌رفت و تنهٔ دیگر بی‌یقه می‌ماند. روی مانکن یقه
+     * وارونه و چین‌خورده دیده می‌شد. با رأس هر ۳ سانتی‌متر، هر درزی جای بریدن
+     * دارد و مرزِ مثلث‌بندی هم یک‌دست می‌شود.
+     *
      * @return array{polygon: array<int, array{x: float, y: float}>, spans: array<int, array{0: int, 1: int}>}
      */
-    public static function flattenWithSpans(array $outline, int $segments = Geometry::CURVE_SEGMENTS): array
-    {
+    public static function flattenWithSpans(
+        array $outline,
+        int $segments = Geometry::CURVE_SEGMENTS,
+        float $step = self::STRAIGHT_STEP,
+        array $split = [],
+    ): array {
         $outline = array_values($outline);
         $count = count($outline);
 
@@ -48,6 +63,10 @@ final class DrapeGeometry
             $edge = $i - 1;
 
             if ($i === $count && ! Geometry::isCurve($target)) {
+                foreach (static::stepsBetween($from, $target, ($split[$edge] ?? false) ? $step : 0.0) as $point) {
+                    $polygon[] = $point;
+                }
+
                 $spans[$edge] = [$cursor, 0];
 
                 break;
@@ -70,6 +89,10 @@ final class DrapeGeometry
                     $end = count($polygon) - 1;
                 }
             } else {
+                foreach (static::stepsBetween($from, $target, ($split[$edge] ?? false) ? $step : 0.0) as $point) {
+                    $polygon[] = $point;
+                }
+
                 $polygon[] = ['x' => (float) $target['x'], 'y' => (float) $target['y']];
                 $end = count($polygon) - 1;
             }
@@ -81,6 +104,42 @@ final class DrapeGeometry
         ksort($spans);
 
         return ['polygon' => $polygon, 'spans' => $spans];
+    }
+
+    /**
+     * رأس‌های میانیِ یک پاره‌خطِ راست — بدون خودِ دو سر.
+     *
+     * @param  array{x: float, y: float}  $from
+     * @param  array<string, mixed>  $to
+     * @return array<int, array{x: float, y: float}>
+     */
+    protected static function stepsBetween(array $from, array $to, float $step): array
+    {
+        if ($step <= 0.0) {
+            return [];
+        }
+
+        $x = (float) ($to['x'] ?? 0);
+        $y = (float) ($to['y'] ?? 0);
+        $length = hypot($x - $from['x'], $y - $from['y']);
+        $parts = (int) min(24, floor($length / $step));
+
+        if ($parts < 2) {
+            return [];
+        }
+
+        $out = [];
+
+        for ($k = 1; $k < $parts; $k++) {
+            $t = $k / $parts;
+
+            $out[] = [
+                'x' => $from['x'] + (($x - $from['x']) * $t),
+                'y' => $from['y'] + (($y - $from['y']) * $t),
+            ];
+        }
+
+        return $out;
     }
 
     /**

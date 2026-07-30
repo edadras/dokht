@@ -275,9 +275,15 @@ abstract class OuterwearBaseGenerator extends BodiceGarmentBase
             ],
             'meta' => [
                 'part' => 'collar',
-                'edges' => ['default', 'side', 'neck', 'default'],
+                /*
+                 * لبهٔ ۰ همان خطی است که به یقهٔ لباس دوخته می‌شود و لبهٔ ۲ لبهٔ
+                 * بیرونیِ آزادِ یقه. جای این دو عوض بود، پس نمای سه‌بعدی یقه را
+                 * از لبهٔ بیرونی به خط یقه می‌دوخت: ۲۷٫۸ سانتی‌متر روی ۲۴، یقه
+                 * وارونه و چین‌خورده دور گردن. روی مانکن مثل پارچهٔ پاره دیده می‌شد.
+                 */
+                'edges' => ['neck', 'side', 'default', 'default'],
                 'fold_edges' => [3],
-                'neck_length' => round(Geometry::edgeLength($outline, 2), 2),
+                'neck_length' => round(Geometry::edgeLength($outline, 0), 2),
                 'target_neck' => round($halfNeck, 2),
                 'interfacing' => true,
                 'girth_role' => 'trim',

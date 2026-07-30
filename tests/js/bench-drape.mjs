@@ -18,7 +18,7 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { buildDrape, supportGarment } from '../../resources/js/lib/pattern-drape.js';
+import { buildDrape, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
 import { ClothWorld } from '../../resources/js/lib/cloth-solver.js';
 import { makeBody } from './fixtures/payload.js';
 
@@ -29,6 +29,7 @@ const stretchOf = (drape) => {
     let worst = 1;
     let bad = 0;
     let tris = 0;
+    let slivers = 0;
 
     for (const { mesh } of drape.patches) {
         const { positions, indices, grain } = mesh;
@@ -60,10 +61,27 @@ const stretchOf = (drape) => {
                     bad++;
                 }
             }
+
+            /*
+             * مثلثِ تیغه‌ای: کشش را نشان نمی‌دهد چون مساحتش کوچک می‌شود، نه
+             * بزرگ — ولی روی مانکن همان چیزی است که چشم «پارچهٔ پاره» می‌خواند.
+             * نسبتِ بلندترین به کوتاه‌ترین ضلع، جدا شمرده می‌شود.
+             */
+            const ab = Math.hypot(ux, uy, uz);
+            const ac = Math.hypot(vx, vy, vz);
+            const bc = Math.hypot(
+                positions[c * 3] - positions[b * 3],
+                positions[c * 3 + 1] - positions[b * 3 + 1],
+                positions[c * 3 + 2] - positions[b * 3 + 2],
+            );
+
+            if (Math.max(ab, ac, bc) / Math.max(1e-6, Math.min(ab, ac, bc)) > 12) {
+                slivers++;
+            }
         }
     }
 
-    return { worst, bad, tris };
+    return { worst, bad, tris, slivers };
 };
 
 /* فاصلهٔ دو سرِ هر درز، پیش از هر شبیه‌سازی */
@@ -121,13 +139,21 @@ const bench = (file) => {
     world.presettle(60);
 
     const settled = stretchOf(drape);
+    const before = world.seamError();
+
+    // همان کاری که نماگر پیش از نمایش می‌کند؛ اگر خراب کند، همین‌جا دیده شود
+    weldSeams(drape);
+
+    const welded = stretchOf(drape);
     const name = file.split('/').pop().replace('p-', '').replace('.json', '');
 
     console.log(
         `${name.padEnd(20)} چیدن: بدترین=${(gaps.worst * 100).toFixed(1)} میانگین=${(gaps.mean * 100).toFixed(1)}` +
             ` | کشش چیدن: ${placed.worst.toFixed(1)}× خراب=${placed.bad}` +
-            ` | خطای درز: دوخت=${(stitched * 100).toFixed(1)} نهایی=${(world.seamError() * 100).toFixed(1)}` +
-            ` | کشش نهایی: ${settled.worst.toFixed(1)}× خراب=${settled.bad}/${settled.tris}`,
+            ` | خطای درز: دوخت=${(stitched * 100).toFixed(1)} نهایی=${(before * 100).toFixed(1)}` +
+            ` جوش=${(world.seamError() * 100).toFixed(1)}` +
+            ` | کشش نهایی: ${settled.worst.toFixed(1)}× خراب=${settled.bad}/${settled.tris}` +
+            ` | تیغه‌ای: نشستن=${settled.slivers} جوش=${welded.slivers}`,
     );
 };
 

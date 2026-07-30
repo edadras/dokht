@@ -365,9 +365,15 @@ trait BodiceGarmentSupport
             'markers' => [$this->marker('cb', 'خط مرکز پشت', 0, 0, 0, $height)],
             'meta' => [
                 'part' => 'collar',
-                'edges' => ['default', 'side', 'neck', 'default'],
+                /*
+                 * لبهٔ ۰ همان خطی است که به یقهٔ لباس دوخته می‌شود و لبهٔ ۲ لبهٔ
+                 * بیرونیِ آزادِ یقه. جای این دو عوض بود، پس نمای سه‌بعدی یقه را
+                 * از لبهٔ بیرونی به خط یقه می‌دوخت: ۲۷٫۸ سانتی‌متر روی ۲۴، یقه
+                 * وارونه و چین‌خورده دور گردن. روی مانکن مثل پارچهٔ پاره دیده می‌شد.
+                 */
+                'edges' => ['neck', 'side', 'default', 'default'],
                 'fold_edges' => [3],
-                'neck_length' => Geometry::edgeLength($outline, 2),
+                'neck_length' => Geometry::edgeLength($outline, 0),
                 'interfacing' => true,
                 'girth_role' => 'trim',
             ],

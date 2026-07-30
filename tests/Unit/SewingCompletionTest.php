@@ -145,8 +145,27 @@ class SewingCompletionTest extends TestCase
                     continue;
                 }
 
+                /*
+                 * آسترِ آستین هم آستین است. قطعهٔ «sleeve-lining» در meta.part
+                 * خودش «lining» نوشته، پس با خواندنِ خامِ part از قلم می‌افتد؛
+                 * آسترِ آستین ولی درست مثل رو در حلقهٔ آسترِ بالاتنه کار گذاشته
+                 * می‌شود. آن‌چه این آزمون می‌پاید دوختنِ دو پنلِ بالاتنه به هم
+                 * است، نه این.
+                 */
+                $partOf = function (string $code) use ($parts): string {
+                    $own = $parts[$code] ?? '';
+
+                    if ($own !== '' && $own !== 'lining') {
+                        return $own;
+                    }
+
+                    $outer = preg_replace('/-lining$/', '', $code);
+
+                    return $outer !== $code ? ($parts[$outer] ?? $own) : $own;
+                };
+
                 $sleeves = array_filter(
-                    [$parts[$relation['from']['piece']] ?? '', $parts[$relation['to']['piece']] ?? ''],
+                    [$partOf($relation['from']['piece']), $partOf($relation['to']['piece'])],
                     fn (string $part) => $part === 'sleeve',
                 );
 
@@ -271,6 +290,32 @@ class SewingCompletionTest extends TestCase
 
                 $a = $length($relation['from']);
                 $b = $length($relation['to']);
+
+                /*
+                 * درزی که کپیِ درزِ رو است، درست همان‌قدر متوازن است که خودِ
+                 * درزِ رو — نه بیشتر، نه کمتر. اگر پهلوی بالاتنهٔ رو ۲۶٫۳ به
+                 * ۲۲٫۸ باشد، آسترش هم همان است؛ ایراد آن‌جا در الگوی بالاتنه
+                 * است، نه در کپی. پس این‌ها با دو سرِ همان درزِ رو سنجیده
+                 * می‌شوند. آن‌چه این آزمون می‌پاید، درزِ *حدس‌زده* است.
+                 */
+                if (isset($relation['mirrors'])) {
+                    [$outerFrom, $outerTo] = explode('|', $relation['mirrors']);
+
+                    $this->assertEqualsWithDelta(
+                        $length(['piece' => $outerFrom, 'edges' => $relation['from']['edges']]),
+                        $a,
+                        max(0.5, $a * 0.05),
+                        "«{$key}» درز «{$relation['label']}»: کپیِ آستر باید همان اندازهٔ روی خودش باشد.",
+                    );
+                    $this->assertEqualsWithDelta(
+                        $length(['piece' => $outerTo, 'edges' => $relation['to']['edges']]),
+                        $b,
+                        max(0.5, $b * 0.05),
+                        "«{$key}» درز «{$relation['label']}»: کپیِ آستر باید همان اندازهٔ روی خودش باشد.",
+                    );
+
+                    continue;
+                }
 
                 $this->assertEqualsWithDelta(
                     $a,

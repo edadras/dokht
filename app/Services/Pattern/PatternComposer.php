@@ -2294,7 +2294,9 @@ class PatternComposer
                 Geometry::curve(0, $height, $length * 0.5, $height - ($spread * 0.35) - 0.4),
             ];
 
-            $edges = ['default', 'side', 'neck', 'default'];
+            // لبهٔ ۰ به خط یقه دوخته می‌شود و لبهٔ ۲ لبهٔ بیرونیِ آزاد است؛ مثل
+            // شاخهٔ «flat» بالا. جای این دو عوض بود و یقه وارونه دوخته می‌شد.
+            $edges = ['neck', 'side', 'default', 'default'];
         }
 
         return $this->piece([

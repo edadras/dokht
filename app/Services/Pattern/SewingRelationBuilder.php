@@ -243,6 +243,8 @@ class SewingRelationBuilder
      */
     public static function complete(Pattern $pattern, array $relations = []): array
     {
+        $lining = static::mirrorLining($pattern, $relations);
+        $relations = array_merge($relations, $lining);
         $service = new SeamAllowanceService;
         $used = static::usedEdges($relations);
         $runs = [];
@@ -291,6 +293,114 @@ class SewingRelationBuilder
                 'label' => static::runLabel($a, $b),
                 'reverse' => static::runsRunOpposite($a, $b),
                 'length' => round(min($a['length'], $b['length']), 2),
+            ];
+        }
+
+        // درزهایی که همین تابع ساخت (خط کمر، پنل‌ها) هم برای آستر تکرار می‌شوند
+        $out = array_merge($lining, $out);
+
+        return array_merge($out, static::mirrorLining($pattern, $out, array_merge($relations, $out)));
+    }
+
+    /**
+     * آستر همان درزهای رو را دارد.
+     *
+     * لباس غلافی این را نشان داد: بالاتنهٔ رو درز پهلو و خط کمر داشت و بالاتنهٔ
+     * آستر تنها درز سرشانه. علتش هم روشن بود — پهلوی این بالاتنه ۲۳٫۵ در برابر
+     * ۲۰ سانتی‌متر است (۱۵٪ اختلاف، چون پشت کوتاه‌تر بریده می‌شود) و دروازهٔ
+     * ۱۲٪ِ جفت‌کردنِ خودکار ردش می‌کند؛ درزِ رو ولی از رابطهٔ خودِ سازنده می‌آید
+     * و از آن دروازه نمی‌گذرد. نتیجه روی مانکن: دو پنلِ آستر از سرشانه آویزان و
+     * مچاله روی سینه. در عکس همان مچالگی دیده می‌شد.
+     *
+     * پس حدس نمی‌زنیم: هر رابطه‌ای که میان دو قطعهٔ رو هست، اگر هر دو قطعه
+     * همتای آستر داشته باشند، برای آستر هم نوشته می‌شود — با همان شماره‌های لبه،
+     * چون آستر از همان مسیر بریده می‌شود.
+     *
+     * @param  array<int, array<string, mixed>>  $relations
+     * @return array<int, array<string, mixed>>
+     */
+    protected static function mirrorLining(Pattern $pattern, array $relations, array $existing = []): array
+    {
+        $codes = [];
+        $lengths = [];
+
+        foreach ($pattern->pieces as $piece) {
+            $codes[(string) $piece->code] = true;
+            $lengths[(string) $piece->code] = ['piece' => $piece];
+        }
+
+        $out = [];
+        $seen = [];
+
+        foreach ($existing as $relation) {
+            $from = (string) ($relation['from']['piece'] ?? '');
+            $to = (string) ($relation['to']['piece'] ?? '');
+            $seen[$from.'|'.implode(',', (array) ($relation['from']['edges'] ?? []))
+                .'~'.$to.'|'.implode(',', (array) ($relation['to']['edges'] ?? []))] = true;
+        }
+
+        foreach ($relations as $relation) {
+            $pair = [];
+
+            foreach (['from', 'to'] as $end) {
+                $code = (string) ($relation[$end]['piece'] ?? '');
+                $twin = $code.'-lining';
+
+                if ($code === '' || str_ends_with($code, '-lining') || ! isset($codes[$twin])) {
+                    continue 2;
+                }
+
+                $pair[$end] = $twin;
+            }
+
+            $edges = [
+                'from' => (array) ($relation['from']['edges'] ?? [$relation['from']['edge'] ?? null]),
+                'to' => (array) ($relation['to']['edges'] ?? [$relation['to']['edge'] ?? null]),
+            ];
+
+            if (in_array(null, $edges['from'], true) || in_array(null, $edges['to'], true)) {
+                continue;
+            }
+
+            /*
+             * آستر همیشه از همان مسیرِ رو بریده نمی‌شود. لباس مجلسیِ خطیِ A
+             * آسترِ کوتاه‌تری دارد: پهلوی رو ۲۶٫۳ و پهلوی آستر ۲۲٫۸ سانتی‌متر.
+             * شماره‌های لبه یکی است ولی طول‌ها یکی نیست، پس تکرارِ کورکورانه
+             * درزی می‌سازد که دو سرش هم‌اندازه نیستند. آن‌جا حدس نمی‌زنیم.
+             */
+            $twinsMatch = true;
+
+            foreach (['from', 'to'] as $end) {
+                $outer = static::runLength($lengths[$relation[$end]['piece']] ?? null, $edges[$end]);
+                $inner = static::runLength($lengths[$pair[$end]] ?? null, $edges[$end]);
+
+                if ($outer < 0.01 || abs($outer - $inner) / $outer > 0.05) {
+                    $twinsMatch = false;
+
+                    break;
+                }
+            }
+
+            if (! $twinsMatch) {
+                continue;
+            }
+
+            $key = $pair['from'].'|'.implode(',', $edges['from']).'~'.$pair['to'].'|'.implode(',', $edges['to']);
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+
+            $out[] = [
+                'from' => ['piece' => $pair['from'], 'edges' => array_map('intval', $edges['from'])],
+                'to' => ['piece' => $pair['to'], 'edges' => array_map('intval', $edges['to'])],
+                'label' => (string) ($relation['label'] ?? 'درز'),
+                'reverse' => (bool) ($relation['reverse'] ?? true),
+                'length' => $relation['length'] ?? null,
+                // نشانهٔ «این درز کپیِ درزِ رو است، نه حدسِ تازه»
+                'mirrors' => $relation['from']['piece'].'|'.$relation['to']['piece'],
             ];
         }
 

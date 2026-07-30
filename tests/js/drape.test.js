@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ClothWorld } from '../../resources/js/lib/cloth-solver.js';
-import { buildDrape, supportGarment } from '../../resources/js/lib/pattern-drape.js';
+import { buildDrape, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
 import { bodicePayload, makeBody, twoSquares } from './fixtures/payload.js';
 
 const settle = (drape, steps = 260) => {
@@ -231,4 +231,65 @@ test('هیچ رأسی پس از چیدن NaN نیست', () => {
             assert.ok(Number.isFinite(patch.positions[i]), `قطعهٔ «${id}» رأس بی‌مقدار دارد`);
         }
     }
+});
+
+/*
+ * جوش دادنِ درز نباید پارچه را لِه کند.
+ *
+ * درسِ گران این یکی: خطای درز پایین آمد و همان لحظه مثلث تیغه‌ای ساخته شد.
+ * جفت‌کردنِ رأس‌های درز چند-به-یک است، پس بستنِ کاملِ همهٔ جفت‌ها دو رأسِ کنارِ
+ * هم را روی یک نقطه می‌نشاند؛ کوتاه‌ترین ضلعِ آن مثلث‌ها دقیقاً صفر بود، نه
+ * کشیده. سنجهٔ کشش این را نمی‌دید چون مساحت کوچک می‌شود، نه بزرگ. کاربر ولی
+ * می‌دید و «پارچهٔ تیکه‌پاره» می‌خواند. اینجا با ضلع اندازه می‌گیریم.
+ */
+test('جوش دادنِ درز ضلعِ پارچه را نمی‌خواباند', () => {
+    const drape = buildDrape(bodicePayload(), makeBody(), {});
+    const world = settle(drape, 120);
+
+    world.seams.forEach((seam) => seam.weld());
+    world.presettle(30);
+    weldSeams(drape);
+
+    for (const { id, mesh } of drape.patches) {
+        const { positions, indices, grain } = mesh;
+
+        for (let t = 0; t < indices.length; t += 3) {
+            for (const [x, y] of [[0, 1], [1, 2], [2, 0]]) {
+                const a = indices[t + x];
+                const b = indices[t + y];
+                const rest = Math.hypot(
+                    grain[b * 2] - grain[a * 2],
+                    grain[b * 2 + 1] - grain[a * 2 + 1],
+                );
+                const now = Math.hypot(
+                    positions[b * 3] - positions[a * 3],
+                    positions[b * 3 + 1] - positions[a * 3 + 1],
+                    positions[b * 3 + 2] - positions[a * 3 + 2],
+                );
+
+                assert.ok(
+                    rest < 1e-9 || now > rest * 0.5,
+                    `قطعهٔ «${id}»: ضلعی که روی الگو ${(rest * 100).toFixed(2)} سانتی‌متر است پس از جوش ${(now * 100).toFixed(2)} شد`,
+                );
+            }
+        }
+    }
+});
+
+/* و همان جوش باید کارِ خودش را هم بکند: درز از پیش‌ازِ خودش بازتر نشود */
+test('جوش دادنِ درز، درز را بازتر نمی‌کند', () => {
+    const drape = buildDrape(bodicePayload(), makeBody(), {});
+    const world = settle(drape, 120);
+
+    world.seams.forEach((seam) => seam.weld());
+    world.presettle(30);
+
+    const before = world.seamError();
+
+    weldSeams(drape);
+
+    assert.ok(
+        world.seamError() <= before + 1e-4,
+        `خطای درز از ${(before * 100).toFixed(2)} به ${(world.seamError() * 100).toFixed(2)} سانتی‌متر رفت`,
+    );
 });
