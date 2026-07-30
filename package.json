@@ -5,7 +5,8 @@
     "scripts": {
         "build": "vite build",
         "dev": "vite",
-        "test:js": "node --test \"tests/js/**/*.test.js\""
+        "test:js": "node --test \"tests/js/**/*.test.js\"",
+        "bench:drape": "node tests/js/bench-drape.mjs"
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.0.0",
