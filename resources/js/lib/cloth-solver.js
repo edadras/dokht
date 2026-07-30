@@ -1864,6 +1864,11 @@ export class ClothWorld {
         let worst = 0;
 
         for (let i = 0; i < this.seams.length; i++) {
+            // تا، درزِ باز نیست: فاصله‌اش ضخامتِ خودِ تاست و باید بماند
+            if (this.seams[i].kind === 'crease') {
+                continue;
+            }
+
             worst = Math.max(worst, this.seams[i].error());
         }
 

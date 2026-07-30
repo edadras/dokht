@@ -363,6 +363,58 @@ export const twoSleeves = () => {
 };
 
 /*
+ * یک یقهٔ ایستاده با خط خواب — کوچک‌ترین بسته‌ای که «تا» در آن معنی دارد.
+ *
+ * سرور یقه را راست می‌کند (standUp)، پس خط یقه کفِ کادر است و لبهٔ بیرونی سقفش.
+ * `roll` در همان دستگاهِ چندضلعی است: ۳ سانتی‌متر بالاتر از خط یقه، یعنی پایهٔ
+ * ۳ سانتی‌متری و رویهٔ ۴٫۵ سانتی‌متری که باید روی آن برگردد.
+ */
+export const collarPayload = (height = 7.5, stand = 3) => {
+    const body = makeBody();
+    const length = 40;
+
+    return {
+        scale: 0.01,
+        pieces: [
+            {
+                id: 'collar#0',
+                code: 'collar',
+                name: 'یقه',
+                role: 'collar',
+                side: 'front',
+                instance: 0,
+                mirrored: false,
+                layer: 'outer',
+                polygon: [
+                    [0, 0],
+                    [length, 0],
+                    [length, height],
+                    [0, height],
+                ],
+                edges: [
+                    { tag: 'default', start: 0, end: 1, length },
+                    { tag: 'default', start: 1, end: 2, length: height },
+                    { tag: 'neck', start: 2, end: 3, length },
+                    { tag: 'default', start: 3, end: 0, length: height },
+                ],
+                darts: [],
+                roll: height - stand,
+                placement: {
+                    zone: 'collar',
+                    u0: -Math.PI,
+                    u1: Math.PI,
+                    y_top: body.level.neck,
+                    radius_hint: 'neck',
+                },
+            },
+        ],
+        seams: [],
+        budget: { target_edge: 2, max_vertices: 6000 },
+        meta: {},
+    };
+};
+
+/*
  * برخوردگرهای بدن — همان‌هایی که نماگر می‌سازد، برای سنجه.
  *
  * سنجه تا امروز هیچ بدنی نداشت: قطعه‌ها را می‌دوخت و رها می‌کرد، پس عددهای

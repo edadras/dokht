@@ -2225,6 +2225,23 @@ export const buildDrape = (payload, body, options = {}) => {
         }
     }
 
+    /* ---- خطِ خوابِ یقه ---- */
+    const creases = [];
+
+    for (const entry of patches) {
+        const roll = Number(entry.piece.roll);
+
+        if (! Number.isFinite(roll)) {
+            continue;
+        }
+
+        const pairs = creaseAt(entry, roll * scale, (stats.targetEdge ?? requested) * scale);
+
+        if (pairs.length >= 6) {
+            creases.push({ entry, pairs });
+        }
+    }
+
     /* ---- درزها ---- */
     const seams = [];
 
@@ -2253,6 +2270,29 @@ export const buildDrape = (payload, body, options = {}) => {
 
         return set;
     };
+
+    /*
+     * اتوی خطِ خواب: قیدی با فاصلهٔ هدفِ کم، میان دو سوی خط.
+     *
+     * SeamSet فقط کوتاه می‌کند و به فاصلهٔ بیشتر کاری ندارد، پس دقیقاً همان اتوی
+     * خیاط است: پارچه روی خط تا می‌شود و جای دیگری تنگ نمی‌شود. نوعش «crease»
+     * است تا جوشِ پایانی و unsquash بشناسندش و بازش نکنند.
+     */
+    for (const { entry, pairs } of creases) {
+        const set = new SeamSet({
+            a: entry.patch,
+            pairs: Uint32Array.from(pairs),
+            label: 'خط خواب یقه',
+            kind: 'crease',
+            rest: settings.gap,
+            duration: settings.seamDuration,
+            stiffness: settings.seamStiffness * 0.5,
+        });
+
+        seams.push(set);
+        stats.stitches += set.count;
+        stats.creases = (stats.creases ?? 0) + 1;
+    }
 
     for (const plan of dartPlans) {
         const { state, found } = plan;
@@ -2676,12 +2716,42 @@ export const weldSeams = (drape, rounds = 8) => {
 
     let worst = 0;
 
+    /*
+     * قیدِ تا از جوش کنار گذاشته می‌شود.
+     *
+     * جوش، هر جفتِ درز را به میانهٔ خودشان می‌برد تا شکافِ دیدنی بسته شود. برای
+     * تا این کار غلط است: دو سوی تا *باید* نزدیک بمانند و فاصله‌شان همان ضخامتِ
+     * تاست، نه شکاف. یک بار بی این استثنا امتحان شد و یقهٔ تاشده پاشید — دورترین
+     * شعاعش پیش از جوش ۱۰٫۴ سانتی‌متر بود و پس از یک دور جوش ۶۱٫۶.
+     */
+    const stitched = drape.seams.filter((seam) => seam.kind !== 'crease');
+
+    /* رأس‌هایی که روی خطِ تا هستند؛ ببینید unsquash */
+    const folded = drape.patches.map((entry) => new Uint8Array(entry.patch.count));
+
+    for (const seam of drape.seams) {
+        if (seam.kind !== 'crease') {
+            continue;
+        }
+
+        const side = index.get(seam.a);
+
+        if (side === undefined) {
+            continue;
+        }
+
+        for (let i = 0; i < seam.count; i++) {
+            folded[side][seam.pairs[i * 2]] = 1;
+            folded[side][seam.pairs[i * 2 + 1]] = 1;
+        }
+    }
+
     for (let round = 0; round < rounds; round++) {
         worst = 0;
 
         const before = drape.patches.map((entry) => Float64Array.from(entry.patch.positions));
 
-        for (const seam of drape.seams) {
+        for (const seam of stitched) {
             const pa = seam.a.positions;
             const pb = (seam.b || seam.a).positions;
             const wa = seam.a.invMass;
@@ -2788,7 +2858,7 @@ export const weldSeams = (drape, rounds = 8) => {
                 }
             }
 
-            unsquash(patch, spread[p]);
+            unsquash(patch, spread[p], folded[p]);
         }
     }
 
@@ -2811,7 +2881,7 @@ export const weldSeams = (drape, rounds = 8) => {
  * تیغه دارد و مشکلش جای دیگری است. بهایش چند دهم میلی‌متر بازتر ماندنِ درز
  * است. دو پاس هم از چهار پاس تفاوتی نداشت.
  */
-const unsquash = (patch, { heads, near, rest }, floor = 0.7, passes = 2) => {
+const unsquash = (patch, { heads, near, rest }, folded = null, floor = 0.7, passes = 2) => {
     const { positions, invMass, count } = patch;
 
     for (let pass = 0; pass < passes; pass++) {
@@ -2826,6 +2896,17 @@ const unsquash = (patch, { heads, near, rest }, floor = 0.7, passes = 2) => {
                 const goal = rest[k] * floor;
 
                 if (goal <= 0) {
+                    continue;
+                }
+
+                /*
+                 * ضلعی که دو سرش روی خطِ تا است، باید کوتاه باشد.
+                 *
+                 * unsquash برای این هست که پارچه لِه نشود، ولی تا خوردن همان
+                 * کوتاه شدنِ عمدی است. بی این استثنا، همین تابع تای یقه را باز
+                 * می‌کرد و رأس را پرت می‌کرد.
+                 */
+                if (folded && folded[v] && folded[n]) {
                     continue;
                 }
 
@@ -2874,6 +2955,74 @@ const unsquash = (patch, { heads, near, rest }, floor = 0.7, passes = 2) => {
             }
         }
     }
+};
+
+/*
+ * خطِ خوابِ یقه: جفت‌های دو سوی خط، برای تا کردن.
+ *
+ * قیدِ خمشِ پارچه حالتِ استراحتش را از الگوی تخت می‌گیرد، یعنی پارچه «صاف» را
+ * ترجیح می‌دهد. پس هرچه یقه را تاشده بچینیم خودش را باز می‌کند و راست می‌ایستد —
+ * اندازه گرفته شد: لبهٔ بیرونیِ یقه ۵٫۷ سانتی‌متر از گردن فاصله می‌گرفت. یقهٔ
+ * واقعی روی خطِ خواب اتو می‌شود، و آن اتو قیدِ جداگانه‌ای است نه حالتِ خمشِ
+ * عمومیِ پارچه.
+ *
+ * جفت‌سازی یک‌به‌یک است: اگر چند رأس یک شریکِ مشترک بگیرند، اصلاحِ همه‌شان روی
+ * همان یک رأس می‌نشیند و رأس پرت می‌شود.
+ */
+const creaseAt = (entry, rollY, step) => {
+    const { grain } = entry.mesh;
+    const count = entry.patch.count;
+    const above = [];
+    const below = [];
+
+    for (let v = 0; v < count; v++) {
+        const gap = grain[v * 2 + 1] - rollY;
+
+        if (Math.abs(gap) < 1e-6) {
+            continue;
+        }
+
+        (gap < 0 ? above : below).push(v);
+    }
+
+    /*
+     * هر رأسِ رویه به آینهٔ خودش روی پایه می‌رسد.
+     *
+     * جفت‌کردنِ تنها یک ردیف دو سوی خط، تا نمی‌سازد: آن دو رأس از پیش نزدیک‌اند و
+     * قید کارِ چندانی نمی‌کند. اندازه گرفته شد — با یک ردیف، یقه همان ۶٫۳
+     * سانتی‌متر بلند می‌ماند و فقط باد می‌کند. تای واقعی یعنی رویه روی پایه
+     * *آینه* شود: رأسی که d سانتی‌متر آن‌سوی خط است، جفتش رأسی است که d
+     * سانتی‌متر این‌سوی خط و روی همان x نشسته.
+     */
+    const taken = new Set();
+    const pairs = [];
+
+    for (const one of below) {
+        const wantY = rollY - (grain[one * 2 + 1] - rollY);
+        const wantX = grain[one * 2];
+        let best = -1;
+        let bestGap = Infinity;
+
+        for (const two of above) {
+            if (taken.has(two)) {
+                continue;
+            }
+
+            const gap = Math.hypot(grain[two * 2] - wantX, grain[two * 2 + 1] - wantY);
+
+            if (gap < bestGap) {
+                bestGap = gap;
+                best = two;
+            }
+        }
+
+        if (best >= 0 && bestGap < step) {
+            taken.add(best);
+            pairs.push(one, best);
+        }
+    }
+
+    return pairs;
 };
 
 /*

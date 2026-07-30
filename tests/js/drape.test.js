@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 
 import { ClothWorld, Collider } from '../../resources/js/lib/cloth-solver.js';
 import { buildDrape, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
-import { bodyColliders, bodicePayload, makeBody, twoSleeves, twoSquares } from './fixtures/payload.js';
+import { bodyColliders, bodicePayload, collarPayload, makeBody, twoSleeves, twoSquares } from './fixtures/payload.js';
 
 const settle = (drape, steps = 260) => {
     const world = new ClothWorld({ fabric: {} });
@@ -641,4 +641,113 @@ test('نگه‌دارنده، نوارِ بالا را روی بدن می‌نش
     });
 
     assert.ok(checked > 0, 'هیچ قطعه‌ای نوارِ نگه‌داشته نداشت؛ آزمون چیزی را نسنجید');
+});
+
+/*
+ * یقه روی خط خوابش تا می‌شود، و جوشِ درز آن را باز نمی‌کند.
+ *
+ * قیدِ خمشِ پارچه حالتِ استراحتش را از الگوی *تخت* می‌گیرد، پس یقه‌ای که چیده
+ * می‌شود خودش را باز می‌کند و راست می‌ایستد — روی پیراهن ۶٫۳ سانتی‌متر بالای خط
+ * یقه اندازه گرفته شد، با یک نوکِ بیرون‌زده. یقهٔ واقعی روی خطِ خواب اتو می‌شود،
+ * و آن اتو قیدِ جداگانه‌ای است.
+ *
+ * دو چیز اینجا قفل می‌شود:
+ *   ۱. تا بسته می‌شود (فاصلهٔ آینه‌ها از ۴٫۱ به ۲٫۴ سانتی‌متر می‌رسد و بلندیِ
+ *      یقه از ۷٫۵ به ۵٫۲ می‌آید).
+ *   ۲. weldSeams تا را خطا نمی‌شمارد. نسخهٔ پیش از این، تای بسته را «درزِ
+ *      کشیده» می‌دید و بازش می‌کرد: شعاعِ یقه از ۱۱٫۶ به ۶۱٫۶ سانتی‌متر می‌پرید.
+ */
+test('یقه روی خط خواب تا می‌شود و جوش تا را باز نمی‌کند', () => {
+    const body = makeBody();
+    const drape = buildDrape(collarPayload(), body, {});
+    const creases = drape.seams.filter((seam) => seam.kind === 'crease');
+
+    assert.equal(creases.length, 1, 'برای خط خواب یقه دقیقاً یک قید تا باید ساخته شود');
+
+    const crease = creases[0];
+
+    assert.ok(crease.count > 20, `تا فقط ${crease.count} جفت دارد؛ یک ردیف تا نمی‌سازد`);
+
+    const entry = drape.patches[0];
+    const { grain } = entry.mesh;
+
+    /* فاصلهٔ میانگینِ جفت‌های آینه: روی الگوی تخت، و روی پارچه */
+    const fold = () => {
+        let flat = 0;
+        let now = 0;
+
+        for (let i = 0; i < crease.count; i++) {
+            const a = crease.pairs[i * 2];
+            const b = crease.pairs[i * 2 + 1];
+
+            flat += Math.hypot(grain[a * 2] - grain[b * 2], grain[a * 2 + 1] - grain[b * 2 + 1]);
+            now += Math.hypot(
+                entry.patch.positions[a * 3] - entry.patch.positions[b * 3],
+                entry.patch.positions[a * 3 + 1] - entry.patch.positions[b * 3 + 1],
+                entry.patch.positions[a * 3 + 2] - entry.patch.positions[b * 3 + 2],
+            );
+        }
+
+        return { flat: flat / crease.count, now: now / crease.count };
+    };
+
+    /* بلندی و پهنای یقه، سانتی‌متر */
+    const size = () => {
+        let lo = Infinity;
+        let hi = -Infinity;
+        let radius = 0;
+
+        for (let v = 0; v < entry.patch.count; v++) {
+            const y = entry.patch.positions[v * 3 + 1];
+
+            lo = Math.min(lo, y);
+            hi = Math.max(hi, y);
+            radius = Math.max(radius, Math.hypot(entry.patch.positions[v * 3], entry.patch.positions[v * 3 + 2]));
+        }
+
+        return { tall: (hi - lo) * 100, radius: radius * 100 };
+    };
+
+    const world = new ClothWorld({ fabric: {} });
+
+    drape.patches.forEach((one) => world.addPatch(one.patch));
+    drape.seams.forEach((seam) => world.addSeam(seam));
+    world.setColliders(bodyColliders(Collider, body));
+
+    const cut = size();
+
+    assert.ok(cut.tall > 7 && cut.tall < 8, `یقهٔ چیده ${cut.tall.toFixed(1)} سانتی‌متر بلند است، نه ۷٫۵`);
+
+    supportGarment(drape, { band: 0.08, strength: 1 });
+    world.presettle(drape.stats.presettle ?? 260);
+
+    const shut = fold();
+    const on = size();
+
+    assert.ok(
+        shut.now < shut.flat * 0.7,
+        `تا بسته نشد: آینه‌ها روی پارچه ${(shut.now * 100).toFixed(1)} سانتی‌متر فاصله دارند و روی الگو ${(shut.flat * 100).toFixed(1)}`,
+    );
+    assert.ok(on.tall < cut.tall - 1.5, `بلندی یقه از ${cut.tall.toFixed(1)} به ${on.tall.toFixed(1)} نرسید؛ برنگشته است`);
+
+    /*
+     * تا درزِ باز نیست. اگر seamError آن را بشمارد، هر لباسِ یقه‌دار برای همیشه
+     * «درزِ باز» گزارش می‌دهد و سنجه بی‌معنی می‌شود.
+     */
+    assert.equal(world.seamError(), 0, 'تا به عنوان درزِ باز شمرده شد');
+
+    weldSeams(drape);
+    world.presettle(60);
+
+    const after = fold();
+    const welded = size();
+
+    assert.ok(
+        Math.abs(after.now - shut.now) < 0.002,
+        `جوش تا را ${((after.now - shut.now) * 1000).toFixed(1)} میلی‌متر جابه‌جا کرد`,
+    );
+    assert.ok(
+        welded.radius < on.radius + 2,
+        `جوش یقه را از ${on.radius.toFixed(1)} به ${welded.radius.toFixed(1)} سانتی‌متر باز کرد`,
+    );
 });

@@ -451,6 +451,7 @@ class DrapePayloadService
             'layer' => (string) ($model->layer ?: 'outer'),
             'polygon' => array_map(fn (array $point) => [round($point['x'], 3), round($point['y'], 3)], $polygon),
             'edges' => array_values($edges),
+            'roll' => $this->rollLine($piece, $polygon, $edges),
             'darts' => $darts['darts'],
             'placement' => array_intersect_key($placement, array_flip([
                 'zone', 'u0', 'u1', 'y_top', 'radius_hint', 'radius', 'flip',
@@ -1533,6 +1534,46 @@ class DrapePayloadService
         }
 
         return array_values($seams);
+    }
+
+    /**
+     * خطِ خوابِ یقه، به شکلِ y روی همان چندضلعیِ بسته.
+     *
+     * یقهٔ یک‌تکه روی این خط تا می‌شود و می‌خوابد. چون قطعه ممکن است باز یا سروته
+     * شده باشد، فاصله را از خودِ لبهٔ برچسب‌خوردهٔ «neck» می‌سنجیم نه از کادر، و
+     * جواب را در دستگاهِ همان چندضلعی می‌دهیم تا مرورگر بی حساب‌وکتاب بخواندش.
+     *
+     * @param  array<int, array{x: float, y: float}>  $polygon
+     * @param  array<int, array{tag: string, start: int}>  $edges
+     */
+    protected function rollLine(array $piece, array $polygon, array $edges): ?float
+    {
+        $roll = $piece['meta']['roll_line'] ?? null;
+
+        if (! is_numeric($roll) || (float) $roll <= 0.01 || $polygon === []) {
+            return null;
+        }
+
+        $neck = null;
+
+        foreach ($edges as $info) {
+            if (($info['tag'] ?? '') === 'neck' && isset($polygon[$info['start']]['y'])) {
+                $neck = (float) $polygon[$info['start']]['y'];
+
+                break;
+            }
+        }
+
+        if ($neck === null) {
+            return null;
+        }
+
+        [, $minY, , $maxY] = Geometry::bounds($polygon);
+
+        // خط یقه یا کفِ کادر است یا سقفش؛ خطِ خواب از همان‌جا به درونِ قطعه می‌رود
+        $inward = abs($neck - $minY) < abs($neck - $maxY) ? 1 : -1;
+
+        return round($neck + ($inward * (float) $roll), 3);
     }
 
     /** پُریِ اعلام‌شدهٔ یک قطعه: چین و پیلی، سانتی‌متر. */
