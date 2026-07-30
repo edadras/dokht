@@ -3343,7 +3343,16 @@ export const supportGarment = (drape, options = {}) => {
 
     for (const { piece, patch } of drape.patches) {
         const zone = piece.placement?.zone || '';
-        const held = zones.some((name) => zone === name || zone.startsWith(`${name}_`));
+        /*
+         * و هر چیزی که دورِ بدن می‌پیچد — کمربند، نوارِ یقه، مچ‌بند.
+         *
+         * ناحیهٔ این‌ها «جزئیات» است، پس در فهرست بالا نبودند و هیچ رأسی تکیه
+         * نمی‌گرفتند: کمربندِ دامنِ کلوش ۰ از ۱۰۲، و نُه سانتی‌متر پایین می‌افتاد و
+         * دامن را با خودش می‌برد. همین بود که پوششِ آن دامن را ناپایدار می‌کرد و
+         * با دوازده رأس این‌ور و آن‌ور می‌شد.
+         */
+        const held = piece.wraps === true
+            || zones.some((name) => zone === name || zone.startsWith(`${name}_`));
 
         if (! held || ! patch.follow) {
             continue;

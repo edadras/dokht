@@ -895,3 +895,54 @@ test('آستین روی بازو پایین سُر نمی‌خورد', () => {
         );
     }
 });
+
+/*
+ * کمربند روی خودِ کمر می‌ایستد، نه روی درز.
+ *
+ * نوارِ نگه‌دارنده روی «تنه، یقه، دامن، آستین» گذاشته می‌شود و کمربند در هیچ‌کدام
+ * نیست — ناحیه‌اش «جزئیات» است. پس هیچ رأسی از کمربندِ دامنِ کلوش تکیه نمی‌گرفت
+ * (۰ از ۱۰۲) و نُه سانتی‌متر پایین می‌افتاد و دامن را با خودش می‌بُرد. سرور خودش
+ * می‌داند کدام قطعه دورِ بدن می‌پیچد؛ حالا در بسته هم می‌گویدش.
+ */
+test('قطعه‌ای که دورِ بدن می‌پیچد تکیه می‌گیرد', () => {
+    const body = makeBody();
+    const payload = bodicePayload();
+
+    payload.pieces.push({
+        id: 'waistband#0',
+        code: 'waistband',
+        name: 'کمربند',
+        role: 'detail',
+        side: null,
+        instance: 0,
+        mirrored: false,
+        layer: 'outer',
+        wraps: true,
+        polygon: [
+            [0, 0],
+            [40, 0],
+            [40, 6],
+            [0, 6],
+        ],
+        edges: [],
+        darts: [],
+        placement: { zone: 'detail', u0: -Math.PI, u1: Math.PI, y_top: 0.64, radius_hint: 'waist' },
+    });
+
+    const drape = buildDrape(payload, body, {});
+    const band = drape.patches.find((entry) => entry.id === 'waistband#0');
+
+    assert.ok(band, 'کمربند در خروجی نیست');
+
+    supportGarment(drape, { band: 0.08, strength: 1 });
+
+    let held = 0;
+
+    for (let v = 0; v < band.patch.count; v++) {
+        if ((band.patch.follow?.[v] ?? 0) > 0.5) {
+            held++;
+        }
+    }
+
+    assert.ok(held > 0, 'کمربند هیچ رأسِ تکیه‌داری نگرفت؛ رها می‌افتد و دامن را با خود می‌برد');
+});

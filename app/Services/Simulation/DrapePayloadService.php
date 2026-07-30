@@ -510,6 +510,17 @@ class DrapePayloadService
             'polygon' => array_map(fn (array $point) => [round($point['x'], 3), round($point['y'], 3)], $polygon),
             'edges' => array_values($edges),
             'roll' => $this->rollLine($piece, $polygon, $edges),
+            /*
+             * «این قطعه دورِ بدن می‌پیچد» — کمربند، نوارِ یقه، مچ‌بند.
+             *
+             * نماگر نوارِ نگه‌دارنده را روی «تنه، یقه، دامن، آستین» می‌گذارد و
+             * کمربند در هیچ‌کدام نیست: ناحیه‌اش «جزئیات» است. پس هیچ رأسی از
+             * کمربندِ دامنِ کلوش تکیه نمی‌گرفت (۰ از ۱۰۲) و نُه سانتی‌متر پایین
+             * می‌افتاد و دامن را با خودش می‌برد — همان ناپایداری که پوششِ آن دامن
+             * را با دوازده رأس این‌ور و آن‌ور می‌کرد. کمرِ دامن روی خودِ کمر
+             * می‌ایستد، مثل خطِ کمرِ خودِ دامن.
+             */
+            'wraps' => $this->wrapsAround($role, $model),
             'darts' => $darts['darts'],
             'placement' => array_intersect_key($placement, array_flip([
                 'zone', 'u0', 'u1', 'y_top', 'radius_hint', 'radius', 'flip',
