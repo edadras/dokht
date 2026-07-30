@@ -899,4 +899,61 @@ class DrapePayloadTest extends TestCase
 
         $this->assertGreaterThan(0, $seen, 'هیچ یقهٔ ایستاده‌ای پیدا نشد؛ آزمون چیزی را نسنجید.');
     }
+    /**
+     * جیب به آستین دوخته نمی‌شود.
+     *
+     * «دوخت به قطعه‌ی همسایه» چارهٔ آخر است: قطعهٔ بی‌درز را به نزدیک‌ترین کمانِ
+     * آزاد می‌دوزد. ولی فاصله را distance() می‌سنجد و آن برای دو دستگاهِ متفاوت
+     * (تنه و بازو) فقط اختلافِ ارتفاع را برمی‌گرداند و زاویه را کنار می‌گذارد —
+     * چون زاویهٔ روی بازو با زاویهٔ روی تنه یکی نیست. پس جیبِ روی تنه و کمانِ
+     * آستین در یک ارتفاع «فاصلهٔ صفر» می‌گرفتند: روی ترنچ‌کت، جیب و حلقهٔ کمربند
+     * و سجافِ گردن هر سه به آستین دوخته شدند و آستین را ۱۶ سانتی‌متر روی بازو
+     * پایین کشیدند.
+     *
+     * درزِ واقعیِ میان‌دستگاهی — آستین به حلقه — از برچسبِ armhole می‌آید نه از
+     * این چارهٔ آخر، پس این ادعا آن را نمی‌گیرد.
+     */
+    public function test_a_detail_is_not_sewn_across_frames(): void
+    {
+        $frame = fn (string $role) => match ($role) {
+            'sleeve' => 'arm',
+            'leg' => 'limb',
+            default => 'body',
+        };
+
+        $seen = 0;
+
+        foreach (['coat_trench', 'blazer', 'suit_jacket', 'trad_qipao'] as $key) {
+            if (! GeneratorRegistry::has($key)) {
+                continue;
+            }
+
+            $payload = $this->payload($key);
+            $roles = [];
+
+            foreach ($payload['pieces'] as $piece) {
+                $roles[$piece['id']] = (string) ($piece['role'] ?? 'torso');
+            }
+
+            foreach ($payload['seams'] as $seam) {
+                if ($seam['label'] !== 'دوخت به قطعه‌ی همسایه') {
+                    continue;
+                }
+
+                $seen++;
+
+                $one = $frame($roles[$seam['a']['piece']] ?? 'torso');
+                $two = $frame($roles[$seam['b']['piece']] ?? 'torso');
+
+                $this->assertSame(
+                    $one,
+                    $two,
+                    "«{$key}»: {$seam['a']['piece']} ({$one}) به {$seam['b']['piece']} ({$two}) دوخته شد؛"
+                        .' فاصلهٔ میان دو دستگاه سنجیدنی نیست.',
+                );
+            }
+        }
+
+        $this->assertGreaterThan(0, $seen, 'هیچ درزِ همسایه‌ای پیدا نشد؛ آزمون چیزی را نسنجید.');
+    }
 }
