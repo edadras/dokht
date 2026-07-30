@@ -828,4 +828,75 @@ class DrapePayloadTest extends TestCase
 
         $this->assertGreaterThan(0, $seen, 'هیچ درزی سنجیده نشد.');
     }
+    /**
+     * یقهٔ ایستاده به خط یقه دوخته می‌شود، نه به آستین.
+     *
+     * bandPiece برای کمربند و بند نوشته شده و لبه‌های بلندش را «default»
+     * می‌گذارد؛ standCollarPiece همان را برمی‌داشت، پس یقهٔ ایستاده هیچ لبهٔ
+     * «neck» نداشت و کمانِ آزادِ خط یقه هیچ‌وقت شریکش نمی‌شد. روی قپائو از
+     * ۱۰۹ سانتی‌متر محیط تنها ۴٫۵ دوخته بود — و آن ۴٫۵ هم به سجاف رفته بود، نه
+     * به گردن. یقه آزاد دور گردن شناور می‌ماند و آستین را هم با خودش می‌کشید.
+     * نُه لباس همین یقه را دارند.
+     *
+     * و درز پهلو میان دو قطعهٔ هم‌نقش است: درز زیربغلِ آستینِ قپائو ۴ سانتی‌متر
+     * است و لبهٔ کنارِ یقه‌بند ۴٫۵ — اختلاف ۱۱٪، زیر حدِ ۱۲٪ — پس آستین به یقه
+     * دوخته می‌شد. پوششِ آستین روی بازو ۳۰ درجه از ۳۶۰ اندازه گرفته شد.
+     */
+    public function test_a_stand_collar_reaches_the_neckline(): void
+    {
+        $seen = 0;
+
+        foreach (['trad_qipao', 'coat_cape', 'jacket_anorak', 'dress_shirtdress'] as $key) {
+            if (! GeneratorRegistry::has($key)) {
+                continue;
+            }
+
+            $payload = $this->payload($key);
+            $stand = null;
+
+            foreach ($payload['pieces'] as $piece) {
+                if (str_contains($piece['id'], 'collar-stand')) {
+                    $stand = $piece['id'];
+
+                    break;
+                }
+            }
+
+            if ($stand === null) {
+                continue;
+            }
+
+            $seen++;
+            $sewn = 0.0;
+            $wrong = [];
+
+            foreach ($payload['seams'] as $seam) {
+                foreach ([['a', 'b'], ['b', 'a']] as [$one, $two]) {
+                    if ($seam[$one]['piece'] !== $stand) {
+                        continue;
+                    }
+
+                    $sewn += (float) $seam[$one]['length'];
+
+                    if (str_contains($seam[$two]['piece'], 'sleeve')) {
+                        $wrong[] = $seam[$two]['piece'];
+                    }
+                }
+            }
+
+            $this->assertSame(
+                [],
+                $wrong,
+                "«{$key}»: یقهٔ ایستاده به آستین دوخته شد؛ درز پهلو میان دو قطعهٔ هم‌نقش است.",
+            );
+
+            $this->assertGreaterThan(
+                20.0,
+                $sewn,
+                "«{$key}»: از یقهٔ ایستاده تنها {$sewn} سانتی‌متر دوخته شد؛ لبهٔ neck ندارد.",
+            );
+        }
+
+        $this->assertGreaterThan(0, $seen, 'هیچ یقهٔ ایستاده‌ای پیدا نشد؛ آزمون چیزی را نسنجید.');
+    }
 }

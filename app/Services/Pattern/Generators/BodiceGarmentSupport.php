@@ -333,7 +333,22 @@ trait BodiceGarmentSupport
             $o['name'] ?? 'یقه ایستاده',
             max(8.0, $halfNeck + (float) ($o['extra'] ?? 1.5)),
             max(2.0, $height),
-            ['cut' => 2, 'on_fold' => true, 'part' => 'collar', 'fold_line' => true, 'meta' => ['interfacing' => true, 'neck_length' => round($halfNeck, 2)]],
+            ['cut' => 2, 'on_fold' => true, 'part' => 'collar', 'fold_line' => true, 'meta' => [
+                'interfacing' => true,
+                'neck_length' => round($halfNeck, 2),
+                /*
+                 * لبهٔ ۰ خط یقه است، نه یک لبهٔ بی‌نام.
+                 *
+                 * bandPiece برای کمربند و بند نوشته شده و لبه‌های بلندش را
+                 * «default» می‌گذارد. برای یقه این یعنی هیچ لبه‌ای برچسبِ «neck»
+                 * ندارد، و سازندهٔ رابطه‌ها خط یقه را فقط از همان برچسب می‌شناسد:
+                 * یقهٔ ایستاده هیچ‌وقت به خط یقه دوخته نمی‌شد. روی قپائو اندازه
+                 * گرفته شد — از ۱۰۹ سانتی‌متر محیطِ یقه‌بند تنها ۴٫۵ دوخته بود، و
+                 * آن ۴٫۵ هم به سجاف رفته بود نه به گردن. یقه آزاد دور گردن شناور
+                 * می‌ماند. نُه لباس همین یقه را دارند.
+                 */
+                'edges' => ['neck', 'side', 'default', 'default'],
+            ]],
         );
     }
 
