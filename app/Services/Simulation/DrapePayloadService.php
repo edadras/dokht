@@ -1703,9 +1703,29 @@ class DrapePayloadService
                 continue;
             }
 
-            // کدام تکه به کدام شریک؟ هزینهٔ هر دو حالت سنجیده می‌شود
-            $straight = $this->cost($parts[0], $partners[0]) + $this->cost($parts[1], $partners[1]);
-            $swapped = $this->cost($parts[0], $partners[1]) + $this->cost($parts[1], $partners[0]);
+            /*
+             * کدام تکه به کدام شریک؟ فاصله *و* طول، هر دو.
+             *
+             * تا وقتی تنها cost() ملاک بود، این تصمیم روی دو سویِ بدن یک‌جور
+             * درنمی‌آمد: سرِ آستین و حلقهٔ تنه در دو دستگاهِ متفاوت‌اند (بازو و
+             * تنه) و cost() برای دو دستگاه فقط اختلافِ ارتفاع را می‌سنجد. دو
+             * حالتِ ممکن ارتفاعِ نزدیکی داشتند و نوسانِ چند میلی‌متری تصمیم را
+             * برمی‌گرداند: روی آستینِ چپِ پیراهن ۱۲٫۱ سانتی‌متر سرآستین به کمانِ
+             * ۵٫۹ سانتی‌متریِ یوک می‌رفت و ۶٫۳ به کمانِ ۱۱٫۴ سانتی‌متریِ تنه، و
+             * آستینِ راست درست بود.
+             *
+             * طولِ دو سرِ یک درز باید به هم بخورد؛ همین یک عدد ابهام را برمی‌دارد.
+             */
+            $fit = fn (array $one, array $two): float => abs($one['length'] - $two['length'])
+                / max(0.01, max($one['length'], $two['length']));
+            $straight = $fit($parts[0], $partners[0]) + $fit($parts[1], $partners[1]);
+            $swapped = $fit($parts[0], $partners[1]) + $fit($parts[1], $partners[0]);
+
+            if (abs($straight - $swapped) < 0.05) {
+                // طول‌ها تفاوتی نمی‌گذارند؛ جای روی بدن تصمیم می‌گیرد
+                $straight = $this->cost($parts[0], $partners[0]) + $this->cost($parts[1], $partners[1]);
+                $swapped = $this->cost($parts[0], $partners[1]) + $this->cost($parts[1], $partners[0]);
+            }
 
             if ($swapped < $straight) {
                 $parts = [$parts[1], $parts[0]];
