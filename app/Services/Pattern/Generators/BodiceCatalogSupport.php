@@ -323,8 +323,26 @@ trait BodiceCatalogSupport
             $this->notch($armholeNotch['x'], $armholeNotch['y'], $armholeEdges[1], $front ? 'نشانه جلوی حلقه' : 'نشانه پشت حلقه', $front ? 'armhole_front' : 'armhole_back'),
         ];
 
-        if ($length > 1.5 && $shape !== 'straight') {
+        if ($length > 1.5 && ! in_array($shape, ['straight', 'trapeze'], true)) {
             $notches[] = $this->notch($cf + $qb - $sideIntake, $sideWaistY, $sideEdgeIndexes[0], 'نشانه کمر روی پهلو', 'waist_side');
+        } elseif ($length > 1.5 && $shape === 'trapeze') {
+            /*
+             * در فرمِ ذوزنقه‌ای، پهلو یک خطِ صافِ مورب از زیر بغل تا لبهٔ پایین است
+             * و هیچ گودیِ کمری ندارد. نشانه باید *روی همان خط* بنشیند، نه روی
+             * جایی که کمرگیری می‌بود: با فرمولِ کمرگیری، نشانه دو و نیم سانتی‌متر
+             * بیرونِ مسیر می‌افتاد و بازرسیِ کاتالوگ همان را گرفت.
+             */
+            $spot = Geometry::pointOnEdge($outline, $sideEdgeIndexes[0], max(0.0, min(1.0,
+                ($sideWaistY - $bustY) / max(0.1, $sideBottomY - $bustY),
+            )));
+
+            $notches[] = $this->notch(
+                (float) $spot['x'],
+                (float) $spot['y'],
+                $sideEdgeIndexes[0],
+                'نشانه کمر روی پهلو',
+                'waist_side',
+            );
         }
 
         $lines = ['bust' => $bustY];

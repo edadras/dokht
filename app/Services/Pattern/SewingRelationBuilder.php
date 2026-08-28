@@ -187,7 +187,35 @@ class SewingRelationBuilder
         $waistband = static::pick($tagged, ['waistband'], null);
 
         if ($waistband) {
+            /*
+             * کمربند به *هر* قطعهٔ پایین‌تنه‌ای که خط کمر دارد، نه فقط جلو و پشت.
+             *
+             * pick() تنها front_bodice و skirt_front و front_leg را برمی‌گرداند.
+             * ولی دامنِ ترک‌دار (لهنگا) از چند پنلِ هم‌نام ساخته می‌شود و
+             * زیردامنیِ ساری هم زیرِ بالاتنه‌ای می‌نشیند که خودش خط کمر ندارد؛
+             * هر دو بی‌دوخت می‌ماندند.
+             */
+            $lowers = [];
+
             foreach ([$front, $back] as $target) {
+                if ($target) {
+                    $lowers[(string) $target['piece']->code] = $target;
+                }
+            }
+
+            foreach ($tagged as $entry) {
+                $part = (string) ($entry['part'] ?? '');
+
+                if ($part === 'waistband' || ! in_array($part, static::LOWER_PARTS, true)) {
+                    continue;
+                }
+
+                if (static::edgesWithTag($entry, 'waist') !== []) {
+                    $lowers[(string) $entry['piece']->code] = $entry;
+                }
+            }
+
+            foreach ($lowers as $target) {
                 if (! $target) {
                     continue;
                 }
@@ -457,6 +485,31 @@ class SewingRelationBuilder
      * @param  array<string, true>  $used
      * @return array<int, array<string, mixed>>
      */
+    /**
+     * چینِ اعلام‌شدهٔ یک لبه، سانتی‌متر.
+     *
+     * `meta.gathers` می‌گوید چقدر از طولِ این لبه قرار است جمع شود. بی خواندنِ
+     * آن، دروازهٔ «اختلافِ طول بیش از ۱۲٪ یعنی این دو یک درز نیستند» هر درزِ
+     * چین‌دار را رد می‌کرد: دامنِ چین‌دارِ لباس محلی دو برابرِ لبهٔ تنه است و
+     * *باید* باشد. پیلی هم همین‌طور.
+     */
+    protected static function gathersOn(PatternPiece $piece, int $edge): float
+    {
+        $total = 0.0;
+
+        foreach (['gathers', 'pleats'] as $key) {
+            foreach ((array) ($piece->meta[$key] ?? []) as $entry) {
+                if ((int) ($entry['edge'] ?? -1) !== $edge) {
+                    continue;
+                }
+
+                $total += abs((float) ($entry['amount'] ?? ($entry['depth'] ?? 0)));
+            }
+        }
+
+        return $total;
+    }
+
     protected static function runsOf(PatternPiece $piece, array $tags, array $used): array
     {
         $count = count($tags);
@@ -509,6 +562,8 @@ class SewingRelationBuilder
                 $current = [
                     'piece' => $piece->code,
                     'part' => (string) ($piece->meta['part'] ?? ''),
+                    // چینِ اعلام‌شدهٔ روی همین کمان؛ ببینید pairScore()
+                    'gathers' => 0.0,
                     'side' => (string) ($piece->meta['side'] ?? ''),
                     'layer' => (string) ($piece->layer ?? 'outer'),
                     'tag' => $tags[$edge],
@@ -521,6 +576,7 @@ class SewingRelationBuilder
 
             $current['edges'][] = $edge;
             $current['length'] += Geometry::edgeLength($points, $edge);
+            $current['gathers'] += static::gathersOn($piece, $edge);
             $current['after'] = $tags[($edge + 1) % $count];
         }
 
@@ -585,8 +641,18 @@ class SewingRelationBuilder
             return null;
         }
 
-        $longer = max($a['length'], $b['length']);
-        $gap = abs($a['length'] - $b['length']) / max(0.01, $longer);
+        /*
+         * طولِ *تمام‌شده* مقایسه می‌شود، نه طولِ بریده.
+         *
+         * لبه‌ای که چین یا پیلی اعلام کرده، پس از جمع شدن کوتاه‌تر است و همان
+         * اندازهٔ کوتاه‌شده به شریکش دوخته می‌شود. بی این حساب، دامنِ چین‌دارِ
+         * لباس محلی — که دو برابرِ لبهٔ تنه بریده می‌شود و باید هم بشود — از
+         * دروازهٔ اختلافِ طول رد نمی‌شد و بی‌دوخت می‌ماند.
+         */
+        $doneA = max(0.5, $a['length'] - (float) ($a['gathers'] ?? 0));
+        $doneB = max(0.5, $b['length'] - (float) ($b['gathers'] ?? 0));
+        $longer = max($doneA, $doneB);
+        $gap = abs($doneA - $doneB) / max(0.01, $longer);
 
         // اختلاف طول بیش از این یعنی این دو لبه اصلاً یک درز نیستند؛ چینِ
         // واقعی هم روی meta.gathers ثبت می‌شود، پس این‌جا لازم نیست جا باز شود
