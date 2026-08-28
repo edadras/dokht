@@ -137,7 +137,20 @@ abstract class TopBaseGenerator extends BodiceBaseGenerator
 
         $path = [['x' => $minX - 1.5, 'y' => $center]];
 
+        // خط برش از مرکز به پهلو می‌رود و باید همان‌جا هم تمام شود. اگر نقطهٔ
+        // میانی‌اش از گوشهٔ بالای پنل (نوک بند یا نوک سرشانه) بیرون بزند، مسیر
+        // برش برمی‌گردد و لبهٔ بالای پنل را دو بار قطع می‌کند؛ قطعه‌ای که
+        // درمی‌آید مسیرش خودش را قطع کرده و بریده نمی‌شود. سقف را از خودِ پنل
+        // می‌گیریم، نه از عددی حدسی.
+        $edge = $this->topCornerX($panel['outline']) - 0.5;
+
         foreach ($this->topLine((string) ($spec['shape'] ?? 'straight'), $minX, $maxX, $center, $side, $spec) as $point) {
+            $point['x'] = min((float) $point['x'], $edge);
+
+            if (isset($point['cx'])) {
+                $point['cx'] = min((float) $point['cx'], $edge);
+            }
+
             $path[] = $point;
         }
 
@@ -173,6 +186,26 @@ abstract class TopBaseGenerator extends BodiceBaseGenerator
      *
      * @return array<int, array<string, mixed>>
      */
+    /**
+     * ایکسِ بالاترین گوشهٔ پنل — دورترین جایی که خط برشِ بالا اجازه دارد برود.
+     *
+     * @param  array<int, array<string, mixed>>  $outline
+     */
+    protected function topCornerX(array $outline): float
+    {
+        $x = 0.0;
+        $top = INF;
+
+        foreach ($outline as $point) {
+            if ((float) $point['y'] < $top) {
+                $top = (float) $point['y'];
+                $x = (float) $point['x'];
+            }
+        }
+
+        return $x;
+    }
+
     protected function topLine(string $shape, float $minX, float $maxX, float $center, float $side, array $spec): array
     {
         $width = max(1.0, $maxX - $minX);
@@ -186,13 +219,18 @@ abstract class TopBaseGenerator extends BodiceBaseGenerator
                 'cx' => $minX + ($width * 0.18),
                 'cy' => $center,
             ]],
-            // گرد: خط با یک کمان ملایم پایین می‌افتد
+            // گرد: خط با یک کمان ملایم از مرکز به پهلو می‌رود.
+            //
+            // نقطهٔ کنترل باید میان دو سرِ همین کمان بماند، نه یک و نیم سانتی‌متر
+            // پایین‌ترِ نقطهٔ شروع: روی لباسی که مرکزش *پایین‌تر* از پهلوست
+            // (لباس خواب بندی)، آن یک و نیم سانتی‌متر کمان را زیر نقطهٔ شروع
+            // می‌کشد و مسیرِ برش، لبهٔ مرکزِ جلو را دو بار قطع می‌کند.
             'scoop' => [[
                 'x' => $minX + ($width * 0.6),
                 'y' => ($center + $side) / 2,
                 'curve' => true,
                 'cx' => $minX + ($width * 0.2),
-                'cy' => $center + 1.5,
+                'cy' => $center + (((($center + $side) / 2) - $center) * 0.25),
             ]],
             default => [],
         };
