@@ -389,10 +389,17 @@ class SewingCompletionTest extends TestCase
      * دیگری نمی‌خواند، پیشبند اورال روی تنه می‌نشیند نه در درز، و لایه‌های
      * آستین لایه‌ای اصلاً به هم دوخته نمی‌شوند. راهش برچسب‌گذاری در خود ژنراتور
      * است، نه حدس زدن این‌جا.
+     *
+     * هر لباسی که *همین* دامن‌ها را به کار ببرد، همان کمبود را به ارث می‌برد؛
+     * پس ردیف‌های دستهٔ دوم چیز تازه‌ای نیستند، همان ترکِ بی‌درز در قابِ یک
+     * لباسِ کامل‌اند. با درست شدنِ ترکِ دامنِ ترک‌دار، همه با هم از این فهرست
+     * بیرون می‌آیند.
      */
     protected const ALLOW_LOOSE = [
         'evening_ball_gown', 'skirt_godet', 'skirt_gored', 'dress_mermaid',
         'overall', 'sleeve_layered', 'swim_skirted',
+        // همان دامن‌ها، این بار درون یک لباس
+        'evening_gored', 'evening_godet', 'bridal_gored', 'bridal_ball_gown', 'swim_skirted_long',
     ];
 
     public function test_no_main_piece_of_the_catalogue_is_left_unsewn(): void

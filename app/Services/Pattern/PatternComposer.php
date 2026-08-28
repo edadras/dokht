@@ -62,7 +62,8 @@ class PatternComposer
     /** گروه‌های رجیستری که می‌توانند نقش «بالاتنه» را بازی کنند. */
     public const BODICE_GROUPS = [
         'bodice', 'top', 'shirt', 'swim', 'evening', 'dress', 'outerwear', 'suit',
-        'traditional', 'active', 'underwear', 'sleepwear', 'beach', 'onepiece', 'child', 'garment',
+        'traditional', 'active', 'underwear', 'sleepwear', 'beach', 'onepiece', 'child',
+        'uniform', 'garment',
     ];
 
     /** گروه‌های رجیستری که می‌توانند نقش «پایین‌تنه» را بازی کنند. */
@@ -131,6 +132,8 @@ class PatternComposer
         $entry = fn (string $key, array $extra = []) => array_merge([
             'label' => GeneratorRegistry::make($key)->label(),
             'hint' => $this->describe($key),
+            // فصل، دستهٔ تازه‌ای از الگو نیست؛ همین مدل‌ها از زاویهٔ دیگر
+            'seasons' => SeasonClassifier::of($key),
         ], $extra);
 
         $bodice = [];
@@ -207,6 +210,7 @@ class PatternComposer
             'base' => $options,
             'styles' => $styles,
             'groups' => GeneratorRegistry::GROUPS,
+            'seasons' => SeasonClassifier::SEASONS,
             'style_order' => static::STYLE_ORDER,
         ];
     }
