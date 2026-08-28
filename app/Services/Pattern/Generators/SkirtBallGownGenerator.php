@@ -90,6 +90,8 @@ class SkirtBallGownGenerator extends SkirtBaseGenerator
             'cut_quantity' => $panels,
             'code' => 'ballgown-gore',
             'name' => 'ترک دامن',
+            // همهٔ ترک‌ها یک قطعه‌اند و به کپیِ خودشان دوخته می‌شوند
+            'neighbours' => ['ballgown-gore'],
         ]);
 
         if ($this->flag($params, 'petticoat', true)) {

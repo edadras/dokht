@@ -86,6 +86,17 @@ abstract class BlouseBaseGenerator extends ShirtBaseGenerator
      */
     abstract protected function blouse(): array;
 
+    /**
+     * نامِ مدل، از همان شناسنامه.
+     *
+     * مدل‌های قدیمی‌تر خودشان label دارند و همان می‌ماند؛ مدلِ تازه فقط title
+     * می‌نویسد و دیگر لازم نیست یک متد برای یک رشته بنویسد.
+     */
+    public function label(): string
+    {
+        return (string) ($this->blouse()['title'] ?? 'شومیز');
+    }
+
     public static function group(): string
     {
         return 'shirt';
@@ -339,7 +350,7 @@ abstract class BlouseBaseGenerator extends ShirtBaseGenerator
                 Geometry::point($length, $height),
                 Geometry::point(0, $height),
             ],
-            'grainline' => $this->grainline($length * 0.5, 0.5, $height - 0.5),
+            'grainline' => $this->bandGrainline($length, $height),
             'meta' => array_merge([
                 'part' => $o['part'] ?? 'trim',
                 'edges' => ['default', 'side', 'default', 'side'],

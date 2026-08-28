@@ -469,6 +469,15 @@ abstract class DressBaseGenerator extends BodiceGarmentBase
             $piece['code'] = $prefix.'-skirt-'.($piece['code'] ?? 'panel');
             $piece['name'] = 'دامن — '.($piece['name'] ?? '');
             $piece['meta']['dress_skirt'] = true;
+
+            // کدِ قطعه عوض شد، پس همسایه‌های اعلام‌شده هم باید با همان پیشوند
+            // نوشته شوند؛ وگرنه ترکِ دامن دنبالِ کدی می‌گردد که دیگر وجود ندارد
+            if (($piece['meta']['seam_neighbours'] ?? []) !== []) {
+                $piece['meta']['seam_neighbours'] = array_map(
+                    fn (string $code) => $prefix.'-skirt-'.$code,
+                    (array) $piece['meta']['seam_neighbours'],
+                );
+            }
             $out[] = $piece;
         }
 

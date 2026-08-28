@@ -68,10 +68,12 @@ class SkirtGoredGenerator extends SkirtBaseGenerator
             $this->gorePanel(array_merge($base, [
                 'half' => true, 'code' => 'gore-front', 'name' => 'ترک مرکز جلو',
                 'part' => 'skirt_front', 'side' => 'front',
+                'neighbours' => $panels > 2 ? ['gore-side'] : ['gore-back'],
             ])),
             $this->gorePanel(array_merge($base, [
                 'half' => true, 'code' => 'gore-back', 'name' => 'ترک مرکز پشت',
                 'part' => 'skirt_back', 'side' => 'back',
+                'neighbours' => $panels > 2 ? ['gore-side'] : ['gore-front'],
             ])),
         ];
 
@@ -82,6 +84,7 @@ class SkirtGoredGenerator extends SkirtBaseGenerator
                 'mirror' => true,
                 'code' => 'gore-side',
                 'name' => 'ترک پهلو',
+                'neighbours' => ['gore-front', 'gore-back', 'gore-side'],
                 'meta' => [
                     'notes' => [
                         'دم دامن روی '.$this->fa($panels).' ترک: '

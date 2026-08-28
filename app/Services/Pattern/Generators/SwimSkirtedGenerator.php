@@ -56,6 +56,8 @@ class SwimSkirtedGenerator extends SwimOnePieceGenerator
             'cut' => 2, 'part' => 'skirt_panel',
             'meta' => [
                 'girth_role' => 'trim',
+                // دو نیمهٔ یک دامن‌اند و در هر دو پهلو به هم می‌رسند
+                'seam_neighbours' => ['swim-skirt'],
                 'notes' => [
                     'از پارچهٔ خودِ مایو بریده می‌شود، نه پارچهٔ بافته؛ دامن سنگین در آب باد می‌کند و بالا می‌آید.',
                     'دم دامن با کش یا دوخت دولا تمام می‌شود.',

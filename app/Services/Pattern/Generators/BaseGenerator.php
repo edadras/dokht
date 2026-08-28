@@ -339,6 +339,31 @@ abstract class BaseGenerator implements PatternGenerator
         ];
     }
 
+    /**
+     * راستای پارچه برای یک نوارِ مستطیلی.
+     *
+     * نوار را نمی‌شود مثل پنل نگاه کرد. راستای پارچه در نوار در جهتِ *بلندیِ*
+     * نوار می‌رود، نه در جهتِ عرضش — نوار از همان جهت کشیده و دوخته می‌شود. و
+     * نوارِ باریک (رافلِ یک سانتی‌متری، کشِ کمر) اصلاً آن‌قدر پهنا ندارد که خطی
+     * عمودی رویش جا شود؛ خطی که می‌کشیدیم صفر درمی‌آمد و روی الگو دیده نمی‌شد.
+     *
+     * @return array<string, mixed>
+     */
+    protected function bandGrainline(float $length, float $height): array
+    {
+        if ($height >= 3.0) {
+            return $this->grainline($length * 0.5, 0.6, $height - 0.6);
+        }
+
+        $margin = min(1.0, max(0.1, $length * 0.05));
+
+        return [
+            'from' => Geometry::point($margin, $height / 2),
+            'to' => Geometry::point(max($margin + 1.0, $length - $margin), $height / 2),
+            'label' => 'راستای پارچه',
+        ];
+    }
+
     /** خط نشانه افقی (سینه، کمر، باسن). */
     protected function marker(string $key, string $label, float $fromX, float $y, float $toX, ?float $toY = null): array
     {

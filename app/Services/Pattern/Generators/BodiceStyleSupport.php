@@ -839,7 +839,7 @@ trait BodiceStyleSupport
                 Geometry::point($length, $height),
                 Geometry::point(0, $height),
             ],
-            'grainline' => $this->grainline($length * 0.5, 0.6, $height - 0.6),
+            'grainline' => $this->bandGrainline($length, $height),
             'markers' => ($o['fold_line'] ?? false)
                 ? [$this->marker('fold', 'خط تا', 0, $height / 2, $length)]
                 : [],

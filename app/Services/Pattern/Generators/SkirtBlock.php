@@ -646,6 +646,8 @@ trait SkirtBlock
                 'length' => round($length, 2),
                 'seam_length' => Geometry::edgesLength($outline, [1, 2]),
                 'seam_group' => $o['seam_group'] ?? 'skirt',
+                // کدام ترک به کدام ترک می‌رسد؛ هندسه این را نمی‌داند
+                'seam_neighbours' => array_values((array) ($o['neighbours'] ?? [])),
                 'gore_slit' => round($slit, 2),
                 'fullness' => [],
             ], $o['meta'] ?? []),
