@@ -57,6 +57,7 @@ class GeneratorRegistry
         'sleepwear' => 'لباس خواب',
         'beach' => 'لباس ساحلی',
         'onepiece' => 'لباس یک‌تکه و کار',
+        'uniform' => 'یونیفرم و لباس کار',
         'child' => 'لباس کودک',
         'sleeve' => 'آستین',
         'skirt' => 'دامن',
