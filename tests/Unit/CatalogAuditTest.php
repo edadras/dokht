@@ -665,7 +665,13 @@ class CatalogAuditTest extends TestCase
                 }
 
                 $upper = $this->waistGirth($pieces, ['front_bodice', 'back_bodice', 'yoke']);
-                $lower = $this->waistGirth($pieces, ['skirt_front', 'skirt_back', 'skirt_tier', 'peplum', 'front_leg', 'back_leg']);
+                // skirt_panel هم شمرده می‌شود: دامن ترک‌دار و گوده‌دار بیشترِ کمرشان
+                // روی همین ترک‌های میانی است، نه روی جلو و پشت. بدون آن، کمر
+                // پایین‌تنه یک‌چهارم واقعی گزارش می‌شد و لباسِ ترک‌دار بی‌صدا از
+                // زیر این بررسی رد می‌شد.
+                $lower = $this->waistGirth($pieces, [
+                    'skirt_front', 'skirt_back', 'skirt_panel', 'skirt_tier', 'peplum', 'front_leg', 'back_leg',
+                ]);
 
                 if ($upper <= 0.0 || $lower <= 0.0) {
                     continue;
