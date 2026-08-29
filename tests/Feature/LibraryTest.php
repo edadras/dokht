@@ -37,6 +37,38 @@ class LibraryTest extends TestCase
             ->assertSee(route('patterns.create', ['template' => $template->id]), false);
     }
 
+    /**
+     * کتابخانه نباید با بزرگ‌شدن کاتالوگ سنگین شود.
+     *
+     * پیش‌تر همهٔ الگوهای پایه در یک صفحه می‌آمدند و تصویرِ هرکدام هم در خودِ
+     * HTML بود. با هزاران الگو یعنی صفحه‌ای نوزده مگابایتی. حالا صفحه‌بندی شده و
+     * تصویرها نشانی دارند.
+     */
+    public function test_the_library_pages_its_templates_and_does_not_inline_previews(): void
+    {
+        $this->actingAsWorkshopUser();
+
+        for ($i = 0; $i < 60; $i++) {
+            PatternTemplate::factory()->create([
+                'name_fa' => 'الگوی شماره '.$i,
+                'is_public' => true,
+                'preview_svg' => '<svg id="stored-preview-'.$i.'"><rect width="10" height="10"/></svg>',
+            ]);
+        }
+
+        $html = $this->get(route('library.index'))->assertOk()->getContent();
+
+        $this->assertStringNotContainsString(
+            'stored-preview-',
+            $html,
+            'کتابخانه تصویر الگوها را در خودِ صفحه می‌گذارد؛ باید نشانی بدهد.',
+        );
+
+        // شصت الگو در یک صفحه جا نمی‌شوند: باید صفحهٔ دوم داشته باشد
+        $this->assertStringContainsString('page=2', $html);
+        $this->assertStringContainsString('preview.svg', $html);
+    }
+
     public function test_a_private_template_of_another_workshop_is_hidden(): void
     {
         $this->actingAsWorkshopUser('designer');
