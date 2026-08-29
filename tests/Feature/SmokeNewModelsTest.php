@@ -5,6 +5,12 @@ namespace Tests\Feature;
 use App\Models\Pattern;
 use App\Models\PatternTemplate;
 use App\Services\Pattern\GeneratorRegistry;
+use App\Services\Pattern\Generators\ModestRangeCatalog;
+use App\Services\Pattern\Generators\SuitRangeCatalog;
+use App\Services\Pattern\Generators\SwimRangeCatalog;
+use App\Services\Pattern\Generators\TopRangeCatalog;
+use App\Services\Pattern\Generators\UnderwearRangeCatalog;
+use App\Services\Pattern\Generators\UniformRangeCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -14,20 +20,33 @@ class SmokeNewModelsTest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * یک مدل از هر خانواده، *خوانده‌شده از خودِ خانواده*.
+     *
+     * کلیدها این‌جا دستی نوشته نمی‌شوند: با هر محورِ تازه‌ای که به یک جدول
+     * اضافه شود کلیدها عوض می‌شوند و آزمون بی‌آنکه ایرادی در کار باشد می‌افتد.
+     * پس نامِ خانواده را می‌دهیم و ردیفِ اولش را خودش برمی‌دارد.
+     *
+     * @return array<string, array{0: class-string}>
+     */
     public static function newModels(): array
     {
         return [
-            'تاپ' => ['top_range_tank_waist_regular_knit'],
-            'مایو' => ['swim_range_onepiece_standard_full'],
-            'پیراهن پوشیده' => ['modest_kurta_mid_long_regular_stand'],
-            'یونیفرم' => ['uni_lab_coat_mid_long_pocket_button_turn'],
-            'کت‌وشلوار' => ['suit_set_jacket_mid_b2_regular_lined'],
+            'تاپ' => [TopRangeCatalog::class],
+            'مایو' => [SwimRangeCatalog::class],
+            'پیراهن پوشیده' => [ModestRangeCatalog::class],
+            'یونیفرم' => [UniformRangeCatalog::class],
+            'کت‌وشلوار' => [SuitRangeCatalog::class],
+            'لباس زیر' => [UnderwearRangeCatalog::class],
         ];
     }
 
     #[DataProvider('newModels')]
-    public function test_a_pattern_can_be_made_from_a_new_family_model(string $key): void
+    public function test_a_pattern_can_be_made_from_a_new_family_model(string $family): void
     {
+        $key = (string) array_key_first($family::variants());
+
+        $this->assertNotSame('', $key, "«{$family}» هیچ ردیفی ندارد.");
         $this->assertTrue(GeneratorRegistry::has($key), "«{$key}» در رجیستری نیست.");
 
         $this->actingAsWorkshopUser();
