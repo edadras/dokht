@@ -38,7 +38,7 @@ class ModestRangeCatalog extends CatalogVariantBase
      * @var array<string, array{0: string, 1: string, 2: array<int, float>, 3: bool, 4?: array<int, string>, 5?: array{0: string, 1: array<string, array{0: string, 1: float}>}}>
      */
     protected const ROBES = [
-        'kurta' => ['کورتا', 'trad_kurta', [32, 40, 56], true, null, ['hem_flare', self::FLARE_SMALL]],
+        'kurta' => ['کورتا', 'trad_kurta', [32, 40, 56], true, null, ['pocket', self::POCKETS]],
         'bindalli' => ['بیندالی', 'trad_bindalli', [110, 136, 155], true, null, ['front_slit', self::SLIT]],
         'dishdasha' => ['دشداشه', 'trad_dishdasha', [118, 142, 158], true, null, ['front_slit', self::SLIT]],
         'kebaya' => ['کبایا', 'trad_kebaya', [50, 62, 78], true, null, ['front_slit', self::SLIT]],
@@ -61,10 +61,10 @@ class ModestRangeCatalog extends CatalogVariantBase
          * کوتاه خطِ باسنش وسطِ کلوش می‌افتد و روی بدنِ درشت از بازهٔ کاتالوگ
          * بیرون می‌زند. همین برای شلوار کمیض هم هست.
          */
-        'tunic' => ['تونیک پوشیده', 'trad_modest_tunic', [40, 48, 62], true, ['short', 'long'], ['hem_flare', self::FLARE_TUNIC]],
+        'tunic' => ['تونیک پوشیده', 'trad_modest_tunic', [40, 48, 62], true, ['short', 'long'], ['cuff', self::CUFFS]],
         // این دو یقهٔ ایستادهٔ ثابت دارند و آن بخشی از هویتشان است
         'qipao' => ['چیپائو', 'trad_qipao', [58, 72, 95], false, null, ['overlap', self::OVERLAP]],
-        'shalwar' => ['شلوار کمیض', 'trad_shalwar_kameez', [48, 58, 72], false, null, ['hem_flare', self::FLARE_SMALL]],
+        'shalwar' => ['شلوار کمیض', 'trad_shalwar_kameez', [48, 58, 72], false, null, ['shalwar_ankle', self::ANKLES]],
     ];
 
     /** چاکِ جلو: بسته یا باز. روی پیراهنِ بلند، چاک راهِ رفتن را باز می‌کند. */
@@ -73,16 +73,35 @@ class ModestRangeCatalog extends CatalogVariantBase
         'slit' => ['چاک جلو', 30.0],
     ];
 
-    /** کلوشِ دمِ پیراهن‌های کوتاه‌تر. */
-    protected const FLARE_SMALL = [
-        'straight' => ['دم راسته', 0.0],
-        'flared' => ['دم کلوش', 10.0],
+    /*
+     * سه پیراهنِ کوتاهِ این جدول — کورتا، تونیک و کمیض — محورِ کلوشِ دم نگرفتند،
+     * و این از یک تلهٔ واقعی درآمد.
+     *
+     * این‌ها کوتاه‌اند و خطِ باسنشان *داخلِ* کلوش می‌افتد، نه بالای آن. پس هر
+     * سانتی‌متر کلوش مستقیم به دورِ باسنِ تمام‌شده اضافه می‌شود: کلوشِ محسوس،
+     * لباس را از بازهٔ کاتالوگ بیرون می‌برد، و کلوشِ آن‌قدر کم که در بازه بماند،
+     * درفت خودش گِردش می‌کند و دو ردیف یک الگو می‌شوند. هر دو سرش بسته بود.
+     *
+     * پس محورشان چیزی شد که قطعه را عوض می‌کند و به دورِ باسن کاری ندارد: جیبِ
+     * کورتا، مچ‌بندِ تونیک و دمِ پاچهٔ شلوارِ کمیض.
+     */
+
+    /** جیبِ کورتا: یک قطعهٔ کاملِ اضافه. */
+    protected const POCKETS = [
+        'plain' => ['بی‌جیب', false],
+        'pocket' => ['جیب‌دار', true],
     ];
 
-    /** کلوشِ دمِ تونیک؛ کفِ درفتش دو سانتی‌متر است، پس از صفر شروع نمی‌شود. */
-    protected const FLARE_TUNIC = [
-        'straight' => ['دم راسته', 3.0],
-        'flared' => ['دم کلوش', 16.0],
+    /** مچ‌بندِ تونیک: نوارِ جدا روی دمِ آستین. */
+    protected const CUFFS = [
+        'plain' => ['بی‌مچ‌بند', false],
+        'cuffed' => ['مچ‌بنددار', true],
+    ];
+
+    /** دمِ پاچهٔ شلوارِ کمیض. */
+    protected const ANKLES = [
+        'narrow' => ['دم پاچه جمع', 24.0],
+        'wide' => ['دم پاچه گشاد', 34.0],
     ];
 
     /** رویهم‌آمدنِ جلوی چیپائو. */

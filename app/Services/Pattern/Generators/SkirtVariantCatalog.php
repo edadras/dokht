@@ -110,8 +110,16 @@ class SkirtVariantCatalog extends CatalogVariantBase
         'back' => ['زیپ پشت', 'back'],
     ];
 
-    /** دامن‌هایی که کمرشان کشی یا چین است و زیپ نمی‌گیرند. */
-    protected const NO_ZIP = ['tiered', 'paperbag', 'elastic', 'skort', 'peplum'];
+    /**
+     * دامن‌هایی که محورِ جای زیپ رویشان نمی‌چرخد.
+     *
+     * دستهٔ اول کمرشان کشی یا چین است و اصلاً زیپ نمی‌گیرند. دامنِ نامتقارن
+     * دلیلِ دیگری دارد: پنلِ پشتش از اول کامل بریده می‌شود، نه نیم‌پنلِ روی تا،
+     * پس درزِ مرکزِ پشتی وجود ندارد که زیپ در آن بنشیند و زیپش همیشه پهلوست.
+     *
+     * @var array<int, string>
+     */
+    protected const NO_ZIP = ['tiered', 'paperbag', 'elastic', 'skort', 'peplum', 'asymmetric'];
 
     public static function variants(): array
     {

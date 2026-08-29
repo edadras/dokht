@@ -26,12 +26,19 @@ class UniformRangeCatalog extends CatalogVariantBase
     /**
      * بالاتنه‌ها: کلید ⇒ [نام، درفتِ پایه، سه قد، آستین‌ها، بستِ جلو دارد، یقهٔ انتخابی دارد].
      *
-     * @var array<string, array{0: string, 1: string, 2: array<int, float>, 3: array<int, string>, 4: bool, 5: bool}>
+     * ستونِ آخر برشِ *این* مدل است، اگر با برشِ مشترک جور درنیاید.
+     *
+     * @var array<string, array{0: string, 1: string, 2: array<int, float>, 3: array<int, string>, 4: bool, 5: bool, 6?: array<string, array{0: string, 1: float}>}>
      */
     protected const TOPS = [
         'lab_coat' => ['روپوش آزمایشگاه', 'uniform_lab_coat', [46, 58, 76], ['short', 'long'], true, true],
         'school_shirt' => ['پیراهن مدرسه', 'uniform_school_shirt', [16, 20, 32], ['short', 'long'], true, true],
-        'nurse_dress' => ['روپوش پرستاری', 'uniform_nurse_dress', [52, 62, 80], ['none', 'short', 'long'], true, true],
+        /*
+         * روپوش پرستاری برشِ ملایم‌تری می‌گیرد: خودِ درفتش دمِ کلوش دارد، و
+         * برشِ راحتِ مشترک (شش سانتی‌متر) روی آن، دورِ باسنِ تمام‌شده را از بازهٔ
+         * کاتالوگ بیرون می‌برد. این لباسِ درمانی است نه روپوشِ کارگاه.
+         */
+        'nurse_dress' => ['روپوش پرستاری', 'uniform_nurse_dress', [52, 62, 80], ['none', 'short', 'long'], true, true, self::SOFT_CUTS],
         'office_dress' => ['پیراهن اداری', 'uniform_office_dress', [50, 58, 74], ['none', 'short', 'long'], true, true],
         'office_shirt' => ['پیراهن اداری کوتاه', 'uniform_office_shirt', [18, 22, 34], ['short', 'long'], true, true],
         'work_jacket' => ['کت کار', 'uniform_work_jacket', [14, 16, 28], ['short', 'long'], true, true],
@@ -118,6 +125,12 @@ class UniformRangeCatalog extends CatalogVariantBase
         'roomy' => ['برش راحت', 6.0],
     ];
 
+    /** برشِ لباس‌هایی که خودشان از پیش کلوش دارند. */
+    protected const SOFT_CUTS = [
+        'trim' => ['برش نزدیک به تن', 1.5],
+        'roomy' => ['برش راحت', 3.0],
+    ];
+
     /** آزادیِ زانوی شلوارِ کار، هم‌نقشِ CUTS برای پایین‌تنه. */
     protected const LEG_CUTS = [
         'trim' => ['برش نزدیک به تن', 10.0],
@@ -169,7 +182,9 @@ class UniformRangeCatalog extends CatalogVariantBase
     {
         $rows = [];
 
-        foreach (static::TOPS as $top => [$name, $base, $lengths, $sleeves, $hasOpening, $hasCollar]) {
+        foreach (static::TOPS as $top => $row) {
+            [$name, $base, $lengths, $sleeves, $hasOpening, $hasCollar] = $row;
+            $cuts = $row[6] ?? static::CUTS;
             foreach ($lengths as $index => $cm) {
                 foreach ($sleeves as $sleeve) {
                     [$sleeveName, $style, $sleeveLength] = static::SLEEVES[$sleeve];
@@ -193,7 +208,7 @@ class UniformRangeCatalog extends CatalogVariantBase
                                 $title .= '، '.static::OPENINGS[$opening][0];
                             }
 
-                            foreach (static::CUTS as $cut => [$cutName, $ease]) {
+                            foreach ($cuts as $cut => [$cutName, $ease]) {
                                 $cutKey = $key.'_'.$cut;
                                 $cutTitle = $title.'، '.$cutName;
                                 $cutParams = array_merge($params, ['ease_extra' => $ease]);
