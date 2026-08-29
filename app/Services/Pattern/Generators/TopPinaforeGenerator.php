@@ -3,6 +3,7 @@
 namespace App\Services\Pattern\Generators;
 
 use App\Services\Pattern\Geometry;
+use App\Services\Pattern\Transform\PieceOps;
 use App\Services\Pattern\Transform\StyleLineCutter;
 
 /**
@@ -93,9 +94,20 @@ class TopPinaforeGenerator extends TopBaseGenerator
 
         $front = $this->carveBib($front, $bibTop, $bibShare, $bibDrop);
 
-        $back = $this->cutTop($back, [
+        /*
+         * بریدنِ پشت از همان ارتفاع کافی نیست.
+         *
+         * درزِ پهلوی جلو و پشت از یک ارتفاع شروع می‌شوند، ولی *منحنی*شان یکی
+         * نیست: جلو گودیِ سینه را دارد و پشت ندارد. پس دو درزی که به هم دوخته
+         * می‌شوند چند دهمِ سانتی‌متر اختلاف پیدا می‌کنند — کم، ولی روی میزِ
+         * دوخت یعنی یک لبه از آن یکی بلندتر است. با بلندترشدنِ سینه‌بند این
+         * اختلاف هم بیشتر می‌شود.
+         *
+         * پس به‌جای «هم‌ارتفاع»، «هم‌طول» می‌بُریم: خطِ برشِ پشت را آن‌قدر بالا و
+         * پایین می‌بریم تا طولِ درزِ پهلویش با جلو یکی شود.
+         */
+        $back = $this->matchSideSeam($back, $front, $bibTop + $bibDrop, [
             'center' => max(2.0, (float) ($g['shoulder_drop'] ?? 4) + $backDrop),
-            'side' => $bibTop + $bibDrop,
             'shape' => 'straight',
         ]);
 
@@ -151,5 +163,53 @@ class TopPinaforeGenerator extends TopBaseGenerator
         $bib['meta']['bib'] = true;
 
         return Geometry::normalizePiece($this->dropStrayMarks($bib));
+    }
+
+    /**
+     * بریدنِ خطِ بالای پنلِ پشت، آن‌قدر که درزِ پهلویش هم‌اندازهٔ جلو دربیاید.
+     *
+     * ارتفاعِ خواسته‌شده نقطهٔ شروع است؛ از آن‌جا با تنصیف بالا و پایین می‌رویم.
+     * طولِ درزِ پهلو با پایین‌رفتنِ خطِ برش کم می‌شود و با بالا رفتنش زیاد، پس
+     * جست‌وجو یکنواخت است و ده دور برای رسیدن به دهمِ میلی‌متر بس است.
+     *
+     * @param  array<string, mixed>  $back
+     * @param  array<string, mixed>  $front
+     * @param  array<string, mixed>  $spec
+     * @return array<string, mixed>
+     */
+    protected function matchSideSeam(array $back, array $front, float $sideY, array $spec): array
+    {
+        $target = PieceOps::seamLength($front, 'side');
+
+        if ($target <= 0) {
+            return $this->cutTop($back, array_merge($spec, ['side' => $sideY]));
+        }
+
+        [, $minY, , $maxY] = Geometry::bounds($back['outline']);
+        $low = $minY + 0.5;
+        $high = $maxY - 4.0;
+        $best = $this->cutTop($back, array_merge($spec, ['side' => $sideY]));
+        $bestGap = abs(PieceOps::seamLength($best, 'side') - $target);
+
+        for ($step = 0; $step < 10 && $bestGap > 0.02; $step++) {
+            $middle = ($low + $high) / 2;
+            $candidate = $this->cutTop($back, array_merge($spec, ['side' => $middle]));
+            $length = PieceOps::seamLength($candidate, 'side');
+            $gap = abs($length - $target);
+
+            if ($gap < $bestGap) {
+                $best = $candidate;
+                $bestGap = $gap;
+            }
+
+            // خطِ برشِ پایین‌تر یعنی درزِ پهلوی کوتاه‌تر
+            if ($length > $target) {
+                $low = $middle;
+            } else {
+                $high = $middle;
+            }
+        }
+
+        return $best;
     }
 }

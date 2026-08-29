@@ -61,7 +61,16 @@ class TopOneShoulderGenerator extends TopBaseGenerator
 
         $shared = [
             'shape' => $this->fitShape($params),
-            'length' => $this->bodyLength($params, $g, 6),
+            /*
+             * یک‌شانه هم کفِ قدِ خودش را دارد.
+             *
+             * برشِ «سمتِ بی‌بند» از لبهٔ بیرونی مورب بالا می‌رود؛ روی پنلِ بلند
+             * این برش در ناحیهٔ حلقه می‌ماند و کاری به درزِ پهلو ندارد. روی پنلِ
+             * کوتاه ولی وارد خودِ درزِ پهلو می‌شود، و چون پشت دو سانتی‌متر
+             * پایین‌تر بریده می‌شود، درزِ پهلوی پشت از جلو کوتاه‌تر درمی‌آید و
+             * دو لبه‌ای که به هم دوخته می‌شوند دیگر هم‌اندازه نیستند.
+             */
+            'length' => $this->bodyLength($params, $g, 6, clearance: 16.0),
             'grow' => $grow,
             'bottom_tag' => 'hem',
             'waist_dart' => true,

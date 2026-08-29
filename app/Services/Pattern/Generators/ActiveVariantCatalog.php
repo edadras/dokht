@@ -53,7 +53,14 @@ class ActiveVariantCatalog extends CatalogVariantBase
      */
     protected const ACTIVE_BOTTOMS = [
         'tights' => ['تایت ورزشی', 'active_tights', ['crop', 'ankle', 'full']],
-        'capri' => ['تایت سه‌ربع', 'active_capri_tights', ['crop', 'ankle']],
+        /*
+         * تایتِ سه‌ربع این‌جا ردیف ندارد، و درست هم همین است.
+         *
+         * درفتِ «تایت سه‌ربع» با تایتِ معمولی فقط در یک چیز فرق دارد: قدِ پا. و
+         * قد همان محوری است که این جدول می‌چرخاند، پس ردیفِ «تایت سه‌ربعِ کراپ»
+         * مو به مو همان «تایتِ کراپ» درمی‌آمد با نامی دیگر. خودِ درفت سرِ جایش
+         * در فهرست هست، برای کسی که آن را با نامش می‌خواهد.
+         */
         'bike' => ['تایت کوتاه ورزشی', 'active_bike_shorts', ['crop']],
         'track' => ['شلوار گرمکن', 'active_track_pants', ['ankle', 'full']],
         'yoga' => ['شلوار یوگا', 'active_yoga_pants', ['ankle', 'full']],

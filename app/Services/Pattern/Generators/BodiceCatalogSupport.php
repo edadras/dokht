@@ -324,7 +324,25 @@ trait BodiceCatalogSupport
         ];
 
         if ($length > 1.5 && ! in_array($shape, ['straight', 'trapeze'], true)) {
-            $notches[] = $this->notch($cf + $qb - $sideIntake, $sideWaistY, $sideEdgeIndexes[0], 'نشانه کمر روی پهلو', 'waist_side');
+            /*
+             * ایکسِ نشانه از خودِ مسیر خوانده می‌شود، نه از فرمولِ کمرگیری.
+             *
+             * درزِ پهلو یک منحنی است و نقطهٔ کمرش نقطهٔ کنترلِ همان منحنی هم هست؛
+             * منحنی از نقطهٔ کنترل *رد نمی‌شود*، از کنارش می‌گذرد. روی بدنی که
+             * اختلاف سینه تا کمرش زیاد است، این «کنار» به نیم سانتی‌متر می‌رسد و
+             * نشانه بیرونِ لبه می‌افتد — یعنی خیاط جایی را نشانه می‌زند که روی
+             * الگو نیست.
+             */
+            // همان شکلی که خطِ نشانهٔ باسن هم می‌نویسد: پهنا از مسیر، و مرکز از cf
+            $waistX = $this->panelWidthAt(['outline' => $outline], $sideWaistY);
+
+            $notches[] = $this->notch(
+                $waistX > 0 ? $cf + max(0.0, $waistX - $cf) : $cf + $qb - $sideIntake,
+                $sideWaistY,
+                $sideEdgeIndexes[0],
+                'نشانه کمر روی پهلو',
+                'waist_side',
+            );
         } elseif ($length > 1.5 && $shape === 'trapeze') {
             /*
              * در فرمِ ذوزنقه‌ای، پهلو یک خطِ صافِ مورب از زیر بغل تا لبهٔ پایین است

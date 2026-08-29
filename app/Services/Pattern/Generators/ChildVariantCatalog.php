@@ -28,7 +28,10 @@ class ChildVariantCatalog extends ChildGarmentBaseGenerator implements VariantAw
         'partydress' => ['پیراهن مجلسی', 'dress', 'button', 'none', 38.0, 3.5, false],
         'cardigan' => ['ژاکت', 'top', 'button', 'none', 15.0, 0.0, false],
         'jacket' => ['کاپشن', 'top', 'zip', 'hood', 18.0, 0.0, true],
-        'coat' => ['پالتو', 'top', 'button', 'turn', 32.0, 3.5, true],
+        // کلوشِ پالتو عمداً کمتر از پیراهن مجلسی است: پالتو خودش روی لباسِ دیگر
+        // پوشیده می‌شود و آزادیِ تنه‌اش را از همان‌جا دارد؛ کلوشِ بیشتر روی هم
+        // با آزادیِ «بازی» و «رشد»، دورِ باسن را از بازهٔ کاتالوگ بیرون می‌برد
+        'coat' => ['پالتو', 'top', 'button', 'turn', 32.0, 2.6, true],
         'vest' => ['جلیقه', 'top', 'button', 'none', 14.0, 0.0, false],
     ];
 
