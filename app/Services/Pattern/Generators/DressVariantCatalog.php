@@ -12,6 +12,8 @@ namespace App\Services\Pattern\Generators;
  *   قد        کوتاه، زانو، میدی، ماکسی
  *   آستین     بی‌آستین، حلقه‌ای، کوتاه، سه‌ربع، بلند
  *   یقه       گرد، هفت، خشتی، قایقی
+ *   فرم       معمولی، جذب
+ *   آستر      بی‌آستر، آستر بالاتنه، آستر کامل
  *
  * ترکیب‌ها کورکورانه ضرب نشده‌اند: هر سایه فقط قدهایی را می‌پذیرد که روی آن
  * معنا دارند (دامنِ پیلیِ کوتاه هست، ولی ماکسیِ مدادی نه) و هر قد فقط آستین‌هایی
@@ -86,6 +88,22 @@ class DressVariantCatalog extends DressCatalogBaseGenerator implements VariantAw
     ];
 
     /**
+     * آستر: کلید ⇒ [نام، مقدارِ پارامتر].
+     *
+     * آستر برچسب نیست، یک دست قطعهٔ کاملِ دیگر است که باید بریده و دوخته شود.
+     * برندها همین پیراهن را در سه ساخت می‌فروشند: بی‌آستر برای پارچهٔ نازکِ
+     * تابستانی، آسترِ بالاتنه برای وقتی فقط بالا نیاز به پوشش دارد، و آسترِ
+     * کامل برای پارچهٔ نازک یا توری که سراسر باید آستر بخورد.
+     *
+     * @var array<string, array{0: string, 1: string}>
+     */
+    protected const LININGS = [
+        'unlined' => ['بی‌آستر', 'none'],
+        'bodice' => ['آستر بالاتنه', 'bodice'],
+        'full' => ['آستر کامل', 'full'],
+    ];
+
+    /**
      * یقه‌ها: کلید ⇒ [نام، پهنای اضافه، گودیِ اضافهٔ جلو].
      *
      * @var array<string, array{0: string, 1: float, 2: float}>
@@ -126,29 +144,33 @@ class DressVariantCatalog extends DressCatalogBaseGenerator implements VariantAw
                         }
 
                         foreach (static::FITS as $fit => $fitName) {
-                            $key = 'dress_'.$shape.'_'.$length.'_'.$sleeve.'_'.$neck.'_'.$fit;
+                            foreach (static::LININGS as $lining => [$liningName, $liningValue]) {
+                                $key = 'dress_'.$shape.'_'.$length.'_'.$sleeve.'_'.$neck.'_'.$fit.'_'.$lining;
 
-                            $rows[$key] = [
-                                'title' => 'پیراهن '.$shapeName.' '.$lengthName.'، '.$sleeveName.'، '.$neckName.'، '.$fitName,
-                                'form' => $form,
-                                'shape' => $panel,
-                                'fit' => $fit,
-                                'hem_flare' => $flare,
-                                'length' => $bodyLength,
-                                'skirt' => $skirt !== '' ? $skirt : null,
-                                'skirt_length' => $skirtLength,
-                                'sleeve' => $style,
-                                'sleeve_length' => $sleeveLength,
-                                'bust_dart' => true,
-                                'waist_dart' => $form === 'waisted',
-                                'block' => [
-                                    'neck_width_extra' => 0.5 + $neckWidth,
-                                    'front_neck_depth_extra' => 2.0 + $neckDepth,
-                                ],
-                            ];
+                                $rows[$key] = [
+                                    'title' => 'پیراهن '.$shapeName.' '.$lengthName.'، '.$sleeveName.'، '.$neckName.'، '
+                                        .$fitName.'، '.$liningName,
+                                    'lining' => $liningValue,
+                                    'form' => $form,
+                                    'shape' => $panel,
+                                    'fit' => $fit,
+                                    'hem_flare' => $flare,
+                                    'length' => $bodyLength,
+                                    'skirt' => $skirt !== '' ? $skirt : null,
+                                    'skirt_length' => $skirtLength,
+                                    'sleeve' => $style,
+                                    'sleeve_length' => $sleeveLength,
+                                    'bust_dart' => true,
+                                    'waist_dart' => $form === 'waisted',
+                                    'block' => [
+                                        'neck_width_extra' => 0.5 + $neckWidth,
+                                        'front_neck_depth_extra' => 2.0 + $neckDepth,
+                                    ],
+                                ];
 
-                            if ($skirt === '') {
-                                unset($rows[$key]['skirt'], $rows[$key]['skirt_length']);
+                                if ($skirt === '') {
+                                    unset($rows[$key]['skirt'], $rows[$key]['skirt_length']);
+                                }
                             }
                         }
                     }

@@ -66,6 +66,19 @@ class JumpsuitVariantCatalog extends JumpsuitBaseGenerator implements VariantAwa
         'loose' => 'فرم گشاد',
     ];
 
+    /**
+     * جیب: کلید ⇒ [نام، دارد یا نه].
+     *
+     * جیبِ سرهمی یک قطعهٔ کاملِ اضافه است. سرهمیِ کار جیب می‌خواهد و سرهمیِ
+     * مجلسی خطِ تمیزِ بی‌جیب.
+     *
+     * @var array<string, array{0: string, 1: bool}>
+     */
+    protected const POCKETS = [
+        'pocket' => ['جیب‌دار', true],
+        'plain' => ['بی‌جیب', false],
+    ];
+
     public static function variants(): array
     {
         static $rows = null;
@@ -86,26 +99,28 @@ class JumpsuitVariantCatalog extends JumpsuitBaseGenerator implements VariantAwa
                     }
 
                     foreach (static::FITS as $fit => $fitName) {
-                    $key = 'jumpsuit_'.$leg.'_'.$sleeve.'_'.$front.'_'.$fit;
+                        foreach (static::POCKETS as $bag => [$bagName, $hasPocket]) {
+                            $key = 'jumpsuit_'.$leg.'_'.$sleeve.'_'.$front.'_'.$fit.'_'.$bag;
 
-                    $rows[$key] = [
-                        'title' => ($form === 'shorts' ? 'سرهمی کوتاه ' : 'سرهمی ').$legName.'، '.$sleeveName.'، '
-                            .$frontName.'، '.$fitName,
-                        'fit' => $fit,
-                        'form' => $form,
-                        'knee_ease' => $knee,
-                        'hem_ease' => $hem,
-                        'short_length' => $shortLength,
-                        'leg_length' => $leg === 'cropped' ? -20.0 : 0.0,
-                        'sleeve' => $style,
-                        'sleeve_length' => $sleeveLength,
-                        'opening' => $opening,
-                        'collar' => $collar,
-                        'belt' => in_array($leg, ['wide', 'palazzo', 'straight'], true),
-                        'pocket' => $opening !== 'closed',
-                        'neck_depth' => $opening === 'closed' ? 7.0 : 2.5,
-                        'neck_width' => $opening === 'closed' ? 3.0 : 1.0,
-                    ];
+                            $rows[$key] = [
+                                'title' => ($form === 'shorts' ? 'سرهمی کوتاه ' : 'سرهمی ').$legName.'، '.$sleeveName.'، '
+                                    .$frontName.'، '.$fitName.'، '.$bagName,
+                                'fit' => $fit,
+                                'form' => $form,
+                                'knee_ease' => $knee,
+                                'hem_ease' => $hem,
+                                'short_length' => $shortLength,
+                                'leg_length' => $leg === 'cropped' ? -20.0 : 0.0,
+                                'sleeve' => $style,
+                                'sleeve_length' => $sleeveLength,
+                                'opening' => $opening,
+                                'collar' => $collar,
+                                'belt' => in_array($leg, ['wide', 'palazzo', 'straight'], true),
+                                'pocket' => $hasPocket,
+                                'neck_depth' => $opening === 'closed' ? 7.0 : 2.5,
+                                'neck_width' => $opening === 'closed' ? 3.0 : 1.0,
+                            ];
+                        }
                     }
                 }
             }

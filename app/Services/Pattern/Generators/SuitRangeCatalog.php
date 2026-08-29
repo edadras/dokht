@@ -38,10 +38,30 @@ class SuitRangeCatalog extends CatalogVariantBase
      * @var array<string, array{0: string, 1: string, 2: array<int, float>, 3: array<int, float>}>
      */
     protected const JACKETS = [
-        'jacket' => ['کت رسمی', 'suit_jacket', [16, 24, 38], [1 => 10.0, 2 => 0.0, 3 => -8.0]],
-        'jacket_men' => ['کت رسمی مردانه', 'mens_suit_jacket', [16, 24, 38], [1 => 10.0, 2 => 0.0, 3 => -8.0]],
-        // تاکسیدو بیش از دو دکمه نمی‌گیرد؛ درفت هم همین را می‌گوید
-        'tuxedo' => ['تاکسیدو', 'suit_tuxedo', [18, 26, 40], [1 => 8.0, 2 => -2.0]],
+        'jacket' => ['کت رسمی', 'suit_jacket', [16, 24, 38], [1 => 10.0, 2 => 0.0, 3 => -8.0], self::FLAPS],
+        'jacket_men' => ['کت رسمی مردانه', 'mens_suit_jacket', [16, 24, 38], [1 => 10.0, 2 => 0.0, 3 => -8.0], self::FLAPS],
+        // تاکسیدو بیش از دو دکمه نمی‌گیرد؛ درفت هم همین را می‌گوید. جیبش هم
+        // همیشه بی‌درپوش است (پاسپوالی)، پس محورِ درپوش رویش نمی‌چرخد
+        'tuxedo' => ['تاکسیدو', 'suit_tuxedo', [18, 26, 40], [1 => 8.0, 2 => -2.0], self::CHEST],
+    ];
+
+    /**
+     * جیبِ بغل: با درپوش یا پاسپوالی.
+     *
+     * درپوش یک قطعهٔ جدا است که بریده و لایی می‌خورد. کتِ رسمیِ روز درپوش دارد و
+     * کتِ مجلسیِ شب پاسپوالی است.
+     *
+     * @var array<string, array{0: string, 1: string, 2: bool}>
+     */
+    protected const FLAPS = [
+        'flap' => ['جیب درپوش‌دار', 'pocket_flap', true],
+        'welt' => ['جیب پاسپوالی', 'pocket_flap', false],
+    ];
+
+    /** جیبِ روی سینه: هست یا نیست. */
+    protected const CHEST = [
+        'chest' => ['با جیب سینه', 'chest_pocket', true],
+        'plain' => ['بی‌جیب سینه', 'chest_pocket', false],
     ];
 
     /**
@@ -114,23 +134,27 @@ class SuitRangeCatalog extends CatalogVariantBase
     {
         $rows = [];
 
-        foreach (static::JACKETS as $jacket => [$name, $base, $lengths, $buttons]) {
+        foreach (static::JACKETS as $jacket => [$name, $base, $lengths, $buttons, $extras]) {
             foreach ($lengths as $index => $cm) {
                 foreach ($buttons as $count => $break) {
                     foreach (static::FITS as $fit => $fitName) {
                         foreach (static::LININGS as $lining => [$liningName, $hasLining]) {
-                            $rows['suit_set_'.$jacket.'_'.static::LENGTH_KEYS[$index].'_b'.$count.'_'.$fit.'_'.$lining] = [
-                                'title' => $name.' '.static::LENGTH_NAMES[$index].'، '.$count.' دکمه، فرم '
-                                    .$fitName.'، '.$liningName,
-                                'base' => $base,
-                                'params' => [
-                                    'length' => (float) $cm,
-                                    'buttons' => $count,
-                                    'lapel_break' => $break,
-                                    'fit' => $fit,
-                                    'lining' => $hasLining,
-                                ],
-                            ];
+                            foreach ($extras as $extra => [$extraName, $extraParam, $extraValue]) {
+                                $rows['suit_set_'.$jacket.'_'.static::LENGTH_KEYS[$index].'_b'.$count.'_'
+                                    .$fit.'_'.$lining.'_'.$extra] = [
+                                        'title' => $name.' '.static::LENGTH_NAMES[$index].'، '.$count.' دکمه، فرم '
+                                            .$fitName.'، '.$liningName.'، '.$extraName,
+                                        'base' => $base,
+                                        'params' => [
+                                            'length' => (float) $cm,
+                                            'buttons' => $count,
+                                            'lapel_break' => $break,
+                                            'fit' => $fit,
+                                            'lining' => $hasLining,
+                                            $extraParam => $extraValue,
+                                        ],
+                                    ];
+                            }
                         }
                     }
                 }

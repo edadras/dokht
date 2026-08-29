@@ -92,6 +92,27 @@ class SkirtVariantCatalog extends CatalogVariantBase
         'faced' => ['بی‌کمربند (سجاف)', false],
     ];
 
+    /**
+     * جای زیپ: کلید ⇒ [نام، مقدارِ پارامتر].
+     *
+     * زیپِ پهلو و زیپِ مرکزِ پشت دو الگوی متفاوت‌اند، نه یک الگو با دو نشانه:
+     * زیپِ پشت درزِ مرکزِ پشت را باز می‌کند، پس پنلِ پشت دیگر روی تای پارچه بریده
+     * نمی‌شود و دو نیمه می‌گیرد.
+     *
+     * گزینهٔ «بی‌زیپ» این‌جا نیست چون روی الگو با زیپِ پهلو یکی درمی‌آید: هر دو
+     * پنلِ پشت را یک‌تکه می‌گذارند و فقط در نشانه فرق دارند. سرِ جایش در فرمِ
+     * مدل هست.
+     *
+     * @var array<string, array{0: string, 1: string}>
+     */
+    protected const ZIPS = [
+        'side' => ['زیپ پهلو', 'side'],
+        'back' => ['زیپ پشت', 'back'],
+    ];
+
+    /** دامن‌هایی که کمرشان کشی یا چین است و زیپ نمی‌گیرند. */
+    protected const NO_ZIP = ['tiered', 'paperbag', 'elastic', 'skort', 'peplum'];
+
     public static function variants(): array
     {
         static $rows = null;
@@ -125,14 +146,27 @@ class SkirtVariantCatalog extends CatalogVariantBase
                     continue;
                 }
 
+                $zips = in_array($shape, static::NO_ZIP, true)
+                    ? ['keep' => ['', null]]
+                    : static::ZIPS;
+
                 foreach ($waists as $waist) {
                     [$waistName, $hasBand] = static::WAISTS[$waist];
 
-                    $rows['skirt_'.$shape.'_'.$length.'_'.$waist] = [
-                        'title' => 'دامن '.$shapeName.' '.$lengthName.'، '.$waistName,
-                        'base' => $base,
-                        'params' => array_merge($params, ['waistband' => $hasBand]),
-                    ];
+                    foreach ($zips as $zip => [$zipName, $zipValue]) {
+                        $row = array_merge($params, ['waistband' => $hasBand]);
+
+                        if ($zipValue !== null) {
+                            $row['zip'] = $zipValue;
+                        }
+
+                        $rows['skirt_'.$shape.'_'.$length.'_'.$waist.($zipValue === null ? '' : '_'.$zip)] = [
+                            'title' => 'دامن '.$shapeName.' '.$lengthName.'، '.$waistName
+                                .($zipName === '' ? '' : '، '.$zipName),
+                            'base' => $base,
+                            'params' => $row,
+                        ];
+                    }
                 }
             }
         }

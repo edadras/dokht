@@ -35,12 +35,12 @@ class SwimRangeCatalog extends CatalogVariantBase
      */
     protected const SWIMS = [
         // ── مایوی کشی: پارچه، آسترکشی و (اگر شورت دارد) پوشش ──────────────
-        'onepiece' => ['یک‌تکه', 'swim_onepiece', ['stretch' => self::MEDIUM, 'lining' => self::LININGS]],
-        'onepiece_high' => ['یک‌تکه یقه‌بسته', 'swim_onepiece_high_neck', ['stretch' => self::MEDIUM, 'lining' => self::LININGS]],
-        'onepiece_deep' => ['یک‌تکه پشت‌باز', 'swim_onepiece_deep_back', ['stretch' => self::MEDIUM, 'lining' => self::LININGS]],
-        'skirted' => ['دامن‌دار', 'swim_skirted', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'skirt_length' => self::SKIRT]],
-        'skirted_long' => ['دامن‌دار بلند', 'swim_skirted_long', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'skirt_length' => self::SKIRT]],
-        'racerback' => ['ریسربک', 'swim_racerback', ['stretch' => self::SPORTY, 'lining' => self::LININGS]],
+        'onepiece' => ['یک‌تکه', 'swim_onepiece', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'bust_cups' => self::CUPS]],
+        'onepiece_high' => ['یک‌تکه یقه‌بسته', 'swim_onepiece_high_neck', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'bust_cups' => self::CUPS]],
+        'onepiece_deep' => ['یک‌تکه پشت‌باز', 'swim_onepiece_deep_back', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'bust_cups' => self::CUPS]],
+        'skirted' => ['دامن‌دار', 'swim_skirted', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'skirt_length' => self::SKIRT, 'bust_cups' => self::CUPS]],
+        'skirted_long' => ['دامن‌دار بلند', 'swim_skirted_long', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'skirt_length' => self::SKIRT, 'bust_cups' => self::CUPS]],
+        'racerback' => ['ریسربک', 'swim_racerback', ['stretch' => self::SPORTY, 'lining' => self::LININGS, 'bust_cups' => self::CUPS]],
         'tankini' => ['تانکینی', 'swim_tankini', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'coverage' => self::COVERAGES]],
         'bikini_sport' => ['بیکینی ورزشی', 'swim_bikini_sport', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'coverage' => self::COVERAGES]],
         'bikini_triangle' => ['بیکینی مثلثی', 'swim_bikini_triangle', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'coverage' => self::COVERAGES]],
@@ -77,6 +77,19 @@ class SwimRangeCatalog extends CatalogVariantBase
         'power' => ['پارچه مسابقه‌ای', 0.66],
         'standard' => ['پارچه تمرین', 0.72],
         'stable' => ['پارچه معمولی', 0.80],
+    ];
+
+    /**
+     * کاپِ سینه: جای کاپِ جداشدنی هست یا نه.
+     *
+     * کاپ یک جیبِ دولایه روی آسترِ جلو می‌خواهد که بریده و دوخته می‌شود؛ مایوی
+     * بی‌کاپ آن را ندارد. همان مایو در دو ساخت.
+     *
+     * @var array<string, array{0: string, 1: bool}>
+     */
+    protected const CUPS = [
+        'cups' => ['جای کاپ', true],
+        'plain' => ['بی‌کاپ', false],
     ];
 
     /** آسترکشی: سه چیزِ متفاوت روی میز برش، نه سه برچسب. */

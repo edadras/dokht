@@ -79,6 +79,21 @@ class EveningVariantCatalog extends EveningGownBaseGenerator implements VariantA
         'buttons' => 'دکمه مروارید',
     ];
 
+    /**
+     * آستر: کلید ⇒ [نام، مقدارِ پارامتر].
+     *
+     * لباس مجلسی بیش از هر لباسِ دیگری به آستر وابسته است: پارچهٔ ساتن و توری و
+     * حریر بدون آستر پوشیده نمی‌شوند، و آستر یک دست قطعهٔ کاملِ دیگر است که
+     * بریده و دوخته می‌شود. برندها همان مدل را در سه ساخت می‌دهند.
+     *
+     * @var array<string, array{0: string, 1: string}>
+     */
+    protected const LININGS = [
+        'full' => ['آستر کامل', 'full'],
+        'bodice' => ['آستر بالاتنه', 'bodice'],
+        'unlined' => ['بی‌آستر', 'none'],
+    ];
+
     public static function variants(): array
     {
         static $rows = null;
@@ -102,18 +117,21 @@ class EveningVariantCatalog extends EveningGownBaseGenerator implements VariantA
                         }
 
                         foreach (static::CLOSURES as $closure => $closureName) {
-                            $key = 'evening_'.$skirt.'_'.$length.'_'.$neck.'_'.$waist.'_'.$closure;
+                            foreach (static::LININGS as $lining => [$liningName, $liningValue]) {
+                                $key = 'evening_'.$skirt.'_'.$length.'_'.$neck.'_'.$waist.'_'.$closure.'_'.$lining;
 
-                            $rows[$key] = [
-                                'title' => 'لباس مجلسی '.$skirtName.' '.$lengthName.'، '.$neckName.'، '
-                                    .$waistName.'، '.$closureName,
-                                'skirt' => $base,
-                                'length' => $cm,
-                                'neckline' => $neck,
-                                'bodice_length' => $waist,
-                                'closure' => $closure,
-                                'skirt_params' => $skirt === 'mermaid' ? ['flare_start' => round($cm * 0.68)] : [],
-                            ];
+                                $rows[$key] = [
+                                    'title' => 'لباس مجلسی '.$skirtName.' '.$lengthName.'، '.$neckName.'، '
+                                        .$waistName.'، '.$closureName.'، '.$liningName,
+                                    'skirt' => $base,
+                                    'length' => $cm,
+                                    'neckline' => $neck,
+                                    'bodice_length' => $waist,
+                                    'closure' => $closure,
+                                    'lining' => $liningValue,
+                                    'skirt_params' => $skirt === 'mermaid' ? ['flare_start' => round($cm * 0.68)] : [],
+                                ];
+                            }
                         }
                     }
                 }

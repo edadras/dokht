@@ -222,7 +222,10 @@ class CatalogAuditTest extends TestCase
                         fn (array $piece) => [
                             $piece['code'] ?? '',
                             $piece['outline'] ?? [],
+                            // شمارهٔ برش و تای پارچه هم بخشی از الگو هستند
                             $piece['cut_quantity'] ?? 1,
+                            ! empty($piece['on_fold']),
+                            $piece['meta']['fold_edges'] ?? [],
                         ],
                         $pieces,
                     )));

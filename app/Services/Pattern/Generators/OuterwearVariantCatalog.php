@@ -29,18 +29,22 @@ class OuterwearVariantCatalog extends CatalogVariantBase
      * «بلندی تنه از کمر» داشته، نه «قد»؛ تا وقتی جدول کورکورانه «قد» می‌فرستاد،
      * هر سه ردیفِ کوتاه و تا باسن و تا ران یک الگوی یکسان بودند.
      *
-     * @var array<string, array{0: string, 1: string, 2: array<int, string>, 3?: array<int, string>, 4?: string}>
+     * ستونِ پنجم می‌گوید محورِ جیب روی این مدل می‌چرخد یا نه. کتِ تک و کتِ رسمی
+     * جیبِ فیلتابی‌شان بخشی از خودِ درفت است و پارامتری برای برداشتنش ندارند؛
+     * شنل و جلیقه هم جیبِ رودوزی نمی‌گیرند.
+     *
+     * @var array<string, array{0: string, 1: string, 2: array<int, string>, 3?: array<int, string>, 4?: string, 5?: bool}>
      */
     protected const SHAPES = [
-        'blazer' => ['کت تک', 'blazer', ['crop', 'hip', 'thigh'], ['regular', 'loose'], 'body_length'],
-        'suit' => ['کت رسمی', 'suit_jacket', ['hip', 'thigh']],
+        'blazer' => ['کت تک', 'blazer', ['crop', 'hip', 'thigh'], ['regular', 'loose'], 'body_length', false],
+        'suit' => ['کت رسمی', 'suit_jacket', ['hip', 'thigh'], null, null, false],
         'double' => ['کت دوردیف', 'jacket_double_breasted', ['hip', 'thigh']],
         'cropped' => ['کت کوتاه', 'jacket_cropped', ['crop', 'hip']],
         'biker' => ['کت چرم', 'jacket_biker', ['crop', 'hip']],
         'work' => ['کت کار', 'jacket_work', ['crop', 'hip', 'thigh']],
         'bomber' => ['بمبر', 'bomber', ['crop', 'hip']],
         'windbreaker' => ['بادگیر', 'jacket_windbreaker', ['hip', 'thigh']],
-        'anorak' => ['آنوراک', 'jacket_anorak', ['hip', 'thigh']],
+        'anorak' => ['آنوراک', 'jacket_anorak', ['hip', 'thigh'], null, null, false],
         'parka' => ['پارکا', 'jacket_parka', ['thigh', 'knee']],
         'puffer' => ['پافر', 'jacket_puffer', ['crop', 'hip', 'thigh', 'knee']],
         'overcoat' => ['پالتو', 'coat_overcoat', ['thigh', 'knee', 'calf']],
@@ -49,8 +53,8 @@ class OuterwearVariantCatalog extends CatalogVariantBase
         'trench' => ['بارانی', 'coat_trench', ['thigh', 'knee', 'calf']],
         'wrapcoat' => ['پالتو کمربندی', 'coat_wrap', ['thigh', 'knee', 'calf']],
         'raincoat' => ['بارانی سبک', 'raincoat', ['thigh', 'knee'], ['regular']],
-        'cape' => ['شنل', 'coat_cape', ['hip', 'thigh', 'knee']],
-        'vest' => ['جلیقه', 'vest_utility', ['crop', 'hip']],
+        'cape' => ['شنل', 'coat_cape', ['hip', 'thigh', 'knee'], null, null, false],
+        'vest' => ['جلیقه', 'vest_utility', ['crop', 'hip'], null, null, false],
     ];
 
     /**
@@ -80,6 +84,19 @@ class OuterwearVariantCatalog extends CatalogVariantBase
         'unlined' => ['بی‌آستر', false],
     ];
 
+    /**
+     * جیب: کلید ⇒ [نام، دارد یا نه].
+     *
+     * جیبِ رودوزی یک قطعهٔ کاملِ اضافه است که بریده و دوخته می‌شود. همان پالتو
+     * را برندها هم با جیب و هم بی‌جیب می‌دهند — بی‌جیبش خطِ تمیزتری دارد.
+     *
+     * @var array<string, array{0: string, 1: bool}>
+     */
+    protected const POCKETS = [
+        'pocket' => ['جیب‌دار', true],
+        'plain' => ['بی‌جیب', false],
+    ];
+
     public static function variants(): array
     {
         static $rows = null;
@@ -94,6 +111,7 @@ class OuterwearVariantCatalog extends CatalogVariantBase
             [$shapeName, $base, $lengths] = $row;
             $fits = $row[3] ?? ['regular', 'loose'];
             $lengthParam = $row[4] ?? 'length';
+            $pockets = ($row[5] ?? true) ? static::POCKETS : ['keep' => ['', null]];
 
             foreach ($lengths as $length) {
                 [$lengthName, $cm] = static::LENGTHS[$length];
@@ -104,11 +122,21 @@ class OuterwearVariantCatalog extends CatalogVariantBase
                     }
 
                     foreach (static::LININGS as $lining => [$liningName, $hasLining]) {
-                        $rows['outer_'.$shape.'_'.$length.'_'.$fit.'_'.$lining] = [
-                            'title' => $shapeName.' '.$lengthName.'، فرم '.$fitName.'، '.$liningName,
-                            'base' => $base,
-                            'params' => [$lengthParam => $cm, 'fit' => $fit, 'lining' => $hasLining],
-                        ];
+                        foreach ($pockets as $pocket => [$pocketName, $hasPocket]) {
+                            $params = [$lengthParam => $cm, 'fit' => $fit, 'lining' => $hasLining];
+
+                            if ($hasPocket !== null) {
+                                $params['pocket'] = $hasPocket;
+                            }
+
+                            $rows['outer_'.$shape.'_'.$length.'_'.$fit.'_'.$lining
+                                .($hasPocket === null ? '' : '_'.$pocket)] = [
+                                    'title' => $shapeName.' '.$lengthName.'، فرم '.$fitName.'، '.$liningName
+                                        .($pocketName === '' ? '' : '، '.$pocketName),
+                                    'base' => $base,
+                                    'params' => $params,
+                                ];
+                        }
                     }
                 }
             }

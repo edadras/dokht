@@ -86,6 +86,20 @@ class ChildVariantCatalog extends ChildGarmentBaseGenerator implements VariantAw
         'grow' => ['با آزادی رشد', 1.6],
     ];
 
+    /**
+     * جیب: کلید ⇒ [نام، دارد یا نه].
+     *
+     * جیب روی لباسِ بچه فقط تزیین نیست — بچه‌ها واقعاً ازش استفاده می‌کنند — و
+     * یک قطعهٔ کاملِ اضافه است که بریده و دوخته می‌شود. برندهای کودک همان مدل را
+     * در دو ساخت می‌دهند.
+     *
+     * @var array<string, array{0: string, 1: bool}>
+     */
+    protected const POCKETS = [
+        'pocket' => ['جیب‌دار', true],
+        'plain' => ['بی‌جیب', false],
+    ];
+
     public static function variants(): array
     {
         static $rows = null;
@@ -109,24 +123,26 @@ class ChildVariantCatalog extends ChildGarmentBaseGenerator implements VariantAw
                     }
 
                     foreach (static::GROWTH as $grade => [$gradeName, $factor]) {
-                    $key = 'child_'.$shape.'_'.$sleeve.'_'.$use.'_'.$grade;
+                        foreach (static::POCKETS as $bag => [$bagName, $hasPocket]) {
+                            $key = 'child_'.$shape.'_'.$sleeve.'_'.$use.'_'.$grade.'_'.$bag;
 
-                    $rows[$key] = [
-                        'title' => $shapeName.' بچگانه، '.$sleeveName.'، '.$useName.'، '.$gradeName,
-                        'form' => $form,
-                        'use' => $use,
-                        'length' => $length,
-                        'length_max' => max(60.0, $length * 2.5),
-                        'hem_flare' => $flare,
-                        'opening' => $opening,
-                        'collar' => $collar,
-                        'sleeve' => $style,
-                        'sleeve_length' => $sleeveLength,
-                        'pocket' => $pocket,
-                        'play' => $play,
-                        'growth' => round($growth * $factor, 1),
-                        'knit' => in_array($shape, ['tee', 'cardigan'], true),
-                    ];
+                            $rows[$key] = [
+                                'title' => $shapeName.' بچگانه، '.$sleeveName.'، '.$useName.'، '.$gradeName.'، '.$bagName,
+                                'form' => $form,
+                                'use' => $use,
+                                'length' => $length,
+                                'length_max' => max(60.0, $length * 2.5),
+                                'hem_flare' => $flare,
+                                'opening' => $opening,
+                                'collar' => $collar,
+                                'sleeve' => $style,
+                                'sleeve_length' => $sleeveLength,
+                                'pocket' => $hasPocket,
+                                'play' => $play,
+                                'growth' => round($growth * $factor, 1),
+                                'knit' => in_array($shape, ['tee', 'cardigan'], true),
+                            ];
+                        }
                     }
                 }
             }
@@ -139,22 +155,22 @@ class ChildVariantCatalog extends ChildGarmentBaseGenerator implements VariantAw
                 }
 
                 foreach (static::GROWTH as $grade => [$gradeName, $factor]) {
-                $key = 'child_'.$bottom.'_'.$use.'_'.$grade;
+                    $key = 'child_'.$bottom.'_'.$use.'_'.$grade;
 
-                $rows[$key] = [
-                    'title' => $bottomName.' بچگانه، '.$useName.'، '.$gradeName,
-                    'form' => 'pants',
-                    'use' => $use,
-                    'knee_ease' => $knee,
-                    'hem_ease' => $hem,
-                    'play' => $play,
-                    'growth' => round($growth * $factor, 1),
-                    'rib' => $rib,
-                ];
+                    $rows[$key] = [
+                        'title' => $bottomName.' بچگانه، '.$useName.'، '.$gradeName,
+                        'form' => 'pants',
+                        'use' => $use,
+                        'knee_ease' => $knee,
+                        'hem_ease' => $hem,
+                        'play' => $play,
+                        'growth' => round($growth * $factor, 1),
+                        'rib' => $rib,
+                    ];
 
-                if ($legLength !== null) {
-                    $rows[$key]['leg_length'] = $legLength;
-                }
+                    if ($legLength !== null) {
+                        $rows[$key]['leg_length'] = $legLength;
+                    }
                 }
             }
         }

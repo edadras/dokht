@@ -101,6 +101,23 @@ class PantsVariantCatalog extends CatalogVariantBase
         'faced' => ['بی‌کمربند (سجاف)', false],
     ];
 
+    /**
+     * بلندیِ نوارِ کمر: کلید ⇒ [نام، سانتی‌متر].
+     *
+     * نوارِ باریک و نوارِ پهن دو قطعهٔ متفاوت‌اند و خطِ کمرِ خودِ شلوار را هم
+     * جابه‌جا می‌کنند: نوارِ پهن از خطِ کمر بالاتر می‌نشیند، پس پنل باید همان‌قدر
+     * کوتاه‌تر بریده شود. برندها همین را «کمرِ باریک» و «کمرِ پهن» می‌فروشند.
+     *
+     * فقط جایی می‌چرخد که نواری در کار باشد: روی شلوارِ بی‌کمربند (سجاف) بلندیِ
+     * نوار معنایی ندارد و دو ردیفِ «باریک» و «پهن» یک الگو می‌شدند.
+     *
+     * @var array<string, array{0: string, 1: float}>
+     */
+    protected const BAND_HEIGHTS = [
+        'narrow' => ['کمر باریک', 3.0],
+        'wide' => ['کمر پهن', 6.0],
+    ];
+
     public static function variants(): array
     {
         static $rows = null;
@@ -120,23 +137,45 @@ class PantsVariantCatalog extends CatalogVariantBase
                     [$lengthName, $change] = static::LENGTHS[$length];
 
                     if ($waists === []) {
-                        $rows['pants_'.$shape.'_'.$rise.'_'.$length] = [
-                            'title' => 'شلوار '.$shapeName.'، '.static::RISES[$rise].'، '.$lengthName,
-                            'base' => $base,
-                            'params' => ['rise' => $rise, 'length_extra' => $change],
-                        ];
+                        foreach (static::BAND_HEIGHTS as $height => [$heightName, $cm]) {
+                            $rows['pants_'.$shape.'_'.$rise.'_'.$length.'_'.$height] = [
+                                'title' => 'شلوار '.$shapeName.'، '.static::RISES[$rise].'، '.$lengthName.'، '
+                                    .$heightName,
+                                'base' => $base,
+                                'params' => [
+                                    'rise' => $rise,
+                                    'length_extra' => $change,
+                                    'waistband_height' => $cm,
+                                ],
+                            ];
+                        }
 
                         continue;
                     }
 
                     foreach ($waists as $waist) {
                         [$waistName, $hasBand] = static::WAISTS[$waist];
+                        $heights = $hasBand ? static::BAND_HEIGHTS : ['plain' => ['', null]];
 
-                        $rows['pants_'.$shape.'_'.$rise.'_'.$length.'_'.$waist] = [
-                            'title' => 'شلوار '.$shapeName.'، '.static::RISES[$rise].'، '.$lengthName.'، '.$waistName,
-                            'base' => $base,
-                            'params' => ['rise' => $rise, 'length_extra' => $change, 'waistband' => $hasBand],
-                        ];
+                        foreach ($heights as $height => [$heightName, $cm]) {
+                            $params = [
+                                'rise' => $rise,
+                                'length_extra' => $change,
+                                'waistband' => $hasBand,
+                            ];
+
+                            if ($cm !== null) {
+                                $params['waistband_height'] = $cm;
+                            }
+
+                            $rows['pants_'.$shape.'_'.$rise.'_'.$length.'_'.$waist
+                                .($cm === null ? '' : '_'.$height)] = [
+                                    'title' => 'شلوار '.$shapeName.'، '.static::RISES[$rise].'، '.$lengthName.'، '
+                                        .$waistName.($heightName === '' ? '' : '، '.$heightName),
+                                    'base' => $base,
+                                    'params' => $params,
+                                ];
+                        }
                     }
                 }
             }

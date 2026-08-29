@@ -46,6 +46,32 @@ class MensPantsVariantCatalog extends CatalogVariantBase
         'full' => ['تمام‌قد', 0.0],
     ];
 
+    /**
+     * بلندیِ نوارِ کمر: کلید ⇒ [نام، سانتی‌متر].
+     *
+     * نوارِ باریک و پهن دو قطعهٔ جدا هستند و خطِ کمرِ خودِ شلوار را هم بالا و
+     * پایین می‌برند.
+     *
+     * @var array<string, array{0: string, 1: float}>
+     */
+    protected const BAND_HEIGHTS = [
+        'narrow' => ['کمر باریک', 3.5],
+        'wide' => ['کمر پهن', 6.0],
+    ];
+
+    /**
+     * آزادیِ زانو: کلید ⇒ [نام، سانتی‌متر].
+     *
+     * همان شلوار در برشِ جذب‌تر و راحت‌تر؛ پهنای پاچه از زانو به پایین عوض
+     * می‌شود، پس دو الگوی جداست.
+     *
+     * @var array<string, array{0: string, 1: float}>
+     */
+    protected const LEG_CUTS = [
+        'slim' => ['برش جذب', 9.0],
+        'relaxed' => ['برش راحت', 15.0],
+    ];
+
     public static function variants(): array
     {
         static $rows = null;
@@ -59,13 +85,24 @@ class MensPantsVariantCatalog extends CatalogVariantBase
         foreach (static::BOTTOMS as $bottom => [$bottomName, $base]) {
             foreach (['low', 'mid', 'high'] as $rise) {
                 foreach (static::LEG_LENGTHS as $length => [$lengthName, $change]) {
-                    $rows['mens_'.$bottom.'_'.$rise.'_'.$length] = [
-                        'title' => $bottomName.' مردانه، '
-                            .match ($rise) { 'low' => 'فاق کوتاه', 'high' => 'فاق بلند', default => 'فاق متوسط' }
-                            .'، '.$lengthName,
-                        'base' => $base,
-                        'params' => ['rise' => $rise, 'length_extra' => $change],
-                    ];
+                    foreach (static::BAND_HEIGHTS as $height => [$heightName, $cm]) {
+                        foreach (static::LEG_CUTS as $cut => [$cutName, $knee]) {
+                            $rows['mens_'.$bottom.'_'.$rise.'_'.$length.'_'.$height.'_'.$cut] = [
+                                'title' => $bottomName.' مردانه، '
+                                    .match ($rise) {
+                                        'low' => 'فاق کوتاه', 'high' => 'فاق بلند', default => 'فاق متوسط'
+                                    }
+                                    .'، '.$lengthName.'، '.$heightName.'، '.$cutName,
+                                'base' => $base,
+                                'params' => [
+                                    'rise' => $rise,
+                                    'length_extra' => $change,
+                                    'waistband_height' => $cm,
+                                    'knee_ease' => $knee,
+                                ],
+                            ];
+                        }
+                    }
                 }
             }
         }

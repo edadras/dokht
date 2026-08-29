@@ -149,7 +149,18 @@ class VariantCatalogTest extends TestCase
                 }
 
                 $signature = md5(json_encode(array_map(
-                    fn (array $piece) => [$piece['code'] ?? '', $piece['outline'] ?? []],
+                    fn (array $piece) => [
+                        $piece['code'] ?? '',
+                        $piece['outline'] ?? [],
+                        // «چند تا بریده می‌شود» و «روی تای پارچه هست یا نه» هم
+                        // بخشی از الگو هستند، نه یادداشت: دامنِ زیپ‌پشت همان
+                        // مسیرِ دامنِ زیپ‌پهلو را دارد ولی پشتش دو تکه بریده
+                        // می‌شود به‌جای یکی روی تا — و آن برای برشکار دو کارِ
+                        // متفاوت است
+                        $piece['cut_quantity'] ?? 1,
+                        ! empty($piece['on_fold']),
+                        $piece['meta']['fold_edges'] ?? [],
+                    ],
                     $pieces,
                 )));
 

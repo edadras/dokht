@@ -104,6 +104,33 @@ class UniformRangeCatalog extends CatalogVariantBase
     ];
 
     /**
+     * برشِ کار: کلید ⇒ [نام، آزادیِ اضافه].
+     *
+     * لباسِ فرم دو برش دارد و سفارش‌دهنده هر بار یکی را می‌خواهد: برشِ نزدیک به
+     * تن برای کارِ اداری و درمانی، و برشِ راحت برای کارگاه و آشپزخانه که زیرش
+     * لباسِ دیگر پوشیده می‌شود و باید دست بالا برود. این آزادیِ اضافه در پهنای
+     * پنل‌ها می‌نشیند، پس دو الگوی جداست.
+     *
+     * @var array<string, array{0: string, 1: float}>
+     */
+    protected const CUTS = [
+        'trim' => ['برش نزدیک به تن', 1.5],
+        'roomy' => ['برش راحت', 6.0],
+    ];
+
+    /** آزادیِ زانوی شلوارِ کار، هم‌نقشِ CUTS برای پایین‌تنه. */
+    protected const LEG_CUTS = [
+        'trim' => ['برش نزدیک به تن', 10.0],
+        'roomy' => ['برش راحت', 18.0],
+    ];
+
+    /** پهنای پیش‌سینهٔ پیش‌بند. */
+    protected const BIBS = [
+        'narrow' => ['پیش‌سینه باریک', 26.0],
+        'wide' => ['پیش‌سینه پهن', 34.0],
+    ];
+
+    /**
      * فاق: کلید ⇒ نام.
      *
      * @var array<string, string>
@@ -166,24 +193,35 @@ class UniformRangeCatalog extends CatalogVariantBase
                                 $title .= '، '.static::OPENINGS[$opening][0];
                             }
 
-                            // یقه فقط جایی چرخانده می‌شود که درفت آن را بشناسد؛
-                            // اسکراب و روپوش کارگاه یقهٔ گردِ ثابت دارند
-                            if ($hasCollar) {
-                                $rows[$key.'_stand'] = [
-                                    'title' => $title.'، یقه ایستاده',
-                                    'base' => $base,
-                                    'params' => array_merge($params, ['collar' => 'stand']),
-                                ];
-                                $rows[$key.'_turn'] = [
-                                    'title' => $title.'، یقه برگردان',
-                                    'base' => $base,
-                                    'params' => array_merge($params, ['collar' => 'turn']),
-                                ];
+                            foreach (static::CUTS as $cut => [$cutName, $ease]) {
+                                $cutKey = $key.'_'.$cut;
+                                $cutTitle = $title.'، '.$cutName;
+                                $cutParams = array_merge($params, ['ease_extra' => $ease]);
 
-                                continue;
+                                // یقه فقط جایی چرخانده می‌شود که درفت آن را
+                                // بشناسد؛ اسکراب و روپوش کارگاه یقهٔ گردِ ثابت
+                                // دارند
+                                if (! $hasCollar) {
+                                    $rows[$cutKey] = [
+                                        'title' => $cutTitle,
+                                        'base' => $base,
+                                        'params' => $cutParams,
+                                    ];
+
+                                    continue;
+                                }
+
+                                $rows[$cutKey.'_stand'] = [
+                                    'title' => $cutTitle.'، یقه ایستاده',
+                                    'base' => $base,
+                                    'params' => array_merge($cutParams, ['collar' => 'stand']),
+                                ];
+                                $rows[$cutKey.'_turn'] = [
+                                    'title' => $cutTitle.'، یقه برگردان',
+                                    'base' => $base,
+                                    'params' => array_merge($cutParams, ['collar' => 'turn']),
+                                ];
                             }
-
-                            $rows[$key] = ['title' => $title, 'base' => $base, 'params' => $params];
                         }
                     }
                 }
@@ -201,24 +239,24 @@ class UniformRangeCatalog extends CatalogVariantBase
         foreach (static::BOTTOMS as $bottom => [$name, $base, $hasBand]) {
             foreach (static::RISES as $rise => $riseName) {
                 foreach (static::LEG_LENGTHS as $length => [$lengthName, $change]) {
-                    $params = ['rise' => $rise, 'length_extra' => $change];
+                    foreach (static::LEG_CUTS as $cut => [$cutName, $knee]) {
+                        $params = ['rise' => $rise, 'length_extra' => $change, 'knee_ease' => $knee];
+                        $stem = 'uni_'.$bottom.'_'.$rise.'_'.$length.'_'.$cut;
+                        $title = $name.'، '.$riseName.'، '.$lengthName.'، '.$cutName;
 
-                    if (! $hasBand) {
-                        $rows['uni_'.$bottom.'_'.$rise.'_'.$length] = [
-                            'title' => $name.'، '.$riseName.'، '.$lengthName,
-                            'base' => $base,
-                            'params' => $params,
-                        ];
+                        if (! $hasBand) {
+                            $rows[$stem] = ['title' => $title, 'base' => $base, 'params' => $params];
 
-                        continue;
-                    }
+                            continue;
+                        }
 
-                    foreach (['band' => 'کمربنددار', 'faced' => 'بی‌کمربند'] as $waist => $waistName) {
-                        $rows['uni_'.$bottom.'_'.$rise.'_'.$length.'_'.$waist] = [
-                            'title' => $name.'، '.$riseName.'، '.$lengthName.'، '.$waistName,
-                            'base' => $base,
-                            'params' => array_merge($params, ['waistband' => $waist === 'band']),
-                        ];
+                        foreach (['band' => 'کمربنددار', 'faced' => 'بی‌کمربند'] as $waist => $waistName) {
+                            $rows[$stem.'_'.$waist] = [
+                                'title' => $title.'، '.$waistName,
+                                'base' => $base,
+                                'params' => array_merge($params, ['waistband' => $waist === 'band']),
+                            ];
+                        }
                     }
                 }
             }
@@ -233,14 +271,27 @@ class UniformRangeCatalog extends CatalogVariantBase
         $rows = [];
 
         foreach (static::APRONS as $apron => [$name, $base, $lengths]) {
+            // پیش‌بندِ کمری پیش‌سینه ندارد، پس محورِ پیش‌سینه هم ندارد
+            $bibs = $apron === 'chef_apron' ? static::BIBS : ['none' => ['', null]];
+
             foreach ($lengths as $index => $cm) {
                 for ($pockets = 0; $pockets <= 3; $pockets++) {
-                    $rows['uni_'.$apron.'_'.static::LENGTH_KEYS[$index].'_p'.$pockets] = [
-                        'title' => $name.' '.static::LENGTH_NAMES[$index].'، '
-                            .($pockets === 0 ? 'بی‌جیب' : $pockets.' جیب'),
-                        'base' => $base,
-                        'params' => ['skirt_length' => (float) $cm, 'pocket_count' => $pockets],
-                    ];
+                    foreach ($bibs as $bib => [$bibName, $bibWidth]) {
+                        $params = ['skirt_length' => (float) $cm, 'pocket_count' => $pockets];
+
+                        if ($bibWidth !== null) {
+                            $params['bib_width'] = $bibWidth;
+                        }
+
+                        $rows['uni_'.$apron.'_'.static::LENGTH_KEYS[$index].'_p'.$pockets
+                            .($bibWidth === null ? '' : '_'.$bib)] = [
+                                'title' => $name.' '.static::LENGTH_NAMES[$index].'، '
+                                    .($pockets === 0 ? 'بی‌جیب' : $pockets.' جیب')
+                                    .($bibName === '' ? '' : '، '.$bibName),
+                                'base' => $base,
+                                'params' => $params,
+                            ];
+                    }
                 }
             }
         }

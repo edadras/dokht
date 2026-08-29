@@ -82,6 +82,35 @@ class BlouseVariantCatalog extends BlouseBaseGenerator implements VariantAware
         'flutter' => 'آستین کلوش کوتاه',
     ];
 
+    /**
+     * پرداختِ لبه‌ها: کلید ⇒ [نام، فرفری دارد یا نه].
+     *
+     * فرفر یک قطعهٔ اضافه است که بریده و چین داده و روی لبه دوخته می‌شود، نه یک
+     * تزیینِ چاپی. برندها همان شومیز را در دو ساخت می‌فروشند.
+     *
+     * @var array<string, array{0: string, 1: bool}>
+     */
+    protected const TRIMS = [
+        'plain' => ['لبه ساده', false],
+        'ruffled' => ['لبه فرفری', true],
+    ];
+
+    /**
+     * کمربندِ پارچه‌ای: کلید ⇒ [نام، دارد یا نه].
+     *
+     * فقط روی تنه‌هایی که به خط کمر می‌رسند؛ کمربند روی شومیزِ کراپ جایی برای
+     * بستن ندارد.
+     *
+     * @var array<string, array{0: string, 1: bool}>
+     */
+    protected const BELTS = [
+        'loose' => ['بی‌کمربند', false],
+        'belted' => ['کمربنددار', true],
+    ];
+
+    /** تنه‌هایی که تا خط کمر یا پایین‌تر می‌آیند و کمربند می‌پذیرند. */
+    protected const BELTABLE = ['classic', 'fitted', 'relaxed', 'longline', 'tunic', 'gathered'];
+
     public static function variants(): array
     {
         static $rows = null;
@@ -112,20 +141,31 @@ class BlouseVariantCatalog extends BlouseBaseGenerator implements VariantAware
                             continue;
                         }
 
-                        $key = 'blouse_'.$body.'_'.$line.'_'.$arm.'_'.$collar;
+                        $belts = in_array($body, static::BELTABLE, true)
+                            ? static::BELTS
+                            : ['loose' => static::BELTS['loose']];
 
-                        $rows[$key] = [
-                            'title' => 'شومیز '.$bodyName.'، '.$lineName.'، '.$armName.'، '.$collarName,
-                            'fit' => $fit,
-                            'neckline' => $line,
-                            'collar' => $collar,
-                            'sleeve' => $arm,
-                            'body_length' => $length,
-                            'gathers' => $gathers,
-                            'bust_dart' => $dart,
-                            'use' => 'daily',
-                            'opening' => $opening,
-                        ];
+                        foreach (static::TRIMS as $trim => [$trimName, $ruffle]) {
+                            foreach ($belts as $belt => [$beltName, $hasBelt]) {
+                                $key = 'blouse_'.$body.'_'.$line.'_'.$arm.'_'.$collar.'_'.$trim
+                                    .($hasBelt ? '_belted' : '');
+
+                                $rows[$key] = [
+                                    'title' => 'شومیز '.$bodyName.'، '.$lineName.'، '.$armName.'، '.$collarName
+                                        .'، '.$trimName.($hasBelt ? '، '.$beltName : ''),
+                                    'fit' => $fit,
+                                    'neckline' => $line,
+                                    'collar' => $collar,
+                                    'sleeve' => $arm,
+                                    'body_length' => $length,
+                                    'gathers' => $gathers,
+                                    'bust_dart' => $dart,
+                                    'use' => 'daily',
+                                    'opening' => $opening,
+                                    'defaults' => ['ruffle' => $ruffle, 'tie_belt' => $hasBelt],
+                                ];
+                            }
+                        }
                     }
                 }
             }

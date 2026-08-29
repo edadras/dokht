@@ -31,36 +31,64 @@ class ModestRangeCatalog extends CatalogVariantBase
      * ۷۰ سانتی‌متر می‌رود و جلابیه از ۴۰ تا ۱۶۰. یک «کوتاه» و «بلند» مشترک برای
      * هر دو، یکی را از بازه بیرون می‌انداخت.
      *
-     * @var array<string, array{0: string, 1: string, 2: array<int, float>, 3: bool, 4?: array<int, string>}>
+     * ستونِ آخر محورِ *پنجم* هر پیراهن است: چیزی که روی همان درفت قطعه را عوض
+     * می‌کند. یکی نیست چون هر پیراهن ساختِ خودش را دارد — پیراهنِ بلندِ عربی
+     * چاکِ جلو دارد و کورتا کلوشِ دم. آنچه رویش اثر ندارد این‌جا نمی‌آید.
+     *
+     * @var array<string, array{0: string, 1: string, 2: array<int, float>, 3: bool, 4?: array<int, string>, 5?: array{0: string, 1: array<string, array{0: string, 1: float}>}}>
      */
     protected const ROBES = [
-        'kurta' => ['کورتا', 'trad_kurta', [32, 40, 56], true],
-        'bindalli' => ['بیندالی', 'trad_bindalli', [110, 136, 155], true],
-        'dishdasha' => ['دشداشه', 'trad_dishdasha', [118, 142, 158], true],
-        'kebaya' => ['کبایا', 'trad_kebaya', [50, 62, 78], true],
-        'yukata' => ['یوکاتا', 'trad_yukata', [118, 140, 158], true],
-        'kurdish' => ['پیراهن کردی', 'trad_kurdish_dress', [108, 132, 152], true],
-        'aodai' => ['آئو دای', 'trad_ao_dai', [104, 128, 150], true],
-        'huipil' => ['ویپیل', 'trad_huipil', [70, 92, 112], true],
-        'gilaki' => ['پیراهن گیلکی', 'trad_gilaki', [74, 96, 116], true],
-        'ferace' => ['فراجه', 'trad_ferace', [118, 142, 158], true],
-        'qashqai' => ['پیراهن قشقایی', 'trad_qashqai', [96, 118, 140], true],
-        'dashiki' => ['داشیکی', 'trad_dashiki', [66, 88, 108], true],
-        'turkmen' => ['پیراهن ترکمن', 'trad_turkmen', [110, 134, 154], true],
-        'bandari' => ['پیراهن بندری', 'trad_bandari', [114, 138, 158], true],
-        'lori' => ['پیراهن لری', 'trad_lori', [100, 124, 146], true],
-        'baluchi' => ['پیراهن بلوچی', 'trad_baluchi', [106, 130, 152], true],
-        'jalabiya' => ['جلابیه', 'trad_jalabiya', [116, 140, 158], true],
+        'kurta' => ['کورتا', 'trad_kurta', [32, 40, 56], true, null, ['hem_flare', self::FLARE_SMALL]],
+        'bindalli' => ['بیندالی', 'trad_bindalli', [110, 136, 155], true, null, ['front_slit', self::SLIT]],
+        'dishdasha' => ['دشداشه', 'trad_dishdasha', [118, 142, 158], true, null, ['front_slit', self::SLIT]],
+        'kebaya' => ['کبایا', 'trad_kebaya', [50, 62, 78], true, null, ['front_slit', self::SLIT]],
+        'yukata' => ['یوکاتا', 'trad_yukata', [118, 140, 158], true, null, ['front_slit', self::SLIT]],
+        'kurdish' => ['پیراهن کردی', 'trad_kurdish_dress', [108, 132, 152], true, null, ['front_slit', self::SLIT]],
+        'aodai' => ['آئو دای', 'trad_ao_dai', [104, 128, 150], true, null, ['front_slit', self::SLIT]],
+        'huipil' => ['ویپیل', 'trad_huipil', [70, 92, 112], true, null, ['front_slit', self::SLIT]],
+        'gilaki' => ['پیراهن گیلکی', 'trad_gilaki', [74, 96, 116], true, null, ['front_slit', self::SLIT]],
+        'ferace' => ['فراجه', 'trad_ferace', [118, 142, 158], true, null, ['front_slit', self::SLIT]],
+        'qashqai' => ['پیراهن قشقایی', 'trad_qashqai', [96, 118, 140], true, null, ['front_slit', self::SLIT]],
+        'dashiki' => ['داشیکی', 'trad_dashiki', [66, 88, 108], true, null, ['front_slit', self::SLIT]],
+        'turkmen' => ['پیراهن ترکمن', 'trad_turkmen', [110, 134, 154], true, null, ['front_slit', self::SLIT]],
+        'bandari' => ['پیراهن بندری', 'trad_bandari', [114, 138, 158], true, null, ['front_slit', self::SLIT]],
+        'lori' => ['پیراهن لری', 'trad_lori', [100, 124, 146], true, null, ['front_slit', self::SLIT]],
+        'baluchi' => ['پیراهن بلوچی', 'trad_baluchi', [106, 130, 152], true, null, ['front_slit', self::SLIT]],
+        'jalabiya' => ['جلابیه', 'trad_jalabiya', [116, 140, 158], true, null, ['front_slit', self::SLIT]],
         /*
          * تونیکِ پوشیده دو نکته دارد: فقط آستینِ دوخته‌شده می‌گیرد (حلقهٔ بازش را
          * درفت نمی‌شناسد)، و قدِ کوتاهش عمداً از باسن پایین‌تر است — تونیکِ کلوشِ
          * کوتاه خطِ باسنش وسطِ کلوش می‌افتد و روی بدنِ درشت از بازهٔ کاتالوگ
          * بیرون می‌زند. همین برای شلوار کمیض هم هست.
          */
-        'tunic' => ['تونیک پوشیده', 'trad_modest_tunic', [40, 48, 62], true, ['short', 'long']],
+        'tunic' => ['تونیک پوشیده', 'trad_modest_tunic', [40, 48, 62], true, ['short', 'long'], ['hem_flare', self::FLARE_TUNIC]],
         // این دو یقهٔ ایستادهٔ ثابت دارند و آن بخشی از هویتشان است
-        'qipao' => ['چیپائو', 'trad_qipao', [58, 72, 95], false],
-        'shalwar' => ['شلوار کمیض', 'trad_shalwar_kameez', [48, 58, 72], false],
+        'qipao' => ['چیپائو', 'trad_qipao', [58, 72, 95], false, null, ['overlap', self::OVERLAP]],
+        'shalwar' => ['شلوار کمیض', 'trad_shalwar_kameez', [48, 58, 72], false, null, ['hem_flare', self::FLARE_SMALL]],
+    ];
+
+    /** چاکِ جلو: بسته یا باز. روی پیراهنِ بلند، چاک راهِ رفتن را باز می‌کند. */
+    protected const SLIT = [
+        'closed' => ['بی‌چاک', 0.0],
+        'slit' => ['چاک جلو', 30.0],
+    ];
+
+    /** کلوشِ دمِ پیراهن‌های کوتاه‌تر. */
+    protected const FLARE_SMALL = [
+        'straight' => ['دم راسته', 0.0],
+        'flared' => ['دم کلوش', 10.0],
+    ];
+
+    /** کلوشِ دمِ تونیک؛ کفِ درفتش دو سانتی‌متر است، پس از صفر شروع نمی‌شود. */
+    protected const FLARE_TUNIC = [
+        'straight' => ['دم راسته', 3.0],
+        'flared' => ['دم کلوش', 16.0],
+    ];
+
+    /** رویهم‌آمدنِ جلوی چیپائو. */
+    protected const OVERLAP = [
+        'narrow' => ['رویهم کم', 2.0],
+        'wide' => ['رویهم پهن', 6.0],
     ];
 
     /**
@@ -118,6 +146,7 @@ class ModestRangeCatalog extends CatalogVariantBase
         foreach (static::ROBES as $robe => $row) {
             [$robeName, $base, $lengths, $hasCollar] = $row;
             $sleeves = $row[4] ?? array_keys(static::SLEEVES);
+            [$extraParam, $extraOptions] = $row[5];
 
             foreach ($lengths as $index => $cm) {
                 $lengthKey = static::LENGTH_KEYS[$index];
@@ -145,7 +174,13 @@ class ModestRangeCatalog extends CatalogVariantBase
                                 $title .= '، '.static::COLLARS[$collar][0];
                             }
 
-                            $rows[$key] = ['title' => $title, 'base' => $base, 'params' => $params];
+                            foreach ($extraOptions as $extra => [$extraName, $extraValue]) {
+                                $rows[$key.'_'.$extra] = [
+                                    'title' => $title.'، '.$extraName,
+                                    'base' => $base,
+                                    'params' => array_merge($params, [$extraParam => $extraValue]),
+                                ];
+                            }
                         }
                     }
                 }
