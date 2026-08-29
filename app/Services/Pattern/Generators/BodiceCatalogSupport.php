@@ -25,6 +25,14 @@ trait BodiceCatalogSupport
     protected const EDGE_TAGS = ['neck', 'shoulder', 'armhole', 'side', 'hem', 'waist', 'default'];
 
     /**
+     * کوچک‌ترین ساسونی که ارزشِ دوختن دارد (سانتی‌متر).
+     *
+     * کم‌تر از این، ساسون بیش از آن‌که فرم بدهد چروک می‌اندازد؛ کاهشش روی درز
+     * پهلو گرفته می‌شود.
+     */
+    protected const MIN_DART = 0.6;
+
+    /**
      * اندازه‌های بلوک، اصلاح‌شده تا دور تمام‌شده دقیقاً «دور بدن + آزادی» باشد.
      *
      * @return array<string, float>
@@ -159,6 +167,23 @@ trait BodiceCatalogSupport
 
         [$dartIntake, $sideIntake] = $this->waistSplit($g, $qb, $qw, (bool) ($o['waist_dart'] ?? true), $shape);
 
+        /*
+         * ساسونی که از شش میلی‌متر کم‌تر باشد دوختنی نیست و پایین‌تر کنار گذاشته
+         * می‌شود. ولی کنارگذاشتنِ ساسون یعنی کنارگذاشتنِ کاهشی که قرار بود بدهد،
+         * و آن کاهش بی‌صاحب نمی‌ماند: پنل به همان اندازه پهن‌تر می‌شود و کمرِ
+         * بالاتنه از کمرِ دامنی که به آن دوخته می‌شود بزرگ‌تر درمی‌آید.
+         *
+         * روی بدن‌های معمول این پیش نمی‌آید، چون اختلاف سینه تا کمر ساسون را
+         * بزرگ نگه می‌دارد. روی بدنی که سینه و کمرش نزدیک‌اند — خردسال، یا هر
+         * اندام سیبی — ساسون به زیر آستانه می‌افتد و دو خط کمر دو سانتی‌متر از
+         * هم فاصله می‌گیرند. پس کاهش می‌رود روی درز پهلو، همان‌جا که سهم
+         * بزرگ‌ترش هم می‌رود.
+         */
+        if ($dartIntake > 0.0 && $dartIntake <= static::MIN_DART) {
+            $sideIntake = round($sideIntake + $dartIntake, 3);
+            $dartIntake = 0.0;
+        }
+
         $length = (float) ($o['length'] ?? 0);
         $flare = (float) ($o['hem_flare'] ?? 0);
         $sideBottomY = $sideWaistY + $length;
@@ -198,11 +223,16 @@ trait BodiceCatalogSupport
 
         $armholeEdges = [count($edges) - 2, count($edges) - 1];
 
+        // لبهٔ پایین یا دمِ آزادِ لباس است یا درزی که قطعهٔ دیگری به آن دوخته
+        // می‌شود. این فرق را درزِ پهلو باید بداند (پایین‌تر، در sideEdge).
+        $bottomTag = $o['bottom_tag'] ?? ($shape === 'waist' ? 'waist' : 'hem');
+
         // درز پهلو
         [$sideOutline, $sideTags, $sideBottomX] = $this->sideEdge([
             'cf' => $cf, 'qb' => $qb, 'qh' => $qh,
             'bust_y' => $bustY, 'waist_y' => $sideWaistY, 'hip_y' => $hipY, 'bottom_y' => $sideBottomY,
             'side_intake' => $sideIntake, 'shape' => $shape, 'flare' => $flare, 'hip_drop' => $g['hip_drop'],
+            'bottom_tag' => $bottomTag,
         ]);
 
         foreach ($sideOutline as $index => $point) {
@@ -217,7 +247,7 @@ trait BodiceCatalogSupport
         $outline[] = abs($dip) > 0.4
             ? Geometry::curve(0, $centerBottomY, $sideBottomX * 0.42, $sideBottomY + ($dip * 0.22))
             : Geometry::point(0, $centerBottomY);
-        $edges[] = $o['bottom_tag'] ?? ($shape === 'waist' ? 'waist' : 'hem');
+        $edges[] = $bottomTag;
         $bottomEdge = count($edges) - 1;
 
         $edges[] = 'default'; // خط مرکز جلو/پشت
@@ -233,6 +263,7 @@ trait BodiceCatalogSupport
                 'bust_y' => $bustY, 'waist_y' => $g['side_waist_y'], 'hip_y' => $g['side_waist_y'] + $g['hip_drop'],
                 'bottom_y' => $g['side_waist_y'] + $length,
                 'side_intake' => $sideIntake, 'shape' => $shape, 'flare' => $flare, 'hip_drop' => $g['hip_drop'],
+                'bottom_tag' => $bottomTag,
             ]);
 
             $target = Geometry::perimeter(array_merge([Geometry::point($cf + $qb, $bustY)], $plainSide))
@@ -250,7 +281,7 @@ trait BodiceCatalogSupport
         $darts = [];
         $dartX = $front ? $cf + $g['bust_apex_x'] : $cf + ($qb * 0.46);
 
-        if ($dartIntake > 0.6) {
+        if ($dartIntake > static::MIN_DART) {
             $apexY = $front ? $g['bust_apex_y'] : $bustY + 4;
 
             if ($shape === 'waist') {
@@ -465,18 +496,38 @@ trait BodiceCatalogSupport
         $points = [];
         $tags = [];
 
-        if ($s['shape'] === 'straight') {
-            $points[] = Geometry::point($cf + $s['qb'] + $flare, $bottomY);
+        if ($s['shape'] === 'straight' || $s['shape'] === 'trapeze') {
+            /*
+             * لباس راسته از زیر بغل مستقیم پایین می‌آید، پس پهنایش را از سینه
+             * می‌گیرد و به باسن نگاه نمی‌کند. تا وقتی لباس بالای باسن تمام شود
+             * اشکالی ندارد؛ ولی تونیکی که از باسن پایین‌تر می‌رود، هرچه از سینه
+             * بگیرد روی باسن همان را دارد — و اگر باسن از سینه بزرگ‌تر باشد،
+             * لباس از رویش رد نمی‌شود.
+             *
+             * روی سایز جدولی این خودش را کم نشان می‌دهد (باسن شش سانت از سینه
+             * بزرگ‌تر است)، ولی روی اندام گلابی با اختلاف سی‌وچهار سانتی‌متر،
+             * تونیکِ کشباف سی‌وشش سانت از باسن تنگ‌تر درمی‌آمد: لباسی که پوشیده
+             * نمی‌شود.
+             *
+             * نکتهٔ ظریف این است که خودِ درفت آزادی باسن را حساب کرده — کشباف
+             * منفی یک‌ونیم می‌خواهد — و همان‌جا دورش می‌ریخت. پس این‌جا فقط همان
+             * خواستهٔ خودش را به کار می‌گیریم: پهنای دم لباس دست‌کم به اندازهٔ
+             * چارکِ باسن، و اگر لباس بالاتر تمام شود به همان نسبت.
+             */
+            $hemX = $cf + $s['qb'] + $flare;
+
+            // فقط دمِ *آزاد* لباس. اگر این لبه درزی باشد که دامن یا پیلی‌دار
+            // دیگری به آن دوخته می‌شود، گشادکردنش یعنی دو خط درز دیگر هم‌اندازه
+            // نباشند — و آن، ایرادی بدتر از تنگی است.
+            if (($s['bottom_tag'] ?? 'hem') === 'hem' && $bottomY > $waistY + 0.05 && $s['qh'] > $s['qb']) {
+                $reach = min(1.0, ($bottomY - $waistY) / max(0.1, $hipY - $waistY));
+                $hemX = max($hemX, $cf + $s['qb'] + (($s['qh'] - $s['qb']) * $reach));
+            }
+
+            $points[] = Geometry::point($hemX, $bottomY);
             $tags[] = 'side';
 
-            return [$points, $tags, $cf + $s['qb'] + $flare];
-        }
-
-        if ($s['shape'] === 'trapeze') {
-            $points[] = Geometry::point($cf + $s['qb'] + $flare, $bottomY);
-            $tags[] = 'side';
-
-            return [$points, $tags, $cf + $s['qb'] + $flare];
+            return [$points, $tags, $hemX];
         }
 
         // کمرگیری
