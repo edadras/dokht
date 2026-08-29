@@ -41,7 +41,37 @@
             </span>
         </template>
 
-        @forelse ($catalogue['styles'] as $group => $row)
+        @php
+            /*
+             * ترتیبِ گروه‌ها همان ترتیبی است که سبک‌ها روی لباس اجرا می‌شوند
+             * (STYLE_ORDER در سرویس ترکیب): اول خط یقه، بعد یقه، بعد آستین و…
+             * پیش‌تر ترتیبِ رجیستری بود و با ترتیبِ اجرای واقعی نمی‌خواند، پس
+             * فهرست بی‌نظم به نظر می‌رسید.
+             */
+            $ordered = [];
+
+            foreach ($catalogue['style_order'] ?? [] as $g) {
+                if (isset($catalogue['styles'][$g])) {
+                    $ordered[$g] = $catalogue['styles'][$g];
+                }
+            }
+
+            $ordered += $catalogue['styles'];
+
+            /*
+             * دو گروه با نقش‌های گام یک هم‌نام‌اند و همین گیج‌کننده بود: آن‌جا
+             * *کدام* آستین و یقه، این‌جا *چطور* دوخته شود. جمله‌ای زیر هر کدام
+             * همین را می‌گوید.
+             */
+            $overlap = [
+                'sleeve' => 'در گام یک گفتید کدام آستین؛ این‌جا شکلِ دوختش عوض می‌شود (رگلان، کیمونو، شانه‌افتاده…). اگر در گام یک «بدون آستین» زده‌اید، این‌ها اثری ندارند.',
+                'collar' => 'در گام یک گفتید کدام یقهٔ دوخته‌شده؛ این‌جا جنسِ خودِ یقه عوض می‌شود.',
+                'neckline' => 'این خطِ یقه است، یعنی جایی که پارچه دور گردن بریده می‌شود — نه یقه‌ای که رویش دوخته می‌شود.',
+                'detail' => 'سر آستین و مچ هم این‌جاست، چون روی آستینی که انتخاب کرده‌اید می‌نشیند.',
+            ];
+        @endphp
+
+        @forelse ($ordered as $group => $row)
             @php $fits = collect($row['styles'])->filter(fn ($s, $k) => ($availability[$k]['ok'] ?? true))->count(); @endphp
 
             <div class="rounded-2xl border border-stone-200">
@@ -49,6 +79,9 @@
                     class="flex w-full items-center gap-3 px-4 py-3 text-start transition hover:bg-stone-50">
                     <span class="min-w-0 flex-1">
                         <span class="block text-sm font-semibold text-stone-800">{{ $row['label'] }}</span>
+                        @if (isset($overlap[$group]))
+                            <span class="mt-0.5 block text-xs leading-5 text-amber-700">{{ $overlap[$group] }}</span>
+                        @endif
                         <span class="block text-xs text-stone-500">
                             {{ \App\Support\Jalali::digits((string) count($row['styles'])) }} سبک،
                             <span x-text="digits(fitCount('{{ $group }}'))">{{ \App\Support\Jalali::digits((string) $fits) }}</span>

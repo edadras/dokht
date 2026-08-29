@@ -49,7 +49,8 @@ class PatternComposerTest extends TestCase
             ->assertSee('کارگاه دوخت')
             ->assertSee('۱. پایه لباس')
             ->assertSee('۲. سبک‌ها')
-            ->assertSee('۳. اندازه‌ها برای چه کسی؟')
+            ->assertSee('۳. اندازه‌های لباس')
+            ->assertSee('۴. اندازه‌ها برای چه کسی؟')
             ->assertSee('یک لباس کامل')
             ->assertSee('از بلوک بساز')
             ->assertSee('بدون آستین')
@@ -225,12 +226,11 @@ class PatternComposerTest extends TestCase
             ->assertSee('آزادی لباس')
             ->assertSee('چین کمر پایین‌تنه')
             ->assertSee('جای دوخت هر لبه')
-            ->assertSee('پارامترهای مدل‌ها')
+            ->assertSee('تنظیم‌های ریزِ مدل‌ها')
             ->assertSee('پارامترهای سبک‌ها')
             // توضیح پارامترهای همان چیزی که انتخاب شده، در داده صفحه
-            ->assertSee('شیب سرشانه', false)      // پارامتر بالاتنه
-            ->assertSee('آزادی سرآستین', false)   // پارامتر آستین
-            ->assertSee('گشادی دم دامن', false);  // پارامتر پایین‌تنه
+            ->assertSee('شیب سرشانه', false)      // تنظیم ریزِ بالاتنه
+            ->assertSee('آزادی سرآستین', false);  // تنظیم ریزِ آستین
     }
 
     public function test_the_live_preview_returns_an_svg_with_persian_notes(): void
@@ -637,5 +637,69 @@ class PatternComposerTest extends TestCase
         $this->assertArrayHasKey('none', $options['collar']);
         $this->assertSame('بدون آستین', $options['sleeve']['none']['label']);
         $this->assertSame('بدون یقه', $options['collar']['none']['label']);
+    }
+
+    /**
+     * قد لباس و قد آستین باید جلوی چشم باشند، نه پشتِ «تنظیمات حرفه‌ای».
+     *
+     * این‌ها همان پارامترهای مدل‌اند، ولی چیزی نیستند که خیاط «اگر لازم شد»
+     * بازشان کند؛ همان اول می‌خواهد ببیندشان. پس گام سه شدند و تنظیم‌های ریز
+     * (شیب سرشانه، گودی حلقه) سرِ جای خودشان ماندند.
+     */
+    public function test_the_garment_dimensions_have_their_own_step_apart_from_the_expert_knobs(): void
+    {
+        $this->actingAsWorkshopUser();
+
+        $response = $this->get(route('patterns.compose'))->assertOk();
+
+        $response->assertSee('۳. اندازه‌های لباس')
+            ->assertSee('قد لباس، قد آستین')
+            ->assertSee('sizeFields(role)', false)
+            ->assertSee('fineFields(role)', false);
+
+        // و بخش حرفه‌ای باید بگوید اندازه‌ها جای دیگرند، نه اینکه دوباره بیاوردشان
+        $response->assertSee('اندازه‌ها (قد لباس، قد آستین و…) در گام سه‌اند');
+    }
+
+    /**
+     * گروه‌های سبک باید به ترتیبِ اجرای واقعی بیایند، نه ترتیبِ رجیستری.
+     *
+     * و آن دو گروهی که با نقش‌های گام یک هم‌نام‌اند باید بگویند فرقشان چیست،
+     * وگرنه کاربر فکر می‌کند یک چیز دو جا تکرار شده.
+     */
+    public function test_the_style_groups_follow_the_order_they_are_applied_in(): void
+    {
+        $this->actingAsWorkshopUser();
+
+        $html = $this->get(route('patterns.compose'))->assertOk()->getContent();
+
+        $order = app(PatternComposer::class)->styleCatalogue()['style_order'] ?? [];
+        $this->assertNotEmpty($order);
+
+        /*
+         * جای *برچسب* را نمی‌شود گرفت: برچسب‌ها در بلوکِ دادهٔ بالای صفحه هم
+         * هستند و آن‌جا به ترتیبِ رجیستری‌اند. پس روی دکمهٔ بازشوی خودِ گروه
+         * می‌ایستیم، که فقط یک بار و دقیقاً همان‌جا که نشان داده می‌شود می‌آید.
+         */
+        $seen = [];
+
+        foreach ($order as $group) {
+            $at = mb_strpos($html, "openGroups['{$group}']");
+
+            if ($at !== false) {
+                $seen[$group] = $at;
+            }
+        }
+
+        $this->assertGreaterThan(4, count($seen), 'دکمه‌های بازشوی گروه‌ها در صفحه پیدا نشد.');
+        $positions = array_values($seen);
+        $sorted = $positions;
+        sort($sorted);
+
+        $this->assertSame($sorted, $positions, 'گروه‌های سبک به ترتیب اجرا در صفحه نیامده‌اند: '.implode('، ', array_keys($seen)));
+
+        // هم‌نامی با گام یک باید توضیح داده شده باشد
+        $this->assertStringContainsString('در گام یک گفتید کدام آستین', $html);
+        $this->assertStringContainsString('در گام یک گفتید کدام یقهٔ دوخته‌شده', $html);
     }
 }

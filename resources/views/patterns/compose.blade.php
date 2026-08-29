@@ -270,6 +270,22 @@
                     defaults: block.defaults || {},
                 }));
             },
+            /*
+             * اندازه‌های لباس در برابر تنظیم‌های ریز.
+             *
+             * هر دو از همان «توضیح پارامترها»ی خودِ مدل می‌آیند، نه از فهرست
+             * دستی. فرقشان این است که خیاط قد لباس و قد آستین را همیشه می‌خواهد
+             * ببیند و دست بزند، ولی شیب سرشانه و گودی حلقه را فقط وقتی لازم
+             * می‌شود. پس اولی‌ها می‌آیند جلو و بقیه در بخش حرفه‌ای می‌مانند.
+             *
+             * جداکردن روی *کلید* است نه برچسب، چون کلیدها ثابت‌اند و برچسب‌ها
+             * ممکن است عوض شوند.
+             */
+            isSize(key) { return /(length|flare|height|width|rise|vent|stand|pleat)/.test(key); },
+            sizeFields(role) { return this.fieldsOf(role.schema, role.defaults).filter(f => this.isSize(f.key)); },
+            fineFields(role) { return this.fieldsOf(role.schema, role.defaults).filter(f => ! this.isSize(f.key)); },
+            anySizeFields() { return this.activeRoles().some(role => this.sizeFields(role).length > 0); },
+
             fieldsOf(schema, values) {
                 return Object.entries(schema || {}).map(([key, field]) => ({
                     key: key,
@@ -414,9 +430,11 @@
             {{-- گام ۲: سبک‌ها --}}
             @include('patterns.partials.compose-styles')
 
+            @include('patterns.partials.compose-sizes')
+
             {{-- گام ۳: اندازه‌ها --}}
             <div x-data="{ source: @js(old('customer_id') ? 'customer' : 'size') }">
-                <x-card title="۳. اندازه‌ها برای چه کسی؟" icon="user"
+                <x-card title="۴. اندازه‌ها برای چه کسی؟" icon="user"
                     subtitle="اندازه‌های نداشته خودکار تخمین زده می‌شود.">
                     <div class="space-y-4">
                         <div class="flex flex-wrap gap-2">

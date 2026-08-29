@@ -55,7 +55,11 @@
 
         {{-- پارامترهای مدلِ هر نقش --}}
         <div class="space-y-5">
-            <h3 class="text-sm font-bold text-stone-700">پارامترهای مدل‌ها</h3>
+            <h3 class="text-sm font-bold text-stone-700">تنظیم‌های ریزِ مدل‌ها</h3>
+            <p class="-mt-2 text-xs text-stone-500">
+                اندازه‌ها (قد لباس، قد آستین و…) در گام سه‌اند؛ این‌جا فقط چیزهایی
+                است که کمتر لازم می‌شود: شیب سرشانه، گودی حلقه، سهم ساسون و مانند آن.
+            </p>
 
             <template x-for="role in activeRoles()" :key="'role-' + role.role">
                 <div class="space-y-3 rounded-2xl border border-stone-200 p-4">
@@ -64,7 +68,7 @@
                     </p>
 
                     <div class="grid gap-4 sm:grid-cols-3">
-                        <template x-for="field in fieldsOf(role.schema, role.defaults)" :key="role.role + '-' + field.key">
+                        <template x-for="field in fineFields(role)" :key="role.role + '-' + field.key">
                             <div class="space-y-1.5">
                                 <label class="block text-sm font-medium text-stone-700" x-text="field.label"></label>
 
@@ -99,8 +103,8 @@
                         </template>
                     </div>
 
-                    <p class="text-xs text-stone-400" x-show="! fieldsOf(role.schema, role.defaults).length">
-                        این مدل پارامتر تنظیم‌شدنی ندارد.
+                    <p class="text-xs text-stone-400" x-show="! fineFields(role).length">
+                        تنظیم ریزی برای این مدل نمانده؛ اندازه‌هایش در گام سه است.
                     </p>
                 </div>
             </template>
