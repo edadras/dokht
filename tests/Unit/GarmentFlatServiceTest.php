@@ -182,4 +182,133 @@ class GarmentFlatServiceTest extends TestCase
             "از {$tried} مدل فقط {$drawn} تا نما گرفتند؛ یعنی قطعه‌های شناخته‌نشده زیاد شده‌اند.",
         );
     }
+
+    /* ------------------------------------------------------------------ *
+     |  پوستهٔ سه‌بعدی
+     * ------------------------------------------------------------------ */
+
+    /**
+     * پوستهٔ مانکن باید از همان اعدادِ نمای دوبعدی بیاید.
+     *
+     * این مهم‌ترین چیزی است که این‌جا سنجیده می‌شود: اگر روزی سه‌بعدی از جای
+     * دیگری عدد بگیرد، آنچه روی مانکن دیده می‌شود با آنچه در نمای دوخت دیده
+     * شده نمی‌خواند — و همان بود که پیش‌تر خراب بود.
+     */
+    public function test_the_mannequin_shell_agrees_with_the_flat_views(): void
+    {
+        $body = Measurements::fromSize('40');
+        $pieces = $this->pieces('dress', $body);
+
+        $shell = $this->flats->shell($pieces, $body);
+        $flat = $this->flats->flats($pieces, $body);
+
+        $this->assertTrue($shell['ok'], 'پوستهٔ سه‌بعدی ساخته نشد.');
+        $this->assertGreaterThan(20, count($shell['rings']), 'پوسته حلقهٔ کافی ندارد.');
+
+        // قدِ پوسته همان قدِ لباس در نمای دوبعدی است
+        $this->assertEqualsWithDelta(
+            $flat['measures']['قد لباس'],
+            $shell['height'],
+            0.2,
+            'قدِ پوستهٔ سه‌بعدی با قدِ نمای دوبعدی نمی‌خواند.',
+        );
+
+        /*
+         * پیوندِ درست بین دو نما این است: حلقهٔ سه‌بعدی یک *لوله* است، پس محیطش
+         * باید دو برابرِ پهنای تختِ همان ارتفاع باشد — نه خودِ پهنا. یک بار
+         * همین دو را با هم مقایسه کردم و آزمون بی‌جهت قرمز شد؛ لوله‌ای که تختش
+         * کنی پهن‌تر از قطرش می‌شود.
+         */
+        $perimeter = function (float $a, float $b): float {
+            return M_PI * (3 * ($a + $b) - sqrt((3 * $a + $b) * ($a + 3 * $b)));
+        };
+
+        foreach ($shell['rings'] as $ring) {
+            $this->assertGreaterThan(0, $ring['rx'], 'حلقه‌ای با پهنای صفر.');
+            $this->assertGreaterThan(0, $ring['rz'], 'حلقه‌ای با ضخامت صفر.');
+            $this->assertGreaterThanOrEqual($ring['rz'], $ring['rx'], 'مقطع باید پهن‌تر از ضخیم باشد.');
+        }
+
+        $last = $shell['rings'][count($shell['rings']) - 1];
+        $hem = (float) $flat['measures']['پهنای پایینِ لباس'];
+
+        $this->assertEqualsWithDelta(
+            $hem * 2,
+            $perimeter($last['rx'], $last['rz']),
+            $hem * 0.12,
+            'محیطِ حلقهٔ آخر با دم لباس در نمای دوبعدی نمی‌خواند.',
+        );
+    }
+
+    /** مانکن باید از اندازه‌های همان مشتری بیاید، نه از یک بدنِ ثابت. */
+    public function test_the_mannequin_follows_the_customer_measurements(): void
+    {
+        $small = Measurements::complete(['height' => 145, 'bust' => 76, 'waist' => 60, 'hip' => 84]);
+        $large = Measurements::complete(['height' => 178, 'bust' => 124, 'waist' => 112, 'hip' => 128]);
+
+        $a = $this->flats->shell($this->pieces('dress', $small), $small)['body'];
+        $b = $this->flats->shell($this->pieces('dress', $large), $large)['body'];
+
+        $this->assertNotEmpty($a);
+        $this->assertCount(count($a), $b);
+
+        /*
+         * حلقهٔ سرشانه از پهنای سرشانه می‌آید و آن را این‌جا نداده‌ایم، پس هر دو
+         * بدن همان پیش‌فرض را می‌گیرند و طبیعی است که فرق نکند. آنچه *باید* فرق
+         * کند حلقه‌های سینه و کمر و باسن است، که اندازه‌شان را داده‌ایم.
+         */
+        foreach ([2 => 'سینه', 3 => 'کمر', 4 => 'باسن'] as $index => $name) {
+            $this->assertGreaterThan(
+                $a[$index]['rx'],
+                $b[$index]['rx'],
+                "حلقهٔ {$name} مانکن با بزرگ‌شدن بدن بزرگ نشد.",
+            );
+        }
+
+        // و مانکنِ بلندتر باید بلندتر هم باشد
+        $this->assertGreaterThan(
+            $a[count($a) - 1]['y'],
+            $b[count($b) - 1]['y'],
+            'مانکن با بلندشدن قد بلند نشد.',
+        );
+    }
+
+    /** لباس باید از بدن گشادتر باشد، وگرنه تنِ مانکن از تویش بیرون می‌زند. */
+    public function test_the_garment_sits_outside_the_body_it_was_cut_for(): void
+    {
+        $body = Measurements::fromSize('40');
+        $shell = $this->flats->shell($this->pieces('dress', $body), $body);
+
+        // خط سینهٔ بدن در برابر پوستهٔ لباس روی همان ارتفاع
+        $bust = $shell['body'][2] ?? null;
+        $this->assertNotNull($bust);
+
+        $at = null;
+
+        foreach ($shell['rings'] as $ring) {
+            if ($ring['y'] >= $bust['y'] - $shell['body'][1]['y']) {
+                $at = $ring;
+
+                break;
+            }
+        }
+
+        $this->assertNotNull($at, 'پوسته به خط سینه نرسید.');
+        $this->assertGreaterThan(
+            $bust['rx'],
+            $at['rx'],
+            'لباس روی خط سینه از خودِ بدن باریک‌تر است.',
+        );
+    }
+
+    /** مدلی که پوسته نمی‌گیرد باید بگوید، نه اینکه چیزی الکی بسازد. */
+    public function test_a_model_without_a_shell_says_so_and_still_returns_a_mannequin(): void
+    {
+        $body = Measurements::fromSize('40');
+        $shell = $this->flats->shell([], $body);
+
+        $this->assertFalse($shell['ok']);
+        $this->assertNotEmpty($shell['notes']);
+        $this->assertNotEmpty($shell['body'], 'مانکن باید حتی بدون لباس هم ساخته شود.');
+    }
 }

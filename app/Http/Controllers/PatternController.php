@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Customer;
+use App\Models\Fabric;
 use App\Models\GarmentType;
 use App\Models\MeasurementSet;
 use App\Models\Pattern;
@@ -154,6 +155,7 @@ class PatternController extends Controller
             'sizes' => Measurements::sizes(),
             // شکلِ لباس روی همین اندازه‌ها؛ اگر ساختنش بگیرد، صفحه نباید بشکند
             'flats' => $this->garmentFlats($pattern),
+            'solid' => $this->garmentSolid($pattern),
         ]);
     }
 
@@ -183,6 +185,66 @@ class PatternController extends Controller
                 'ok' => false,
             ];
         }
+    }
+
+    /**
+     * همان لباس، این بار روی مانکن — با تور ایمنی.
+     *
+     * پوسته از همان اعدادِ نمای دوبعدی می‌آید، پس اگر آن ساخته شده باشد این هم
+     * می‌شود. رنگ و جنس از پارچهٔ الگو، و اگر پارچه‌ای انتخاب نشده باشد از یک
+     * خاکیِ ملایم.
+     *
+     * @return array<string, mixed>
+     */
+    protected function garmentSolid(Pattern $pattern): array
+    {
+        try {
+            $shell = $this->flats->shell(
+                $pattern->pieces,
+                Measurements::complete($pattern->measurements ?? []),
+            );
+
+            /*
+             * الگو به پارچه گره نخورده — یک الگو با هر پارچه‌ای دوخته می‌شود.
+             * پس پارچه‌های کارگاه را می‌فرستیم و خودِ صفحه عوض می‌کند؛ رنگ و
+             * براقی و شفافیت از پروفایل همان پارچه می‌آید، نه از حدس.
+             */
+            $shell['fabric'] = ['color' => '#b9a48c', 'sheen' => 0.15, 'transparency' => 0.0];
+            $shell['fabrics'] = $this->fabricSwatches();
+
+            return $shell;
+        } catch (Throwable $error) {
+            report($error);
+
+            return ['ok' => false, 'notes' => ['نمای مانکن ساخته نشد: '.$error->getMessage()]];
+        }
+    }
+
+    /**
+     * پارچه‌های کارگاه، فقط با آنچه برای دیدنِ لباس لازم است.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    protected function fabricSwatches(): array
+    {
+        return Fabric::query()
+            ->orderBy('name')
+            ->limit(40)
+            ->get()
+            ->map(function (Fabric $fabric): array {
+                $profile = $fabric->profile();
+                $hex = trim((string) $fabric->color_hex);
+
+                return [
+                    'id' => $fabric->id,
+                    'name' => $fabric->displayName(),
+                    'color' => preg_match('/^#[0-9a-fA-F]{6}$/', $hex) ? $hex : '#b9a48c',
+                    'sheen' => round((float) $profile->get('sheen'), 3),
+                    'transparency' => round((float) $profile->get('transparency'), 3),
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     public function edit(Pattern $pattern): View

@@ -1128,6 +1128,221 @@ class GarmentFlatService
         return array_map(fn (float $v): float => max(0.0, $v), $out);
     }
 
+    /* ------------------------------------------------------------------ *
+     |  پوستهٔ سه‌بعدی
+     * ------------------------------------------------------------------ */
+
+    /**
+     * همان لباس، این بار به شکل حلقه‌های سه‌بعدی — برای نشاندنش روی مانکن.
+     *
+     * نکتهٔ اصلی این است که این‌جا هیچ چیزِ تازه‌ای حدس زده نمی‌شود. نمای دوبعدی
+     * از قبل می‌داند لباس در هر ارتفاع چقدر پهن است (جلو و پشت) و چقدر ضخیم؛
+     * سه‌تایی‌شان یعنی یک حلقهٔ بیضی. کافی است همان حلقه‌ها را از بالا تا پایین
+     * روی هم بچینیم تا پوستهٔ لباس دربیاید.
+     *
+     * فایدهٔ این کار فقط «سه‌بعدی داشتن» نیست: چون هر دو نما از یک عدد می‌آیند،
+     * چیزی که روی مانکن دیده می‌شود همانی است که در نمای دوخت دیده شده — نه یک
+     * تقریبِ جدا که ممکن است با آن نخواند.
+     *
+     * همه‌چیز به سانتی‌متر است و ارتفاع از بالای لباس شمرده می‌شود.
+     *
+     * @param  iterable<int, array<string, mixed>|PatternPiece>  $pieces
+     * @param  array<string, float|int>  $body
+     * @return array{
+     *     ok: bool,
+     *     rings: array<int, array{y: float, rx: float, rz: float}>,
+     *     body: array<int, array{y: float, rx: float, rz: float}>,
+     *     sleeve: array{length: float, bicep: float, cuff: float}|null,
+     *     neck: array{width: float, depth: float},
+     *     shoulder: float,
+     *     legs: bool,
+     *     height: float,
+     *     notes: array<int, string>
+     * }
+     */
+    public function shell(iterable $pieces, array $body, array $options = []): array
+    {
+        $pieces = $this->normalize($pieces);
+        $notes = [];
+
+        $front = $this->profile($pieces, static::FRONT_PARTS, $notes);
+        $back = $this->profile($pieces, static::BACK_PARTS, $notes);
+
+        if ($front === null && $back === null) {
+            $round = $this->panelProfile($pieces);
+
+            if ($round !== null) {
+                $front = $back = $round;
+                $notes[] = 'این مدل جلو و پشتِ جدا ندارد؛ پوسته از مجموع پانل‌های دور لباس ساخته شد.';
+            }
+        }
+
+        $front ??= $back;
+        $back ??= $front;
+
+        if ($front === null) {
+            return [
+                'ok' => false,
+                'rings' => [],
+                'body' => $this->bodyRings($body),
+                'sleeve' => null,
+                'neck' => ['width' => 0.0, 'depth' => 0.0],
+                'shoulder' => 0.0,
+                'legs' => false,
+                'height' => 0.0,
+                'notes' => ['این مدل قطعهٔ پوستهٔ شناخته‌شده‌ای ندارد، پس روی مانکن نشانده نشد.'],
+            ];
+        }
+
+        $span = max(0.1, $front['bottom'] - $front['top']);
+        $rings = [];
+
+        foreach ($front['heights'] as $i => $height) {
+            $f = (float) ($front['halves'][$i] ?? 0.0);
+            $b = $this->halfAt($back, $height);
+            $girth = ($f + $b) * 2;
+
+            if ($girth <= 0.1) {
+                continue;
+            }
+
+            $ratio = $this->crossRatio($girth, $this->bodyGirthAt($body, ($height - $front['top']) / $span));
+            $rz = $this->minorAxis($girth, $ratio);
+
+            $rings[] = [
+                'y' => round($height - $front['top'], 2),
+                'rx' => round($rz * $ratio, 2),
+                'rz' => round($rz, 2),
+            ];
+        }
+
+        $shoulder = (float) $front['shoulder'];
+        $bustY = $front['levels']['bust'] ?? null;
+
+        /*
+         * بالای خط سینه، قطعهٔ کاغذی به سمت گردن باریک می‌شود — و باید بشود،
+         * چون آن‌جا خط یقه و سرشانه است. ولی لباسِ *پوشیده‌شده* آن‌جا باریک
+         * نیست: روی شانه پهن است و کم‌عمق. اگر همان باریکیِ کاغذ را بچرخانیم،
+         * روی مانکن یک لولهٔ باریک مثل یقهٔ اسکی درمی‌آید که هیچ لباسی ندارد.
+         *
+         * پس از خط سینه به بالا، حلقه‌ها به سرشانه باز می‌شوند: پهنایش از
+         * پهنای سرشانهٔ خودِ الگو و عمقش کم‌تر، همان‌طور که شانهٔ آدم است.
+         */
+        if ($bustY !== null && $bustY > 1.0 && $shoulder > 1.0) {
+            $bustRing = null;
+
+            foreach ($rings as $ring) {
+                if ($ring['y'] >= $bustY) {
+                    $bustRing = $ring;
+
+                    break;
+                }
+            }
+
+            if ($bustRing !== null) {
+                /*
+                 * سه تراز، نه دو تا: بالای لباس دهانهٔ یقه است (باریک)، کمی
+                 * پایین‌ترش نوکِ سرشانه (پهن‌ترین جای بالاتنه) و بعد خط سینه.
+                 * اگر مستقیم از سرشانه به سینه برویم، بالای لباس یک بشقابِ پهن
+                 * می‌شود که هیچ لباسی ندارد.
+                 */
+                $neckHalf = max(3.0, (float) ($front['neck']['width'] ?? 6.0));
+                $shoulderY = max(1.0, $bustY * 0.22);
+
+                foreach ($rings as $index => $ring) {
+                    if ($ring['y'] >= $bustY) {
+                        continue;
+                    }
+
+                    if ($ring['y'] <= $shoulderY) {
+                        $t = $ring['y'] / $shoulderY;
+                        $rx = $neckHalf + (($shoulder - $neckHalf) * $t);
+                        $rz = ($neckHalf * 0.8) + ((($bustRing['rz'] * 0.6) - ($neckHalf * 0.8)) * $t);
+                    } else {
+                        $t = ($ring['y'] - $shoulderY) / max(0.1, $bustY - $shoulderY);
+                        $rx = $shoulder + (($bustRing['rx'] - $shoulder) * $t);
+                        $rz = ($bustRing['rz'] * 0.6) + (($bustRing['rz'] * 0.4) * $t);
+                    }
+
+                    $rings[$index]['rx'] = round($rx, 2);
+                    $rings[$index]['rz'] = round($rz, 2);
+                }
+            }
+        }
+
+        return [
+            'ok' => $rings !== [],
+            'rings' => $rings,
+            'body' => $this->bodyRings($body),
+            'sleeve' => $this->sleeve($pieces),
+            'neck' => $front['neck'],
+            'shoulder' => round($shoulder, 2),
+            // بالای لباس باز است (خط یقه)، مگر لباسی که از کمر شروع می‌شود
+            'open_top' => $shoulder > 1.0,
+            'legs' => (bool) ($front['legs'] || $back['legs']),
+            'height' => round($span, 2),
+            'notes' => $notes,
+        ];
+    }
+
+    /**
+     * مانکن: حلقه‌های خودِ بدن، از همان اندازه‌های مشتری.
+     *
+     * دورِ هر تراز را داریم و نسبتِ پهنا به ضخامتِ تنه را هم؛ پس همان بیضی که
+     * برای لباس ساختیم این‌جا هم کار می‌کند. ارتفاع‌ها از بالای شانه شمرده
+     * می‌شوند تا با حلقه‌های لباس یک مبدأ داشته باشند.
+     *
+     * @param  array<string, float|int>  $body
+     * @return array<int, array{y: float, rx: float, rz: float}>
+     */
+    protected function bodyRings(array $body): array
+    {
+        $height = (float) ($body['height'] ?? 168);
+        $backLength = (float) ($body['back_length'] ?? $height * 0.245);
+        $waistToHip = (float) ($body['waist_to_hip'] ?? $height * 0.125);
+        $inseam = (float) ($body['inseam'] ?? $height * 0.45);
+
+        // ارتفاع هر تراز، از بالای شانه به پایین
+        $neck = 0.0;
+        $shoulder = $height * 0.035;
+        $bust = $backLength * 0.52;
+        $waist = $backLength;
+        $hip = $backLength + $waistToHip;
+        $knee = $hip + ($inseam * 0.5);
+        $ankle = $hip + $inseam;
+
+        $ring = fn (float $y, float $girth): array => [
+            'y' => round($y, 2),
+            'rx' => round($this->minorAxis($girth, static::TORSO_RATIO) * static::TORSO_RATIO, 2),
+            'rz' => round($this->minorAxis($girth, static::TORSO_RATIO), 2),
+        ];
+
+        $bustGirth = (float) ($body['bust'] ?? 92);
+        $waistGirth = (float) ($body['waist'] ?? 74);
+        $hipGirth = (float) ($body['hip'] ?? 98);
+        $neckGirth = (float) ($body['neck'] ?? $bustGirth * 0.4);
+        $shoulderWidth = (float) ($body['shoulder_width'] ?? 39);
+        $thigh = (float) ($body['thigh'] ?? $hipGirth * 0.58);
+        $knees = (float) ($body['knee'] ?? $thigh * 0.66);
+        $ankles = (float) ($body['ankle'] ?? $knees * 0.62);
+
+        $rings = [
+            $ring($neck, $neckGirth),
+            // سرشانه پهن است ولی کم‌عمق؛ بیضی‌اش از تنه کشیده‌تر است
+            ['y' => round($shoulder, 2), 'rx' => round($shoulderWidth / 2, 2), 'rz' => round($this->minorAxis($bustGirth, static::TORSO_RATIO) * 0.82, 2)],
+            $ring($bust, $bustGirth),
+            $ring($waist, $waistGirth),
+            $ring($hip, $hipGirth),
+            // پایین‌تر از باسن، دو پا؛ برای مانکن یک تنهٔ باریک‌شونده بس است
+            $ring($knee, $knees * 2),
+            $ring($ankle, $ankles * 2),
+        ];
+
+        usort($rings, fn (array $a, array $b): int => $a['y'] <=> $b['y']);
+
+        return $rings;
+    }
+
     /**
      * همان چهار نما، مستقیم از یک الگوی ذخیره‌شده.
      *
