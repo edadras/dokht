@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Services\Pattern\GeneratorRegistry;
+use App\Services\Pattern\Generators\VariantAware;
 use App\Services\Pattern\Geometry;
 use App\Services\Pattern\Transform\PieceOps;
 use App\Support\Measurements;
@@ -62,6 +63,9 @@ class CatalogAuditTest extends TestCase
     /** رواداری هم‌اندازه بودن دو درزی که به هم دوخته می‌شوند (سانتی‌متر). */
     protected const SEAM_MATCH = 0.15;
 
+    /** بدنی که روی آن دو ردیفِ یکسانِ یک خانواده پیدا می‌شود. */
+    protected const TWIN_SIZE = '40';
+
     /** کوچک‌ترین مساحت پذیرفتنی برای هر گونه قطعه (سانتی‌متر مربع). */
     protected const MIN_AREA = [
         'front_bodice' => 300.0,
@@ -112,6 +116,22 @@ class CatalogAuditTest extends TestCase
         'hip_girth:trad_lori' => 'لباسِ محلیِ رها از سرشانه می‌ریزد و روی باسن نمی‌نشیند؛ آزادیِ چهل سانتی‌متریِ باسن شناسنامهٔ همین سایه است، نه خطای اندازه.',
         'hip_girth:trad_qashqai' => 'لباسِ محلیِ رها از سرشانه می‌ریزد و روی باسن نمی‌نشیند؛ آزادیِ چهل سانتی‌متریِ باسن شناسنامهٔ همین سایه است، نه خطای اندازه.',
         'hip_girth:trad_gilaki' => 'لباسِ محلیِ رها از سرشانه می‌ریزد و روی باسن نمی‌نشیند؛ آزادیِ چهل سانتی‌متریِ باسن شناسنامهٔ همین سایه است، نه خطای اندازه.',
+        // همان هفت پیراهنِ بالا، وقتی خانوادهٔ جدولی رویشان سوار می‌شود. دلیل هم
+        // همان است — سایه از سرشانه می‌ریزد — و کوتاه‌ترشان که می‌کنیم خطِ باسن
+        // پایین‌تر توی کلوش می‌افتد، پس آزادیِ باسن حتی بیشتر هم می‌شود.
+        'hip_girth:modest_dishdasha_*' => 'همان دشداشه است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
+        'hip_girth:modest_ferace_*' => 'همان فراجه است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
+        'hip_girth:modest_dashiki_*' => 'همان داشیکی است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
+        'hip_girth:modest_turkmen_*' => 'همان پیراهن ترکمن است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
+        'hip_girth:modest_bandari_*' => 'همان پیراهن بندری است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
+        'hip_girth:modest_baluchi_*' => 'همان پیراهن بلوچی است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
+        'hip_girth:modest_jalabiya_*' => 'همان جلابیه است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
+        'hip_girth:modest_yukata_*' => 'همان یوکاتا است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
+        'hip_girth:modest_huipil_*' => 'همان ویپیل است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
+        'hip_girth:modest_kurdish_*' => 'همان پیراهن کردی است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
+        'hip_girth:modest_lori_*' => 'همان پیراهن لری است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
+        'hip_girth:modest_qashqai_*' => 'همان پیراهن قشقایی است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
+        'hip_girth:modest_gilaki_*' => 'همان پیراهن گیلکی است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
         'max_area:trad_sari' => 'تختهٔ ساری بریده نمی‌شود؛ یک پارچهٔ شش‌متری است که دور بدن پیچیده می‌شود و فقط چهار لبه‌اش تمیز می‌شود. مساحتش عمداً بزرگ است.',
         'max_area:trad_chador' => 'چادر یک نیم‌دایره به شعاعِ قدِ کاربر است؛ ربعِ بریده‌شده‌اش هم بیش از سه متر مربع می‌شود و این درست است.',
         'max_area:bridal_veil' => 'تور عروس نیم‌دایره‌ای به شعاع بلندی خودش است؛ تور تا زمین (۱۸۰ سانتی‌متر) بیش از پنج متر مربع می‌شود و این درست است، نه خطای محاسبه.',
@@ -166,10 +186,15 @@ class CatalogAuditTest extends TestCase
     {
         $found = array_fill_keys([
             'build', 'outline', 'tags', 'grain', 'marks', 'cut',
-            'side_seam', 'sleeve', 'waist', 'girth',
+            'side_seam', 'sleeve', 'waist', 'girth', 'twin',
         ], []);
 
         $counters = ['models' => 0, 'side_pairs' => 0, 'waists' => 0, 'girths' => 0];
+
+        // اثرِ انگشتِ الگوی هر مدل روی *یک* بدن، برای پیدا کردن دو ردیفِ یکسان
+        // در یک خانواده. روی یک بدن کافی است: دو مدلی که روی سایز ۴۰ مو نمی‌زنند
+        // روی هیچ بدنِ دیگری هم فرق نمی‌کنند، چون هر دو از یک درفت درمی‌آیند.
+        $prints = [];
 
         foreach (static::SIZES as $size) {
             $measurements = $this->body($size);
@@ -190,6 +215,28 @@ class CatalogAuditTest extends TestCase
                     $found['build'][] = "{$key}|{$size} هیچ قطعه‌ای نداد.";
 
                     continue;
+                }
+
+                if ($size === static::TWIN_SIZE) {
+                    $print = md5(json_encode(array_map(
+                        fn (array $piece) => [
+                            $piece['code'] ?? '',
+                            $piece['outline'] ?? [],
+                            $piece['cut_quantity'] ?? 1,
+                        ],
+                        $pieces,
+                    )));
+
+                    $family = GeneratorRegistry::all()[$key] ?? '';
+
+                    if (is_subclass_of($family, VariantAware::class)) {
+                        if (isset($prints[$family][$print])) {
+                            $found['twin'][] = $family.': «'.$key.'» و «'.$prints[$family][$print]
+                                .'» یک الگوی کاملاً یکسان می‌دهند؛ محوری که این دو را جدا می‌کند بی‌اثر است.';
+                        }
+
+                        $prints[$family][$print] = $key;
+                    }
                 }
 
                 $codes = array_column($pieces, 'code');
@@ -853,6 +900,29 @@ class CatalogAuditTest extends TestCase
         }
 
         return [$problems, $checked];
+    }
+
+    /**
+     * دو ردیفِ یک خانواده نباید الگوی *یکسان* بدهند.
+     *
+     * خانوادهٔ جدولی با ضربِ چند محور صدها مدل می‌سازد، و اگر محوری بی‌اثر باشد
+     * ضربش هم بی‌اثر است: ده‌ها ردیف با نام‌های متفاوت و یک الگوی واحد. نه خطایی
+     * می‌دهد نه هشداری — فقط فهرست را باد می‌کند و خریدار را گول می‌زند.
+     *
+     * این واقعاً پیش آمد و بارها: «پرداختِ لبه» روی تاپ‌ها (۴۳۲ ردیف)، «فرم» روی
+     * بوستیه، «آستر» روی جامر و شورت، «پیلی» روی شلوارِ رسمی، و «تعدادِ دکمه»
+     * روی کت. همه‌شان پارامترهای واقعیِ فرم بودند که *قطعه* را عوض نمی‌کردند.
+     *
+     * مقایسه روی خودِ مسیرِ قطعه‌هاست، نه روی نام و پارامتر — چون آن دو واقعاً
+     * فرق داشتند؛ آن‌چه فرق نمی‌کرد الگو بود.
+     *
+     * دو مدل از دو خانوادهٔ *متفاوت* (یا یک ردیف و درفتِ پایه‌اش) می‌توانند
+     * یکسان باشند و این ایراد نیست: «کلاه سطلی» در فهرستِ متعلقات و همان کلاه در
+     * فهرستِ کلاه‌ها یک چیزند و باید باشند.
+     */
+    public function test_no_two_rows_of_one_family_are_the_same_pattern(): void
+    {
+        $this->assertNoProblems($this->found('twin'), 'ردیف‌های یکسان در یک خانواده');
     }
 
     public function test_finished_girths_stay_within_a_sane_band_of_the_body(): void

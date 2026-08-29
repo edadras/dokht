@@ -2,7 +2,13 @@
 
 namespace App\Services\Pattern\Generators;
 
-/** تاپِ کرستِ تیغه‌دار با بستِ پشت. */
+/**
+ * تاپِ کرستِ تیغه‌دار با بستِ پشت.
+ *
+ * تفاوتش با بوستیه فقط نام نیست: کرست تنگ‌تر بریده می‌شود و تیغه‌های بیشتری
+ * دارد، چون کارش شکل‌دادن است نه فقط پوشاندن. پیش‌تر تنها «آزادی بیشتر = صفر»
+ * می‌فرستاد که همان پیش‌فرضِ بوستیه بود، یعنی این دو مدل مو به مو یکی بودند.
+ */
 class TopCorsetGenerator extends TopBustierGenerator
 {
     public static function key(): string
@@ -18,7 +24,9 @@ class TopCorsetGenerator extends TopBustierGenerator
     public function defaultParams(): array
     {
         return array_merge(parent::defaultParams(), [
-            'ease_extra' => 0,
+            'ease_extra' => -1.5,
+            'front_panels' => 4,
+            'back_panels' => 3,
         ]);
     }
 }

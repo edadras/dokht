@@ -35,11 +35,8 @@
         </div>
     </div>
 
-    {{-- انتخابِ فعلی همیشه در صفحه هست، حتی وقتی جستجو یا صفحه‌بندی کنارش
-         گذاشته؛ وگرنه رادیوی انتخاب‌شده از DOM بیرون می‌رفت و فرم خالی می‌ماند --}}
-    <input type="radio" name="{{ $group }}" class="sr-only" x-model="base.{{ $group }}"
-        x-bind:value="base.{{ $group }}" checked x-bind:disabled="! ({{ $enabled }})">
-
+    {{-- کارتِ انتخاب‌شده همیشه در فهرست هست (page() خودش سرِ فهرست می‌گذاردش)،
+         پس رادیوی انتخاب‌شده هیچ‌وقت از DOM بیرون نمی‌افتد و فرم خالی نمی‌ماند --}}
     <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <template x-for="item in page(group, {{ $limit }})" :key="item.k">
             <label class="cursor-pointer">

@@ -63,10 +63,36 @@ class TopBustierGenerator extends TopBaseGenerator
     public function generate(array $measurements, array $ease, array $params): array
     {
         $grow = $this->fitGrow($params, ['fitted' => -1.5, 'regular' => -0.5, 'loose' => 0.5]);
+
+        /*
+         * فرم باید در خودِ پنل‌ها بنشیند، نه فقط در مهرِ «دور هدف».
+         *
+         * پیش‌تر $grow حساب می‌شد و تنها به finishBlock می‌رفت: الگو می‌گفت دورش
+         * فلان است ولی پنل‌ها همیشه یک اندازه بودند. یعنی بوستیهٔ جذب و گشاد یک
+         * چیز بودند، و مهرِ دور هدف هم دروغ می‌گفت. corsetPanels پهنایش را از
+         * quarter_bust می‌گیرد، پس فرم باید پیش از آن در اندازه‌ها بنشیند —
+         * روی *دورِ کامل*، چون blockMetrics خودش بر چهار تقسیم می‌کند.
+         */
+        $ease = array_merge($ease, [
+            'bust' => $this->ease($ease, 'bust', 6) + ($grow * 4),
+            'waist' => $this->ease($ease, 'waist', 4) + ($grow * 4),
+            'hip' => $this->ease($ease, 'hip', 6) + ($grow * 4),
+        ]);
+
         $g = $this->blockMetrics($measurements, $ease, $params);
 
-        $length = (float) $this->param($params, 'body_length', 6);
         $drop = (float) $this->param($params, 'top_drop', 1);
+
+        /*
+         * بوستیه از خطِ بالا شروع می‌شود، نه از سرشانه، پس کوتاه‌کردنش زودتر از
+         * هر تاپِ دیگری به ته می‌رسد: روی تنِ کوتاه (کودک) و با قدِ کراپ، پنل‌ها
+         * به یکی‌دو سانتی‌متر می‌رسیدند — نواری که نه راستای پارچه رویش جا
+         * می‌شود نه می‌شود دوختش.
+         *
+         * پس مثل باقیِ تاپ‌ها از کفِ مشترک رد می‌شویم، با فاصلهٔ بیشتر چون
+         * لبهٔ بالای بوستیه خودش پایین‌تر از سینه است.
+         */
+        $length = $this->bodyLength($params, $g, 6, clearance: 12.0 + $drop);
 
         $lacing = $this->param($params, 'closure', 'zip') === 'lacing';
         $shared = ['top_extra' => -$drop, 'length' => $length];

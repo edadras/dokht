@@ -91,4 +91,38 @@ abstract class CatalogVariantBase extends BaseGenerator implements VariantAware
     {
         return GeneratorRegistry::make((string) ($this->spec()['base'] ?? ''));
     }
+
+    /**
+     * ضربِ چند محور در هم.
+     *
+     * هر محور یک پارامتر است با چند گزینه؛ خروجی همهٔ ترکیب‌هاست، هرکدام با
+     * پسوندِ کلید، نام‌های فارسی و پارامترهایش. خانواده‌هایی که برای هر مدل
+     * محورهای *خودش* را می‌دهند (چون هر درفت پارامترهای خودش را می‌شناسد) بدون
+     * این، برای هر مدل یک حلقهٔ تودرتوی دستی می‌خواستند.
+     *
+     * @param  array<string, array<string, array{0: string, 1: mixed}>>  $axes  پارامتر ⇒ (گزینه ⇒ [نام، مقدار])
+     * @return array<int, array{0: string, 1: array<int, string>, 2: array<string, mixed>}>
+     */
+    protected static function combine(array $axes): array
+    {
+        $rows = [['', [], []]];
+
+        foreach ($axes as $param => $options) {
+            $next = [];
+
+            foreach ($rows as [$suffix, $names, $params]) {
+                foreach ($options as $option => [$optionName, $value]) {
+                    $next[] = [
+                        $suffix.'_'.$option,
+                        array_merge($names, [$optionName]),
+                        array_merge($params, [$param => $value]),
+                    ];
+                }
+            }
+
+            $rows = $next;
+        }
+
+        return $rows;
+    }
 }

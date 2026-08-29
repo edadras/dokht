@@ -70,6 +70,9 @@ class GeneratorRegistry
     /** @var array<string, class-string<PatternGenerator>>|null */
     protected static ?array $cache = null;
 
+    /** @var array<string, string>|null نام فارسی هر کلید، در همین درخواست. */
+    protected static ?array $labels = null;
+
     /** @return array<string, class-string<PatternGenerator>> */
     public static function all(): array
     {
@@ -141,6 +144,16 @@ class GeneratorRegistry
      */
     public static function options(): array
     {
+        /*
+         * هزاران تولیدکننده ساخته می‌شود تا نامشان خوانده شود، پس نتیجه در همین
+         * درخواست نگه داشته می‌شود. group() برای هر گروه یک بار این را صدا
+         * می‌زند و صفحهٔ کارگاه ده گروه دارد: بدون این، همان کار ده بار انجام
+         * می‌شد.
+         */
+        if (static::$labels !== null) {
+            return static::$labels;
+        }
+
         $options = [];
 
         foreach (array_keys(static::all()) as $key) {
@@ -151,7 +164,7 @@ class GeneratorRegistry
 
         asort($options);
 
-        return $options;
+        return static::$labels = $options;
     }
 
     /**
@@ -219,6 +232,7 @@ class GeneratorRegistry
     public static function flush(): void
     {
         static::$cache = null;
+        static::$labels = null;
     }
 
     /** @return class-string|null */

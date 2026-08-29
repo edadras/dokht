@@ -55,6 +55,11 @@ abstract class TopBaseGenerator extends BodiceBaseGenerator
             ),
             $extra,
             [
+                'ease_extra' => [
+                    'label' => 'آزادی بیشتر', 'min' => -2, 'max' => 8, 'step' => 0.5,
+                    'default' => 0, 'unit' => 'سانتی‌متر',
+                    'hint' => 'روی «فرم لباس» سوار می‌شود؛ برای پارچهٔ ضخیم یا مدلی که باید کمی رهاتر بیفتد.',
+                ],
                 'finish' => [
                     'label' => 'تمام‌کردن لبه‌ها', 'type' => 'select', 'default' => 'binding',
                     'options' => [
@@ -67,6 +72,24 @@ abstract class TopBaseGenerator extends BodiceBaseGenerator
                 ],
             ],
         );
+    }
+
+    /**
+     * آزادیِ فرم، بعلاوهٔ «آزادی بیشتر».
+     *
+     * چند تاپِ کاتالوگ روی همین یک عدد از هم جدا می‌شوند: تاپِ چین‌دار و تاپِ
+     * راپ هر دو روی درفتِ کراپ سوارند و تنها فرقشان نیم و یک سانتی‌متر آزادیِ
+     * اضافه است، و کرست هم همین‌طور روی بوستیه.
+     *
+     * تا وقتی این پارامتر در فهرست نبود، آن سه کلاس عددشان را می‌فرستادند و
+     * پارامترِ ناشناخته بی‌صدا دور ریخته می‌شد — یعنی «تاپ راپ» و «تاپ چین‌دار»
+     * و «کراپ‌تاپ» هر سه یک الگوی یکسان بودند با سه نام. حالا عدد کار می‌کند.
+     *
+     * @param  array<string, float>  $map
+     */
+    protected function fitGrow(array $params, array $map = ['fitted' => 0.0, 'regular' => 1.5, 'loose' => 3.5]): float
+    {
+        return parent::fitGrow($params, $map) + (float) $this->param($params, 'ease_extra', 0);
     }
 
     /**
@@ -144,11 +167,36 @@ abstract class TopBaseGenerator extends BodiceBaseGenerator
         // می‌گیریم، نه از عددی حدسی.
         $edge = $this->topCornerX($panel['outline']) - 0.5;
 
+        /*
+         * سقف و کفِ عمودی هم لازم است، نه فقط سقفِ افقی.
+         *
+         * برجستگیِ خطِ قلبی «کمی بالاتر از دو سرِ خط» ساخته می‌شود. روی پنلِ
+         * بلند این بالاتر جایی وسطِ پنل است، ولی روی پنلِ کوتاه (تاپِ کراپ روی
+         * تنِ کوچک) از لبهٔ بالای پنل هم می‌زند بیرون؛ آن‌وقت مسیرِ برش لبهٔ
+         * بالا را دو بار قطع می‌کند و قطعه خودش را قطع می‌کند. همان تله‌ای که
+         * پیش‌تر برای نقطهٔ کنترلِ خطِ گرد پیش آمده بود، این‌بار برای خودِ نقطه.
+         */
+        $roof = $minY + 0.5;
+
+        /*
+         * کفِ خطِ برش «لبهٔ پایینِ پنل» نیست، خیلی بالاترش است.
+         *
+         * خطِ گرد و خطِ قلبی هر دو میانِ راه فرو می‌روند. روی پنلِ بلند این
+         * فرورفتگی بی‌خطر است، ولی روی پنلِ کوتاه — تاپِ کراپ روی تنِ کودک، که
+         * پنلش دوازده سانتی‌متر می‌شود — همان فرورفتگی به لبهٔ پایین می‌رسد و از
+         * آن رد می‌شود. پس مسیر حق دارد حداکثر یک‌سومِ فاصلهٔ تا لبهٔ پایین را
+         * پایین برود، نه بیشتر.
+         */
+        $deepest = max($center, $side);
+        $floor = min($maxY - 1.0, $deepest + (($maxY - $deepest) * 0.35));
+
         foreach ($this->topLine((string) ($spec['shape'] ?? 'straight'), $minX, $maxX, $center, $side, $spec) as $point) {
             $point['x'] = min((float) $point['x'], $edge);
+            $point['y'] = max($roof, min($floor, (float) $point['y']));
 
             if (isset($point['cx'])) {
                 $point['cx'] = min((float) $point['cx'], $edge);
+                $point['cy'] = max($roof, min($floor, (float) ($point['cy'] ?? $point['y'])));
             }
 
             $path[] = $point;
@@ -211,14 +259,23 @@ abstract class TopBaseGenerator extends BodiceBaseGenerator
         $width = max(1.0, $maxX - $minX);
 
         return match ($shape) {
-            // قلبی: مرکز پایین می‌افتد، روی سینه بالا می‌آید و بعد به پهلو می‌رسد
-            'sweetheart' => [[
-                'x' => $minX + ($width * (float) ($spec['apex'] ?? 0.55)),
-                'y' => min($center, $side) - max(1.0, abs($center - $side) * 0.35 + 2.0),
-                'curve' => true,
-                'cx' => $minX + ($width * 0.18),
-                'cy' => $center,
-            ]],
+            // قلبی: مرکز پایین می‌افتد، روی سینه بالا می‌آید و بعد به پهلو می‌رسد.
+            //
+            // نقطهٔ کنترل — درست مثل خطِ گرد — باید *میان* دو سرِ همین کمان
+            // بماند. اگر روی خودِ ارتفاعِ مرکز بنشیند، کمان اول از نقطهٔ شروع
+            // پایین‌تر می‌رود و بعد بالا می‌آید؛ روی پنلِ کوتاه همان فرورفتگی از
+            // لبهٔ پایین رد می‌شود و مسیرِ برش خودش را قطع می‌کند.
+            'sweetheart' => (function () use ($minX, $width, $center, $side, $spec) {
+                $peak = min($center, $side) - max(1.0, abs($center - $side) * 0.35 + 2.0);
+
+                return [[
+                    'x' => $minX + ($width * (float) ($spec['apex'] ?? 0.55)),
+                    'y' => $peak,
+                    'curve' => true,
+                    'cx' => $minX + ($width * 0.18),
+                    'cy' => $center + (($peak - $center) * 0.25),
+                ]];
+            })(),
             // گرد: خط با یک کمان ملایم از مرکز به پهلو می‌رود.
             //
             // نقطهٔ کنترل باید میان دو سرِ همین کمان بماند، نه یک و نیم سانتی‌متر

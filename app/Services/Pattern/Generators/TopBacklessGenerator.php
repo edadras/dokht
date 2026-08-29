@@ -2,6 +2,8 @@
 
 namespace App\Services\Pattern\Generators;
 
+use App\Services\Pattern\Geometry;
+
 /**
  * تاپ پشت‌باز.
  *
@@ -67,7 +69,15 @@ class TopBacklessGenerator extends TopBaseGenerator
 
         $shared = [
             'shape' => $this->fitShape($params, ['fitted' => 'fitted', 'regular' => 'fitted', 'loose' => 'fitted']),
-            'length' => $this->bodyLength($params, $g, 6),
+            /*
+             * تاپِ پشت‌باز کفِ قدِ بلندتری از باقیِ تاپ‌ها می‌خواهد.
+             *
+             * پشتش از سرشانه تا نزدیکِ کمر بریده می‌شود؛ اگر خودِ لباس کوتاه
+             * باشد، آن‌چه از پنلِ پشت می‌ماند نواری چندسانتی‌متری است که خطِ برشِ
+             * گرد یا قلبی رویش جا نمی‌شود و مسیرِ قطعه خودش را قطع می‌کند. روی
+             * تنِ کودک با قدِ کراپ دقیقاً همین می‌شد.
+             */
+            'length' => $this->bodyLength($params, $g, 6, clearance: 18.0),
             'grow' => $grow,
             'bottom_tag' => 'hem',
             'waist_dart' => true,
@@ -90,9 +100,18 @@ class TopBacklessGenerator extends TopBaseGenerator
             'name' => 'تاپ پشت‌باز — پشت',
         ]));
 
-        // پشت از خط سرشانه به اندازهٔ «بازی پشت» پایین بریده می‌شود
+        /*
+         * پشت از خط سرشانه به اندازهٔ «بازی پشت» پایین بریده می‌شود — ولی نه
+         * پایین‌تر از خودِ قطعه.
+         *
+         * بازیِ پشت عددی ثابت است (پیش‌فرض ۲۶ سانتی‌متر) و قدِ تاپ می‌تواند
+         * کراپ باشد. روی تنِ کوچک، بیست‌وشش سانتی‌متر از سرشانه از دمِ لباس هم
+         * می‌گذرد: مسیرِ برش از قطعه بیرون می‌زند و پشتِ تاپ خودش را قطع می‌کند.
+         * پس بازی همیشه دست‌کم چهار سانتی‌متر بالای دمِ قطعه می‌ایستد.
+         */
         $shoulderY = (float) ($g['shoulder_drop'] ?? 4);
-        $backTop = $shoulderY + $open;
+        $backHem = Geometry::bounds($back['outline'])[3];
+        $backTop = min($shoulderY + $open, $backHem - 4.0);
 
         $back = $this->cutTop($back, [
             'center' => $backTop,

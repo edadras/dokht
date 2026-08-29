@@ -18,6 +18,7 @@ class TopBodysuitLongSleeveGenerator extends TopBodysuitGenerator
     public function defaultParams(): array
     {
         return array_merge(parent::defaultParams(), [
+            'shoulder_width' => 'full',
             'sleeve_style' => 'set_in',
             'sleeve_length' => 58,
         ]);

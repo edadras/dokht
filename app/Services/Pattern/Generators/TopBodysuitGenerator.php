@@ -2,6 +2,7 @@
 
 namespace App\Services\Pattern\Generators;
 
+use App\Services\Pattern\Generators\Concerns\BuildsSleeve;
 use App\Services\Pattern\Geometry;
 
 /**
@@ -22,6 +23,8 @@ use App\Services\Pattern\Geometry;
  */
 class TopBodysuitGenerator extends TopBaseGenerator
 {
+    use BuildsSleeve;
+
     public static function key(): string
     {
         return 'top_bodysuit';
@@ -61,13 +64,51 @@ class TopBodysuitGenerator extends TopBaseGenerator
                 'gusset' => [
                     'label' => 'نوار فاق با قزن', 'type' => 'toggle', 'default' => true,
                 ],
+                /*
+                 * بادی تنها تاپی است که آستین می‌گیرد، و همین بود که نگرفت.
+                 *
+                 * «بادی آستین‌بلند» یک مدلِ جدا در فهرست بود که در defaultParams
+                 * خودش sleeve_style و sleeve_length می‌فرستاد — و چون این دو در
+                 * فهرستِ پارامترها نبودند، بی‌صدا دور ریخته می‌شدند. یعنی بادیِ
+                 * آستین‌بلند مو به مو همان بادیِ بی‌آستین بود، فقط با نامی که
+                 * وعدهٔ آستین می‌داد.
+                 */
+                'sleeve_style' => [
+                    'label' => 'آستین', 'type' => 'select', 'default' => 'none',
+                    'options' => ['none' => 'بی‌آستین', 'set_in' => 'آستین دوخته'],
+                    'hint' => 'آستین فقط با «سرشانهٔ کامل» جور درمی‌آید؛ روی بند دوخته نمی‌شود.',
+                ],
+                'sleeve_length' => [
+                    'label' => 'بلندی آستین', 'min' => 8, 'max' => 70, 'step' => 1,
+                    'default' => 58, 'unit' => 'سانتی‌متر',
+                ],
             ],
         ), length: 0);
     }
 
     public function generate(array $measurements, array $ease, array $params): array
     {
+        // فرم روی بادی هم کار می‌کند، ولی در بازهٔ منفی: بادی همیشه تنگ‌تر از
+        // بدن بریده می‌شود و «گشاد»ش یعنی کمی کمتر تنگ، نه رها
         $ease = $this->knitEase($ease, 4.0);
+        /*
+         * بازه از صفر شروع می‌شود، نه از منفی.
+         *
+         * بادی از پیش با آزادیِ منفی بریده می‌شود و همان «جذب»ِ کارِ آدم است؛
+         * یک سانتی‌متر تنگ‌ترِ دیگر روی یک‌چهارم، دورِ باسن را از بازهٔ کاتالوگ
+         * بیرون می‌برد و لباس دیگر پوشیده نمی‌شود. پس «جذب» همان کفِ درفت است و
+         * «معمولی» و «گشاد» از آن بازتر می‌شوند.
+         */
+        $grow = $this->fitGrow($params, ['fitted' => 0.0, 'regular' => 0.75, 'loose' => 2.0]);
+
+        if ($grow !== 0.0) {
+            $ease = array_merge($ease, [
+                'bust' => $this->ease($ease, 'bust', 0) + ($grow * 4),
+                'waist' => $this->ease($ease, 'waist', 0) + ($grow * 4),
+                'hip' => $this->ease($ease, 'hip', 0) + ($grow * 4),
+            ]);
+        }
+
         $g = $this->blockMetrics($measurements, $ease, $params);
 
         $width = (string) $this->param($params, 'shoulder_width', 'strap');
@@ -121,6 +162,22 @@ class TopBodysuitGenerator extends TopBaseGenerator
         $back = $this->carveLeg($back, $legSideY);
 
         $pieces = [$front, $back];
+
+        // آستین از حلقهٔ همین دو پنل اندازه می‌گیرد، پس با هر فرم و هر گودیِ
+        // حلقه‌ای که کاربر داده جور درمی‌آید. بندِ باریک حلقه ندارد، پس آستین
+        // هم ندارد
+        if ($strap === null && (string) $this->param($params, 'sleeve_style', 'none') === 'set_in') {
+            foreach ($this->sleevePieces($measurements, $ease, $params, [
+                'armhole_length' => (float) ($front['meta']['armhole_length'] ?? 0)
+                    + (float) ($back['meta']['armhole_length'] ?? 0),
+                'length' => max(8.0, (float) $this->param($params, 'sleeve_length', 58)),
+                'prefix' => 'bodysuit-',
+                'sleeve_name' => 'آستین بادی',
+            ]) as $sleeve) {
+                $sleeve['meta']['girth_role'] = 'sleeve';
+                $pieces[] = $sleeve;
+            }
+        }
 
         if ($this->flag($params, 'gusset', true)) {
             $pieces[] = $this->bandPiece('bodysuit-gusset', 'نوار فاق', 14, 7, [

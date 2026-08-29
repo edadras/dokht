@@ -10,12 +10,14 @@ namespace App\Services\Pattern\Generators;
  * الگوی جدا نگه می‌دارند: با پارچهٔ پرکشش الگو کوچک‌تر بریده می‌شود و با پارچهٔ
  * کم‌کشش بزرگ‌تر، وگرنه یکی روی تن زخم می‌اندازد و آن یکی چروک می‌شود.
  *
- * سه محور، هر سه سازنده:
+ * ولی این فقط برای مایوی کشی درست است. شلوارکِ ساحلی و برکینی از پارچهٔ بافته
+ * دوخته می‌شوند و درفتشان اصلاً ضریبِ کشش را به کار نمی‌بَرد؛ جامر و شورتِ
+ * مردانه هم آسترِ تکه‌ای ندارند. اگر همان دو محورِ مشترک را به همه بدهیم، برای
+ * این چهار مدل ردیف‌هایی می‌سازیم که همه یک الگو هستند با نام‌های متفاوت — و
+ * دقیقاً همین شد و بیست‌وهشت ردیفِ تکراری درآمد.
  *
- * — «پارچه» ضریبِ کشسانی است و مستقیم در ابعادِ همهٔ قطعه‌ها ضرب می‌شود.
- * — «آسترکشی» یک نسخهٔ کاملِ دیگر از قطعه‌هاست (آستر کامل)، یا فقط جلو، یا فقط
- *   لایهٔ فاق — سه چیزِ متفاوت روی میز برش.
- * — «پوشش» خطِ پا را جابه‌جا می‌کند و شکلِ پشتِ شورت را عوض می‌کند.
+ * پس هر مدل محورهای *خودش* را دارد: آن‌که کشی است پارچه و آستر می‌گیرد، آن‌که
+ * بافته است قد و چاک و بستِ خودش را.
  */
 class SwimRangeCatalog extends CatalogVariantBase
 {
@@ -25,65 +27,137 @@ class SwimRangeCatalog extends CatalogVariantBase
     }
 
     /**
-     * مایوها: کلید ⇒ [نام، درفتِ پایه، ضریبِ کششِ پایه، محورِ پوشش دارد یا نه].
+     * مایوها: کلید ⇒ [نام، درفتِ پایه، محورها].
      *
-     * ضریبِ پایه از خودِ درفت می‌آید؛ سه پارچه از همان بالا و پایین می‌روند تا
-     * هر مدل روی پارچهٔ خودش بماند: مایوی مسابقه‌ای از پیش پرکشش است و شلوارکِ
-     * ساحلی تقریباً بی‌کشش.
+     * هر محور: نامِ پارامتر ⇒ [کلیدِ گزینه ⇒ [نامِ فارسی، مقدار]].
      *
-     * @var array<string, array{0: string, 1: string, 2: float, 3: bool}>
+     * @var array<string, array{0: string, 1: string, 2: array<string, array<string, array{0: string, 1: mixed}>>}>
      */
     protected const SWIMS = [
-        'onepiece' => ['یک‌تکه', 'swim_onepiece', 0.85, false],
-        'onepiece_high' => ['یک‌تکه یقه‌بسته', 'swim_onepiece_high_neck', 0.85, false],
-        'onepiece_deep' => ['یک‌تکه پشت‌باز', 'swim_onepiece_deep_back', 0.85, false],
-        'skirted' => ['دامن‌دار', 'swim_skirted', 0.85, false],
-        'skirted_long' => ['دامن‌دار بلند', 'swim_skirted_long', 0.85, false],
-        'racerback' => ['ریسربک', 'swim_racerback', 0.78, false],
-        'tankini' => ['تانکینی', 'swim_tankini', 0.85, true],
-        'bikini_sport' => ['بیکینی ورزشی', 'swim_bikini_sport', 0.85, true],
-        'bikini_triangle' => ['بیکینی مثلثی', 'swim_bikini_triangle', 0.85, true],
-        'bikini_high' => ['بیکینی کمربلند', 'swim_bikini_high_waist', 0.85, true],
-        'bikini_bandeau' => ['بیکینی بندو', 'swim_bikini_bandeau', 0.80, true],
-        'briefs' => ['شورت مایو', 'swim_briefs', 0.85, true],
-        'sport_bra' => ['نیم‌تنه ورزشی', 'swim_sport_bra', 0.80, false],
-        'burkini' => ['برکینی', 'swim_burkini', 0.92, false],
-        'jammer' => ['جامر', 'swim_jammer', 0.72, false],
-        'trunks' => ['شورت مردانه', 'swim_trunks', 0.95, false],
-        'boardshorts' => ['شلوارک ساحلی', 'swim_boardshorts', 0.98, false],
+        // ── مایوی کشی: پارچه، آسترکشی و (اگر شورت دارد) پوشش ──────────────
+        'onepiece' => ['یک‌تکه', 'swim_onepiece', ['stretch' => self::MEDIUM, 'lining' => self::LININGS]],
+        'onepiece_high' => ['یک‌تکه یقه‌بسته', 'swim_onepiece_high_neck', ['stretch' => self::MEDIUM, 'lining' => self::LININGS]],
+        'onepiece_deep' => ['یک‌تکه پشت‌باز', 'swim_onepiece_deep_back', ['stretch' => self::MEDIUM, 'lining' => self::LININGS]],
+        'skirted' => ['دامن‌دار', 'swim_skirted', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'skirt_length' => self::SKIRT]],
+        'skirted_long' => ['دامن‌دار بلند', 'swim_skirted_long', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'skirt_length' => self::SKIRT]],
+        'racerback' => ['ریسربک', 'swim_racerback', ['stretch' => self::SPORTY, 'lining' => self::LININGS]],
+        'tankini' => ['تانکینی', 'swim_tankini', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'coverage' => self::COVERAGES]],
+        'bikini_sport' => ['بیکینی ورزشی', 'swim_bikini_sport', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'coverage' => self::COVERAGES]],
+        'bikini_triangle' => ['بیکینی مثلثی', 'swim_bikini_triangle', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'coverage' => self::COVERAGES]],
+        'bikini_high' => ['بیکینی کمربلند', 'swim_bikini_high_waist', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'coverage' => self::COVERAGES]],
+        'bikini_bandeau' => ['بیکینی بندو', 'swim_bikini_bandeau', ['stretch' => self::SPORTY, 'lining' => self::LININGS, 'coverage' => self::COVERAGES]],
+        'briefs' => ['شورت مایو', 'swim_briefs', ['stretch' => self::MEDIUM, 'lining' => self::LININGS, 'coverage' => self::COVERAGES]],
+        'sport_bra' => ['نیم‌تنه ورزشی', 'swim_sport_bra', ['stretch' => self::SPORTY, 'lining' => self::LININGS, 'top_height' => self::BRA_HEIGHT]],
+
+        // ── بافته یا یک‌لایه: محورهای خودشان ──────────────────────────────
+        'jammer' => ['جامر', 'swim_jammer', ['stretch' => self::RACING, 'leg_length' => self::JAMMER_LEG]],
+        'trunks' => ['شورت مردانه', 'swim_trunks', ['stretch' => self::MEDIUM, 'leg_length' => self::TRUNK_LEG, 'back_pocket' => self::POCKET]],
+        // شلوارکِ ساحلی بافته است: نه ضریبِ کشش رویش اثر دارد، نه آستر، نه چاک
+        // و بستِ کمر — درفتش هیچ‌کدام را در قطعه نمی‌آورد. فقط قد و آزادیِ کمر
+        'boardshorts' => ['شلوارک ساحلی', 'swim_boardshorts', ['leg_length' => self::BOARD_LEG, 'waist_ease' => self::BOARD_WAIST]],
+        'burkini' => ['برکینی', 'swim_burkini', ['tunic_length' => self::TUNIC, 'sleeve_length' => self::SLEEVE, 'hood' => self::HOOD]],
     ];
 
-    /**
-     * پارچه: کلید ⇒ [نام، تغییرِ ضریبِ کشش].
-     *
-     * @var array<string, array{0: string, 1: float}>
-     */
-    protected const FABRICS = [
-        'power' => ['پارچه پرکشش', -0.07],
-        'standard' => ['پارچه معمولی مایو', 0.0],
-        'stable' => ['پارچه کم‌کشش', 0.07],
+    /** پارچهٔ مایوی معمولی (پایه ۰٫۸۵). */
+    protected const MEDIUM = [
+        'power' => ['پارچه پرکشش', 0.78],
+        'standard' => ['پارچه معمولی مایو', 0.85],
+        'stable' => ['پارچه کم‌کشش', 0.92],
     ];
 
-    /**
-     * آسترکشی: کلید ⇒ نام.
-     *
-     * @var array<string, string>
-     */
+    /** پارچهٔ مدل‌های ورزشی‌تر (پایه ۰٫۷۸ تا ۰٫۸۰). */
+    protected const SPORTY = [
+        'power' => ['پارچه پرکشش', 0.72],
+        'standard' => ['پارچه معمولی مایو', 0.80],
+        'stable' => ['پارچه کم‌کشش', 0.88],
+    ];
+
+    /** پارچهٔ مایوی مسابقه‌ای (پایه ۰٫۷۲). */
+    protected const RACING = [
+        'power' => ['پارچه مسابقه‌ای', 0.66],
+        'standard' => ['پارچه تمرین', 0.72],
+        'stable' => ['پارچه معمولی', 0.80],
+    ];
+
+    /** آسترکشی: سه چیزِ متفاوت روی میز برش، نه سه برچسب. */
     protected const LININGS = [
-        'full' => 'آستر کامل',
-        'front' => 'آستر جلو',
-        'gusset' => 'فقط لایه فاق',
+        'full' => ['آستر کامل', 'full'],
+        'front' => ['آستر جلو', 'front'],
+        'gusset' => ['فقط لایه فاق', 'gusset'],
     ];
 
-    /**
-     * پوشش: کلید ⇒ نام.
-     *
-     * @var array<string, string>
-     */
+    /** پوشش: خطِ پا را جابه‌جا می‌کند و شکلِ پشتِ شورت را عوض. */
     protected const COVERAGES = [
-        'full' => 'پوشش کامل',
-        'medium' => 'پوشش متوسط',
-        'cheeky' => 'پوشش کم',
+        'full' => ['پوشش کامل', 'full'],
+        'medium' => ['پوشش متوسط', 'medium'],
+        'cheeky' => ['پوشش کم', 'cheeky'],
+    ];
+
+    /** قدِ دامنِ مایوی دامن‌دار. */
+    protected const SKIRT = [
+        'short' => ['دامن کوتاه', 14.0],
+        'classic' => ['دامن معمولی', 20.0],
+        'long' => ['دامن بلند', 28.0],
+    ];
+
+    /** بلندیِ نیم‌تنهٔ ورزشی. */
+    protected const BRA_HEIGHT = [
+        'short' => ['نیم‌تنه کوتاه', 15.0],
+        'classic' => ['نیم‌تنه معمولی', 20.0],
+        'long' => ['نیم‌تنه بلند', 26.0],
+    ];
+
+    /** قدِ پاچهٔ جامر. */
+    protected const JAMMER_LEG = [
+        'short' => ['تا میان ران', 22.0],
+        'classic' => ['تا بالای زانو', 30.0],
+        'long' => ['تا زانو', 40.0],
+    ];
+
+    /** قدِ پاچهٔ شورتِ مردانه. */
+    protected const TRUNK_LEG = [
+        'short' => ['پاچه کوتاه', 13.0],
+        'classic' => ['پاچه معمولی', 18.0],
+        'long' => ['پاچه بلند', 25.0],
+    ];
+
+    /** جیبِ پشتِ شورتِ مردانه: یک قطعهٔ اضافه. */
+    protected const POCKET = [
+        'plain' => ['بی‌جیب', false],
+        'pocket' => ['جیب پشت', true],
+    ];
+
+    /** قدِ پاچهٔ شلوارکِ ساحلی. */
+    protected const BOARD_LEG = [
+        'short' => ['تا میان ران', 26.0],
+        'classic' => ['تا بالای زانو', 32.0],
+        'long' => ['تا زیر زانو', 42.0],
+    ];
+
+    /** آزادیِ کمرِ شلوارکِ ساحلی. */
+    protected const BOARD_WAIST = [
+        'snug' => ['کمر جمع', 3.0],
+        'classic' => ['کمر معمولی', 6.0],
+        'relaxed' => ['کمر راحت', 11.0],
+    ];
+
+    /** قدِ تونیکِ برکینی از خط کمر. */
+    protected const TUNIC = [
+        'short' => ['تونیک کوتاه', 30.0],
+        'classic' => ['تونیک معمولی', 38.0],
+        'long' => ['تونیک بلند', 48.0],
+    ];
+
+    /** آستینِ برکینی. */
+    protected const SLEEVE = [
+        'elbow' => ['آستین تا آرنج', 34.0],
+        'long' => ['آستین بلند', 54.0],
+    ];
+
+    /** کلاهِ برکینی: یک قطعهٔ کامل، نه یک گزینهٔ ظاهری. */
+    protected const HOOD = [
+        'hooded' => ['کلاه‌دار', true],
+        'plain' => ['بی‌کلاه', false],
     ];
 
     public static function variants(): array
@@ -96,28 +170,13 @@ class SwimRangeCatalog extends CatalogVariantBase
 
         $rows = [];
 
-        foreach (static::SWIMS as $swim => [$swimName, $base, $stretch, $hasCoverage]) {
-            foreach (static::FABRICS as $fabric => [$fabricName, $delta]) {
-                // ضریب همیشه در بازهٔ خودِ درفت می‌ماند؛ پارچهٔ کم‌کششِ شلوارک
-                // ساحلی به یک می‌رسد و بالاتر نمی‌رود
-                $ratio = round(min(1.0, max(0.62, $stretch + $delta)), 2);
-
-                foreach (static::LININGS as $lining => $liningName) {
-                    foreach ($hasCoverage ? array_keys(static::COVERAGES) : [null] as $coverage) {
-                        $key = 'swim_range_'.$swim.'_'.$fabric.'_'.$lining
-                            .($coverage === null ? '' : '_'.$coverage);
-
-                        $params = ['stretch' => $ratio, 'lining' => $lining];
-                        $title = 'مایو '.$swimName.'، '.$fabricName.'، '.$liningName;
-
-                        if ($coverage !== null) {
-                            $params['coverage'] = $coverage;
-                            $title .= '، '.static::COVERAGES[$coverage];
-                        }
-
-                        $rows[$key] = ['title' => $title, 'base' => $base, 'params' => $params];
-                    }
-                }
+        foreach (static::SWIMS as $swim => [$swimName, $base, $axes]) {
+            foreach (static::combine($axes) as [$suffix, $names, $params]) {
+                $rows['swim_range_'.$swim.$suffix] = [
+                    'title' => 'مایو '.$swimName.'، '.implode('، ', $names),
+                    'base' => $base,
+                    'params' => $params,
+                ];
             }
         }
 
