@@ -34,6 +34,7 @@ class LibraryController extends Controller
         $category = $request->query('category');
 
         $templates = PatternTemplate::query()
+            ->withoutPreview()
             ->availableTo($workshopId)
             ->where(fn ($q) => $q->where('is_public', true)->orWhere('workshop_id', $workshopId))
             ->with('garmentType')
@@ -44,7 +45,11 @@ class LibraryController extends Controller
             ->when($category, fn ($q) => $q->whereHas('garmentType', fn ($inner) => $inner->where('category', $category)))
             ->orderBy('sort')
             ->orderBy('name_fa')
-            ->get();
+            // کتابخانه هزاران الگوی پایه دارد؛ همه را در یک صفحه ریختن یعنی
+            // صفحه‌ای که باز نمی‌شود. جستجو و صافی‌ها روی *همهٔ* ردیف‌ها کار
+            // می‌کنند و فقط نمایش صفحه‌بندی شده است.
+            ->paginate(48)
+            ->withQueryString();
 
         $published = Pattern::published()
             ->acrossWorkshops()

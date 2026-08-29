@@ -2,40 +2,113 @@
     <x-page-header title="الگوی جدید" subtitle="مدل را انتخاب کنید و بگویید برای چه کسی است؛ بقیه کارها خودکار انجام می‌شود."
         :back="route('patterns.index')" />
 
+    {{-- فهرست مدل‌ها در یک بلوک JSON می‌آید و مرورگر کارت‌ها را می‌سازد.
+         با هزاران مدل، نوشتنِ همهٔ کارت‌ها در خودِ صفحه یعنی صفحه‌ای که باز
+         نمی‌شود؛ این‌جا فقط یک بسته نشان داده می‌شود و جستجو روی همه کار می‌کند. --}}
+    <script type="application/json" id="template-list">@json($templateCards, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)</script>
+
     <form method="POST" action="{{ route('patterns.store') }}"
-        x-data="{ template: @js($selectedTemplate), source: @js(old('customer_id') ? 'customer' : 'size') }" class="space-y-6">
+        x-data="{
+            template: @js($selectedTemplate),
+            source: @js(old('customer_id') ? 'customer' : 'size'),
+            data: JSON.parse(document.getElementById('template-list').textContent),
+            get all() { return this.data.rows; },
+            word(at) { return this.data.words[at] || ''; },
+            q: '',
+            shown: 12,
+            previewUrl: @js($templatePreviewUrl),
+            digits(value) { return String(value ?? '').replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); },
+            thumb(id) { return this.previewUrl.replace('__ID__', id); },
+            matches() {
+                const needle = this.q.trim().toLowerCase();
+                if (! needle) { return this.all; }
+                return this.all.filter(row =>
+                    row.n.toLowerCase().includes(needle)
+                    || this.word(row.g).toLowerCase().includes(needle));
+            },
+            page() {
+                const rows = this.matches();
+                const take = rows.slice(0, this.shown);
+                // مدلِ انتخاب‌شده هرگز از فهرست بیرون نمی‌افتد، وگرنه فرم خالی
+                // فرستاده می‌شود و کاربر نمی‌بیند چه چیزی انتخاب کرده
+                if (this.template && !take.some(row => row.i === this.template)) {
+                    const chosen = this.all.find(row => row.i === this.template);
+                    if (chosen) { return [chosen, ...take]; }
+                }
+                return take;
+            },
+            more() { return this.matches().length > this.shown; },
+
+            params: { name: '', description: '', schema: {}, defaults: {} },
+            paramsUrl: @js($templateParamsUrl),
+            loadParams() {
+                if (! this.template) { this.params = { name: '', description: '', schema: {}, defaults: {} }; return; }
+                fetch(this.paramsUrl.replace('__ID__', this.template), { headers: { 'Accept': 'application/json' } })
+                    .then(response => response.ok ? response.json() : null)
+                    .then(data => { this.params = data || { name: '', description: '', schema: {}, defaults: {} }; })
+                    .catch(() => { this.params = { name: '', description: '', schema: {}, defaults: {} }; });
+            },
+        }" x-init="loadParams()" x-effect="template, loadParams()" class="space-y-6">
         @csrf
 
         {{-- گام یک: انتخاب مدل از کتابخانه --}}
         <x-card title="۱. مدل الگو را انتخاب کنید" icon="book"
             subtitle="مدل‌های پایه آماده‌اند؛ اندازه‌ها روی همان مدل پیاده می‌شود.">
-            @if ($templates->isEmpty())
+            @if (empty($templateCards['rows']))
                 <x-alert type="warning">
                     هنوز الگوی پایه‌ای در کتابخانه نیست. از مدیر سامانه بخواهید کتابخانه الگوها را پر کند.
                 </x-alert>
             @endif
 
+            <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <p class="text-xs text-stone-500">
+                    <span x-text="digits(matches().length)"></span> مدل در کتابخانه
+                </p>
+
+                <label class="sr-only" for="template-search">جستجوی مدل</label>
+                <input id="template-search" type="search" x-model="q" placeholder="جستجوی نام مدل…"
+                    class="w-56 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs shadow-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-200">
+            </div>
+
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                @foreach ($templates as $template)
+                <template x-for="row in page()" :key="row.i">
                     <label class="cursor-pointer">
-                        <input type="radio" name="pattern_template_id" value="{{ $template->id }}" class="peer sr-only"
-                            x-model.number="template" @checked(old('pattern_template_id') == $template->id) required>
+                        <input type="radio" name="pattern_template_id" x-bind:value="row.i" class="peer sr-only"
+                            x-model.number="template" required>
 
                         <div class="h-full rounded-2xl border-2 border-stone-200 bg-white p-3 transition peer-checked:border-brand-500 peer-checked:ring-2 peer-checked:ring-brand-100 hover:border-brand-300">
-                            <div class="flex h-32 items-center justify-center overflow-hidden rounded-xl bg-stone-50 [&>svg]:h-full [&>svg]:w-auto">
-                                {!! $template->preview_svg ?: '' !!}
+                            <div class="flex h-32 items-center justify-center overflow-hidden rounded-xl bg-stone-50">
+                                <img loading="lazy" decoding="async" x-bind:src="thumb(row.i)" x-bind:alt="row.n"
+                                    class="h-full w-auto object-contain">
                             </div>
 
-                            <p class="mt-3 font-bold text-stone-900">{{ $template->name_fa }}</p>
-
-                            @if ($template->garmentType)
-                                <p class="text-xs text-brand-600">{{ $template->garmentType->name_fa }}</p>
-                            @endif
-
-                            <p class="mt-1 text-xs leading-5 text-stone-500">{{ $template->description }}</p>
+                            <p class="mt-3 font-bold text-stone-900" x-text="row.n"></p>
+                            <p class="text-xs text-brand-600" x-show="word(row.g)" x-text="word(row.g)"></p>
                         </div>
                     </label>
-                @endforeach
+                </template>
+            </div>
+
+            {{-- توضیحِ مدلِ انتخاب‌شده؛ روی *همهٔ* کارت‌ها نمی‌آید چون برای هر
+                 مدل یکتاست و با هزاران مدل، دو مگابایت متن به صفحه اضافه می‌کرد --}}
+            <p x-show="params.description" x-cloak
+                class="mt-4 rounded-xl bg-stone-50 px-4 py-3 text-xs leading-6 text-stone-600"
+                x-text="params.description"></p>
+
+            <div class="mt-4 flex flex-wrap items-center gap-3">
+                <button type="button" x-show="more()" x-cloak @click="shown += 24"
+                    class="rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-600 transition hover:border-brand-400 hover:text-brand-700">
+                    مدل‌های بیشتر
+                </button>
+
+                <p x-show="more()" x-cloak class="text-xs text-stone-400">
+                    <span x-text="digits(matches().length - page().length)"></span>
+                    مدل دیگر هم هست؛ با جستجوی نام زودتر پیدا می‌شود.
+                </p>
+
+                <p x-show="q && matches().length === 0" x-cloak class="text-xs font-medium text-amber-700">
+                    هیچ مدلی با این نام پیدا نشد.
+                </p>
             </div>
 
             @error('pattern_template_id')
@@ -124,40 +197,53 @@
                     </div>
                 </div>
 
+                {{-- پارامترهای همان مدلی که انتخاب شده، نه همهٔ مدل‌های کتابخانه:
+                     با هزاران مدل، فرمِ پنهانِ همه یعنی ده‌ها هزار فیلد در یک صفحه --}}
                 <div class="space-y-5">
                     <h3 class="text-sm font-bold text-stone-700">پارامترهای مدل انتخاب‌شده</h3>
 
-                    @foreach ($templates as $template)
-                        <div x-show="template === {{ $template->id }}" x-cloak class="space-y-4">
-                            <p class="text-xs text-stone-500">{{ $template->name_fa }}</p>
+                    <template x-if="template && params.name">
+                        <div class="space-y-4">
+                            <p class="text-xs text-stone-500" x-text="params.name"></p>
 
                             <div class="grid gap-4 sm:grid-cols-3">
-                                @foreach ($template->params_schema ?? [] as $key => $field)
-                                    @php
-                                        $value = data_get($template->default_params, $key);
-                                        $isToggle = ($field['type'] ?? 'number') === 'toggle';
-                                    @endphp
+                                <template x-for="(field, key) in params.schema" :key="key">
+                                    <div>
+                                        <label class="mb-1.5 block text-xs font-semibold text-stone-700"
+                                            x-text="field.label || key"></label>
 
-                                    <x-field :label="$field['label'] ?? $key" :hint="$field['hint'] ?? null">
-                                        @if ($isToggle)
-                                            <select name="params[{{ $key }}]"
-                                                x-bind:disabled="template !== {{ $template->id }}"
+                                        <template x-if="field.type === 'toggle'">
+                                            <select x-bind:name="'params[' + key + ']'"
                                                 class="w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-sm shadow-sm">
-                                                <option value="1" @selected($value)>دارد</option>
-                                                <option value="0" @selected(! $value)>ندارد</option>
+                                                <option value="1" x-bind:selected="!! params.defaults[key]">دارد</option>
+                                                <option value="0" x-bind:selected="! params.defaults[key]">ندارد</option>
                                             </select>
-                                        @else
-                                            <x-input type="number" :name="'params['.$key.']'" :value="$value"
-                                                :step="$field['step'] ?? 0.5" :min="$field['min'] ?? null"
-                                                :max="$field['max'] ?? null"
-                                                x-bind:disabled="template !== {{ $template->id }}"
-                                                :suffix="$field['unit'] ?? null" />
-                                        @endif
-                                    </x-field>
-                                @endforeach
+                                        </template>
+
+                                        <template x-if="field.type === 'select'">
+                                            <select x-bind:name="'params[' + key + ']'"
+                                                class="w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-sm shadow-sm">
+                                                <template x-for="(label, value) in (field.options || {})" :key="value">
+                                                    <option x-bind:value="value" x-text="label"
+                                                        x-bind:selected="params.defaults[key] === value"></option>
+                                                </template>
+                                            </select>
+                                        </template>
+
+                                        <template x-if="field.type !== 'toggle' && field.type !== 'select'">
+                                            <input type="number" x-bind:name="'params[' + key + ']'"
+                                                x-bind:value="params.defaults[key]"
+                                                x-bind:step="field.step || 0.5"
+                                                x-bind:min="field.min" x-bind:max="field.max"
+                                                class="w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-sm shadow-sm">
+                                        </template>
+
+                                        <p class="mt-1 text-xs text-stone-500" x-show="field.hint" x-text="field.hint"></p>
+                                    </div>
+                                </template>
                             </div>
                         </div>
-                    @endforeach
+                    </template>
 
                     <p x-show="! template" class="text-xs text-stone-500">اول یک مدل انتخاب کنید.</p>
                 </div>

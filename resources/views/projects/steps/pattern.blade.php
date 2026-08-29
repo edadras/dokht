@@ -83,11 +83,9 @@
                             <label for="template-{{ $template->id }}"
                                 class="flex h-full cursor-pointer flex-col gap-2 rounded-2xl border-2 border-stone-200 bg-white p-3 transition hover:border-brand-300 peer-checked:border-brand-500 peer-checked:bg-brand-50">
                                 <div class="flex h-28 items-center justify-center overflow-hidden rounded-xl bg-stone-50">
-                                    @if ($template->preview_svg)
-                                        {!! $template->preview_svg !!}
-                                    @else
-                                        <x-icon name="scissors" class="h-8 w-8 text-stone-300" />
-                                    @endif
+                                    <img loading="lazy" decoding="async" alt="{{ $template->name_fa }}"
+                                        src="{{ route('patterns.templates.preview', $template) }}"
+                                        class="h-full w-auto object-contain">
                                 </div>
 
                                 <p class="text-sm font-semibold text-stone-800">{{ $template->name_fa }}</p>

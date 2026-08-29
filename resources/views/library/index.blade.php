@@ -5,7 +5,7 @@
     {{-- دو بخش کتابخانه --}}
     <div class="mb-5 flex flex-wrap items-center gap-2">
         @foreach ([
-            'templates' => ['label' => 'الگوهای پایه', 'icon' => 'ruler', 'count' => $templates->count()],
+            'templates' => ['label' => 'الگوهای پایه', 'icon' => 'ruler', 'count' => $templates->total()],
             'published' => ['label' => 'الگوهای منتشرشده', 'icon' => 'share', 'count' => $published->total()],
         ] as $key => $meta)
             <a href="{{ route('library.index', array_filter(['tab' => $key, 'q' => $term, 'garment_type' => $garmentTypeId, 'category' => $category])) }}"
@@ -58,11 +58,11 @@
                 @foreach ($templates as $template)
                     <div class="flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">
                         <div class="flex h-44 items-center justify-center border-b border-stone-100 bg-stone-50 p-3">
-                            @if ($template->preview_svg)
-                                <div class="max-h-full [&>svg]:max-h-40 [&>svg]:w-auto">{!! $template->preview_svg !!}</div>
-                            @else
-                                <x-icon name="ruler" class="h-10 w-10 text-stone-300" />
-                            @endif
+                            {{-- تصویر با نشانی می‌آید، نه در خودِ صفحه: کتابخانه
+                                 هزاران الگو دارد و هر تصویر چند کیلوبایت است --}}
+                            <img loading="lazy" decoding="async" alt="{{ $template->name_fa }}"
+                                src="{{ route('patterns.templates.preview', $template) }}"
+                                class="max-h-40 w-auto object-contain">
                         </div>
 
                         <div class="flex min-w-0 flex-1 flex-col gap-2 p-4">
@@ -96,6 +96,8 @@
                     </div>
                 @endforeach
             </div>
+
+            <div class="mt-6">{{ $templates->links() }}</div>
         @endif
     @else
         @if ($published->isEmpty())

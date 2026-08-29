@@ -123,6 +123,13 @@ Route::middleware(['auth', 'workshop'])->group(function () {
     Route::post('assistant', [AssistantController::class, 'ask'])->name('assistant.ask');
 
     // الگوها
+    // تصویر هر الگوی پایه جدا صدا زده می‌شود تا فهرست‌ها هزاران SVG را با خود
+    // حمل نکنند؛ پیش از resource می‌آید وگرنه «templates» را شناسهٔ الگو می‌گیرد
+    Route::get('patterns/templates/{template}/preview.svg', [PatternController::class, 'templatePreview'])
+        ->name('patterns.templates.preview');
+    // پارامترهای همان مدلی که انتخاب شده، نه همهٔ مدل‌ها
+    Route::get('patterns/templates/{template}/params', [PatternController::class, 'templateParams'])
+        ->name('patterns.templates.params');
     Route::resource('patterns', PatternController::class);
     Route::get('patterns/{pattern}/editor', [PatternController::class, 'editor'])->name('patterns.editor');
     Route::put('patterns/{pattern}/geometry', [PatternController::class, 'updateGeometry'])->name('patterns.geometry');

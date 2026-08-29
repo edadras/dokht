@@ -8,6 +8,7 @@ use App\Models\MeasurementSet;
 use App\Models\Pattern;
 use App\Models\PatternPiece;
 use App\Models\PatternTemplate;
+use App\Services\Pattern\GeneratorRegistry;
 use App\Services\Pattern\GradingService;
 use App\Services\Pattern\PatternBuilder;
 use App\Services\Pattern\PatternInspector;
@@ -20,6 +21,7 @@ use App\Support\Measurements;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -33,6 +35,11 @@ use InvalidArgumentException;
  */
 class PatternController extends Controller
 {
+    /** نشانِ «تصویری نیست» — هم‌اندازهٔ پیش‌نمایش‌های واقعی تا چیدمان نپرد. */
+    protected const MISSING_PREVIEW = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 200" '
+        .'width="260" height="200" role="img" aria-label="بدون تصویر"><rect width="260" height="200" fill="#fafaf9"/>'
+        .'<path d="M116 96h28v4h-28zM130 84v28" stroke="#d6d3d1" stroke-width="4" fill="none"/></svg>';
+
     public function __construct(
         protected PatternBuilder $builder,
         protected SvgRenderer $renderer,
@@ -65,7 +72,9 @@ class PatternController extends Controller
     public function create(Request $request): View
     {
         return view('patterns.create', [
-            'templates' => $this->availableTemplates()->get(),
+            'templateCards' => $this->templateCards(),
+            'templatePreviewUrl' => route('patterns.templates.preview', ['template' => '__ID__']),
+            'templateParamsUrl' => route('patterns.templates.params', ['template' => '__ID__']),
             'customers' => Customer::query()->with('defaultMeasurementSet')->orderBy('name')->get(),
             'sizes' => Measurements::sizes(),
             'selectedTemplate' => $request->integer('template') ?: null,
@@ -439,13 +448,134 @@ class PatternController extends Controller
     }
 
     /** الگوهای پایه در دسترس این کارگاه. */
+    /**
+     * فهرست مدل‌ها برای انتخابگر: شناسه، نام، و شمارهٔ نوعِ لباس و توضیح.
+     *
+     * این فهرست هزاران ردیف دارد و تمامش به مرورگر می‌رود، پس هر بایتِ تکراری
+     * چند مگابایت می‌شود. سه چیز عمداً این‌جا نیست:
+     *
+     * — تصویر، که نشانی‌اش از روی شناسه ساخته می‌شود.
+     * — متن جستجو، که همان نام است و مرورگر خودش می‌سازد.
+     * — توضیحِ هر مدل، که برای هر ردیف یکتاست و حدود دویست بایت؛ یعنی دو مگابایت
+     *   برای متنی که کاربر فقط زیرِ *یک* کارت می‌خواند. توضیحِ مدلِ انتخاب‌شده
+     *   جداگانه خوانده می‌شود.
+     * — نامِ نوعِ لباس، که میان صدها مدل تکرار می‌شود؛ یک بار در فهرستِ مشترک
+     *   می‌آید و کارت فقط شماره‌اش را دارد.
+     *
+     * @return array{rows: array<int, array<string, mixed>>, words: array<int, string>}
+     */
+    protected function templateCards(): array
+    {
+        $words = [];
+        $index = [];
+
+        $code = function (?string $text) use (&$words, &$index): int {
+            $text = (string) $text;
+
+            if (! isset($index[$text])) {
+                $index[$text] = count($words);
+                $words[] = $text;
+            }
+
+            return $index[$text];
+        };
+
+        $rows = $this->availableTemplates()->get()->map(fn (PatternTemplate $template) => [
+            'i' => $template->id,
+            'n' => $template->name_fa,
+            'g' => $code($template->garmentType?->name_fa),
+        ])->all();
+
+        return ['rows' => $rows, 'words' => $words];
+    }
+
     protected function availableTemplates()
     {
         return PatternTemplate::query()
+            ->withoutPreview()
             ->availableTo(auth()->user()->workshop_id)
             ->with('garmentType')
             ->orderBy('sort')
             ->orderBy('id');
+    }
+
+    /**
+     * تصویرِ پیش‌نمایشِ یک الگوی پایه، جدا از صفحه.
+     *
+     * فهرستِ الگوها هزاران ردیف دارد و تصویرِ هرکدام چند کیلوبایت SVG است.
+     * تا وقتی تصویرها *در خودِ صفحه* بودند، باز کردنِ «الگوی جدید» یعنی خواندنِ
+     * ده‌ها مگابایت از پایگاه داده و ساختنِ هزاران قاب در مرورگر. حالا هر تصویر
+     * نشانیِ خودش را دارد و مرورگر همان‌هایی را می‌گیرد که به چشم می‌آیند.
+     *
+     * ردیفی که تصویرش خالی است (مثلاً چون از سرِ سرعت هنگام پرکردنِ کتابخانه
+     * ساخته نشده) همان‌جا ساخته و ذخیره می‌شود، پس دفعهٔ بعد آماده است.
+     */
+    public function templatePreview(PatternTemplate $template, SvgRenderer $renderer): Response
+    {
+        abort_unless(
+            $template->workshop_id === null || $template->workshop_id === auth()->user()->workshop_id,
+            404,
+        );
+
+        $svg = (string) ($template->preview_svg ?? '');
+
+        if ($svg === '') {
+            $svg = $this->buildTemplatePreview($template, $renderer);
+
+            if ($svg !== '') {
+                $template->forceFill(['preview_svg' => $svg])->saveQuietly();
+            }
+        }
+
+        return response($svg !== '' ? $svg : static::MISSING_PREVIEW, 200, [
+            'Content-Type' => 'image/svg+xml',
+            'Cache-Control' => 'private, max-age=86400',
+        ]);
+    }
+
+    /**
+     * پارامترهای *همان* مدلی که انتخاب شده.
+     *
+     * پیش‌تر صفحه برای هر مدلِ کتابخانه یک فرمِ پارامتر می‌ساخت و همه را پنهان
+     * نگه می‌داشت. با چهل مدل کار می‌کرد؛ با هزاران مدل یعنی ده‌ها هزار فیلدِ
+     * پنهان در یک صفحه. حالا فرم به‌اندازهٔ یک مدل است و با هر انتخاب تازه
+     * می‌شود.
+     */
+    public function templateParams(PatternTemplate $template): JsonResponse
+    {
+        abort_unless(
+            $template->workshop_id === null || $template->workshop_id === auth()->user()->workshop_id,
+            404,
+        );
+
+        return response()->json([
+            'name' => $template->name_fa,
+            'description' => (string) $template->description,
+            'schema' => $template->params_schema ?: [],
+            'defaults' => $template->default_params ?? [],
+        ]);
+    }
+
+    /** ساختِ تصویرِ یک الگوی پایه؛ مدلی که ساخته نمی‌شود، تصویر هم ندارد. */
+    protected function buildTemplatePreview(PatternTemplate $template, SvgRenderer $renderer): string
+    {
+        try {
+            $generator = GeneratorRegistry::make($template->generator);
+            $pieces = collect($generator->generate(
+                Measurements::fromSize('40'),
+                [],
+                $template->params(),
+            ))->take(3)->map(fn (array $piece) => new PatternPiece($piece));
+
+            return $renderer->renderPieces($pieces, [
+                'width' => 260,
+                'labels' => false,
+                'seam_allowance' => false,
+                'gap' => 3,
+            ]);
+        } catch (\Throwable) {
+            return '';
+        }
     }
 
     /**

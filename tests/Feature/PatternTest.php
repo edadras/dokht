@@ -70,7 +70,60 @@ class PatternTest extends TestCase
             ->assertOk()
             ->assertSee('دامن A')
             ->assertSee('تنظیمات حرفه‌ای')
-            ->assertSee('value="'.$template->id.'"', false);
+            // مدل در فهرستِ صفحه هست و تصویرش نشانی دارد، نه اینکه در خودِ صفحه باشد
+            ->assertSee('"i":'.$template->id, false)
+            ->assertSee('preview.svg', false);
+    }
+
+    /**
+     * صفحهٔ «الگوی جدید» نباید با بزرگ‌شدن کتابخانه سنگین شود.
+     *
+     * تلهٔ واقعی این بود: صفحه تصویرِ *هر* الگوی کتابخانه را از پایگاه داده
+     * می‌خواند و در HTML می‌گذاشت، و برای *هر* الگو یک فرمِ پارامترِ پنهان
+     * می‌ساخت. با چهل مدل کار می‌کرد؛ با هزاران مدل یعنی ده‌ها مگابایت صفحه.
+     */
+    public function test_the_create_page_carries_neither_previews_nor_a_form_per_template(): void
+    {
+        $this->actingAsWorkshopUser();
+
+        for ($i = 0; $i < 30; $i++) {
+            PatternTemplate::factory()->generator('skirt_a_line')->create([
+                'name_fa' => 'دامن شماره '.$i,
+                'preview_svg' => '<svg id="stored-preview-'.$i.'"><rect width="10" height="10"/></svg>',
+            ]);
+        }
+
+        $html = $this->get(route('patterns.create'))->assertOk()->getContent();
+
+        // تصویرهای ذخیره‌شده نباید در خودِ صفحه بیایند؛ نشانی‌شان کافی است
+        $this->assertStringNotContainsString(
+            'stored-preview-',
+            $html,
+            'صفحه تصویر الگوها را با خودش حمل می‌کند؛ باید نشانی بدهد نه خودِ تصویر.',
+        );
+        $this->assertStringContainsString('preview.svg', $html);
+
+        // فرمِ پارامتر یکی است و با انتخاب مدل پر می‌شود
+        $this->assertStringContainsString('__ID__', $html);
+        $this->assertSame(1, substr_count($html, 'پارامترهای مدل انتخاب‌شده'));
+    }
+
+    public function test_a_template_preview_is_served_on_its_own(): void
+    {
+        $this->actingAsWorkshopUser();
+        $template = PatternTemplate::factory()->generator('skirt_a_line')->create(['preview_svg' => null]);
+
+        // تصویر نداشت، پس همان‌جا ساخته و ذخیره می‌شود
+        $this->get(route('patterns.templates.preview', $template))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/svg+xml')
+            ->assertSee('<svg', false);
+
+        $this->assertNotEmpty($template->fresh()->preview_svg);
+
+        $this->getJson(route('patterns.templates.params', $template))
+            ->assertOk()
+            ->assertJsonStructure(['name', 'schema', 'defaults']);
     }
 
     public function test_simple_path_creates_a_pattern_from_template_and_size_only(): void

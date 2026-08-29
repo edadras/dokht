@@ -199,12 +199,14 @@ class ProjectStepController extends Controller
     {
         return [
             'templates' => PatternTemplate::query()
+                ->withoutPreview()
                 ->availableTo($project->workshop_id)
                 ->when($project->garment_type_id, fn ($q) => $q->where('garment_type_id', $project->garment_type_id))
                 ->orderBy('sort')
                 ->orderBy('id')
                 ->get(),
             'allTemplates' => PatternTemplate::query()
+                ->withoutPreview()
                 ->availableTo($project->workshop_id)
                 ->orderBy('sort')
                 ->limit(60)

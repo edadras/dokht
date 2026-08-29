@@ -41,6 +41,7 @@ class DesignImportController extends Controller
     public function create(Request $request): View
     {
         $templates = PatternTemplate::query()
+            ->withoutPreview()
             ->availableTo(auth()->user()->workshop_id)
             ->with('garmentType')
             ->orderBy('sort')

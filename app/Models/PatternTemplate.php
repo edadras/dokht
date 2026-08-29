@@ -44,6 +44,22 @@ class PatternTemplate extends Model
             ->orWhere('workshop_id', $workshopId));
     }
 
+    /**
+     * همان پرس‌وجو، بدون ستونِ تصویر.
+     *
+     * تصویرِ پیش‌نمایش چند کیلوبایت SVG است و در فهرست‌ها هزاران ردیف داریم؛
+     * خواندنش برای فهرست یعنی ده‌ها مگابایت از پایگاه داده برای چیزی که کاربر
+     * فقط چندتایش را می‌بیند. فهرست‌ها نشانیِ تصویر را می‌دهند و مرورگر همان‌ها
+     * را که به چشم می‌آیند می‌گیرد.
+     */
+    public function scopeWithoutPreview(Builder $query): Builder
+    {
+        return $query->select([
+            'id', 'workshop_id', 'garment_type_id', 'code', 'name_fa', 'generator',
+            'default_params', 'description', 'is_public', 'sort', 'created_at', 'updated_at',
+        ]);
+    }
+
     public function params(array $overrides = []): array
     {
         return array_merge($this->default_params ?? [], $overrides);
