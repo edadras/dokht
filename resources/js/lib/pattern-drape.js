@@ -1198,7 +1198,7 @@ export const notchDarts = (piece, needed = null) => {
          * پس ساسونی که سرِ درزی را می‌بلعد، بریده نمی‌شود. جایش کمی گشاد
          * می‌ماند — ولی لباس، لباس می‌ماند.
          */
-        if (needed && eats(needed, from, to)) {
+        if (needed && eats(needed, map, from, to)) {
             continue;
         }
 
@@ -1239,10 +1239,20 @@ export const notchDarts = (piece, needed = null) => {
     return { polygon, darts, map };
 };
 
-/* آیا بازهٔ (from, to] رأسی را که درزی به آن نیاز دارد در خود دارد؟ */
-const eats = (needed, from, to) => {
-    for (let i = from + 1; i <= to; i++) {
-        if (needed.has(i)) {
+/*
+ * آیا بازهٔ (from, to] رأسی را که درزی به آن نیاز دارد در خود دارد؟
+ *
+ * شماره‌هایی که درزها می‌دهند مالِ چندضلعیِ *خامِ* بسته‌اند، ولی from و to مالِ
+ * چندضلعیِ همین لحظه — که ساسون‌های پیشین شماره‌هایش را جابه‌جا کرده‌اند. پس
+ * هر شماره باید از نقشه رد شود. اول بی‌نقشه سنجیدمش و روی قطعه‌ای با *دو*
+ * ساسون، دومی باز هم سرِ درز را می‌خورد: کمانی که باید ۲۱٫۴ سانتی‌متر باشد
+ * ۴۵٫۵ درمی‌آمد، یعنی از سرِ خودش رد شده بود و درزِ بعدی را هم بلعیده بود.
+ */
+const eats = (needed, map, from, to) => {
+    for (const index of needed) {
+        const at = map[index];
+
+        if (at > from && at <= to) {
             return true;
         }
     }
