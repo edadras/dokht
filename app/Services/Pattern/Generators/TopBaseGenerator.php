@@ -151,6 +151,54 @@ abstract class TopBaseGenerator extends BodiceBaseGenerator
      * @param  array<string, mixed>  $spec
      * @return array<string, mixed>
      */
+    /**
+     * بریدنِ خطِ بالای پنلِ پشت، آن‌قدر که درزِ پهلویش هم‌اندازهٔ جلو دربیاید.
+     *
+     * ارتفاعِ خواسته‌شده نقطهٔ شروع است؛ از آن‌جا با تنصیف بالا و پایین می‌رویم.
+     * طولِ درزِ پهلو با پایین‌رفتنِ خطِ برش کم می‌شود و با بالا رفتنش زیاد، پس
+     * جست‌وجو یکنواخت است و ده دور برای رسیدن به دهمِ میلی‌متر بس است.
+     *
+     * @param  array<string, mixed>  $back
+     * @param  array<string, mixed>  $front
+     * @param  array<string, mixed>  $spec
+     * @return array<string, mixed>
+     */
+    protected function matchSideSeam(array $back, array $front, float $sideY, array $spec): array
+    {
+        $target = PieceOps::seamLength($front, 'side');
+
+        if ($target <= 0) {
+            return $this->cutTop($back, array_merge($spec, ['side' => $sideY]));
+        }
+
+        [, $minY, , $maxY] = Geometry::bounds($back['outline']);
+        $low = $minY + 0.5;
+        $high = $maxY - 4.0;
+        $best = $this->cutTop($back, array_merge($spec, ['side' => $sideY]));
+        $bestGap = abs(PieceOps::seamLength($best, 'side') - $target);
+
+        for ($step = 0; $step < 10 && $bestGap > 0.02; $step++) {
+            $middle = ($low + $high) / 2;
+            $candidate = $this->cutTop($back, array_merge($spec, ['side' => $middle]));
+            $length = PieceOps::seamLength($candidate, 'side');
+            $gap = abs($length - $target);
+
+            if ($gap < $bestGap) {
+                $best = $candidate;
+                $bestGap = $gap;
+            }
+
+            // خطِ برشِ پایین‌تر یعنی درزِ پهلوی کوتاه‌تر
+            if ($length > $target) {
+                $low = $middle;
+            } else {
+                $high = $middle;
+            }
+        }
+
+        return $best;
+    }
+
     protected function cutTop(array $panel, array $spec): array
     {
         [$minX, $minY, $maxX, $maxY] = Geometry::bounds($panel['outline']);

@@ -37,7 +37,18 @@ trait DraftsPants
         $dartCount = $isFront ? 0 : max(0, (int) $this->param($params, 'back_darts', 1));
         $dartIntake = $dartCount > 0 ? 2.0 : 0.0;
 
-        $waistWidth = min($panelWidth, $quarterWaist + ($isFront ? $pleat : $dartIntake * $dartCount) + ($isFront ? -0.5 : 0.5));
+        /*
+         * پهنای کمر نباید به پهنای باسن سقف بخورد.
+         *
+         * برای بیشترِ بدن‌ها کمر از باسن باریک‌تر است و این سقف هیچ‌وقت به کار
+         * نمی‌آمد. ولی اندام سیبی کمرش از باسنش بزرگ‌تر است؛ آن‌وقت لبهٔ کمرِ
+         * پاچه روی پهنای باسن گیر می‌کرد و از اندازه‌ای که خودش حساب کرده بود
+         * کوچک‌تر درمی‌آمد — روی سرهمی، شش سانتی‌متر کوچک‌تر از کمرِ بالاتنه‌ای
+         * که به آن دوخته می‌شود.
+         *
+         * درزِ پهلو از باسن رو به کمر باز می‌شود، که برای همان اندام درست است.
+         */
+        $waistWidth = $quarterWaist + ($isFront ? $pleat : $dartIntake * $dartCount) + ($isFront ? -0.5 : 0.5);
         $backRise = $isFront ? 0.0 : 2.0;
 
         $kneeTotal = (float) ($o['knee_total'] ?? ($this->m($m, 'knee', 37) + (float) $this->param($params, 'knee_ease', 6)));
