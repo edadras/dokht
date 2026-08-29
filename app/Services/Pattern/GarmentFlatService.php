@@ -1185,6 +1185,7 @@ class GarmentFlatService
                 'ok' => false,
                 'rings' => [],
                 'body' => $this->bodyRings($body),
+                'measurements' => $this->mannequinMeasurements($body),
                 'sleeve' => null,
                 'neck' => ['width' => 0.0, 'depth' => 0.0],
                 'shoulder' => 0.0,
@@ -1274,6 +1275,8 @@ class GarmentFlatService
             'ok' => $rings !== [],
             'rings' => $rings,
             'body' => $this->bodyRings($body),
+            // مانکن را خودِ صفحه از اندازه‌ها می‌سازد؛ این‌جا فقط می‌فرستیمشان
+            'measurements' => $this->mannequinMeasurements($body),
             'sleeve' => $this->sleeve($pieces),
             'neck' => $front['neck'],
             'shoulder' => round($shoulder, 2),
@@ -1283,6 +1286,34 @@ class GarmentFlatService
             'height' => round($span, 2),
             'notes' => $notes,
         ];
+    }
+
+    /**
+     * اندازه‌هایی که مانکنِ سه‌بعدی لازم دارد.
+     *
+     * مانکن در مرورگر ساخته می‌شود، پس فقط همین چند عدد رد می‌شود — نه کلِ
+     * دفترچهٔ اندازه، که چیزهای دیگری هم دارد و به این نما ربطی ندارد.
+     *
+     * @param  array<string, float|int>  $body
+     * @return array<string, float>
+     */
+    protected function mannequinMeasurements(array $body): array
+    {
+        $keys = [
+            'height', 'bust', 'under_bust', 'waist', 'hip', 'neck', 'shoulder_width',
+            'back_length', 'waist_to_hip', 'inseam', 'arm_length', 'bicep', 'wrist',
+            'thigh', 'knee', 'ankle',
+        ];
+
+        $out = [];
+
+        foreach ($keys as $key) {
+            if (isset($body[$key]) && is_numeric($body[$key])) {
+                $out[$key] = round((float) $body[$key], 2);
+            }
+        }
+
+        return $out;
     }
 
     /**

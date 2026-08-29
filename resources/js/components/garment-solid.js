@@ -2,23 +2,29 @@
  * لباسِ دوخته‌شده روی مانکن.
  *
  * این نما با «دوخت مجازی» فرق دارد و عمداً هم فرق دارد. آن‌جا پارچه شبیه‌سازی
- * می‌شود: قطعه‌ها را می‌دوزد، زیر وزن خودش می‌افتد و به بدن برخورد می‌کند. این‌جا
- * چیزی شبیه‌سازی نمی‌شود؛ همان چیزی نشان داده می‌شود که در نمای دوبعدی هم دیده
- * شد، فقط این بار دور بدن.
+ * می‌شود: قطعه‌ها دوخته می‌شوند، زیر وزن خودشان می‌افتند و به بدن برخورد
+ * می‌کنند. این‌جا حل‌کننده‌ای در کار نیست؛ همان لباسی که در نمای دوبعدی دیده
+ * شد، دور بدن نشان داده می‌شود.
  *
- * چرا این‌طور: پوستهٔ لباس از سرور می‌آید به شکل حلقه‌های بیضی — در هر ارتفاع،
- * نیم‌پهنا و نیم‌ضخامتِ لباسِ دوخته‌شده. آن حلقه‌ها از خودِ الگو اندازه گرفته
- * شده‌اند (پس از بستن ساسون‌ها)، دقیقاً همان اعدادی که نمای جلو و پشت و پهلو را
- * ساختند. پس آنچه روی مانکن دیده می‌شود نمی‌تواند با نمای دوبعدی نخواند: یک
- * عدد است با دو نمایش.
+ * شکلِ لباس از سرور می‌آید: در هر ارتفاع، نیم‌پهنا و نیم‌ضخامتِ لباسِ دوخته‌شده،
+ * اندازه‌گرفته‌شده از خودِ قطعه‌های الگو پس از بستن ساسون‌ها. همان اعدادی که
+ * نمای جلو و پشت و پهلو را ساختند. پس آنچه روی مانکن دیده می‌شود نمی‌تواند با
+ * نمای دوبعدی نخواند.
  *
- * مانکن هم از همان اندازه‌های مشتری ساخته می‌شود، با همان مدلِ مقطع. پس فاصلهٔ
- * پارچه از پوست همان آزادیِ واقعیِ الگوست، نه یک عددِ ظاهری.
+ * سه چیز باعث می‌شود این «لولهٔ رنگی» نباشد بلکه لباس دیده شود:
  *
- * تنها چیزی که این‌جا اندازه‌گیری نیست، ضخامتِ مقطع است — کاغذِ الگو تخت است و
- * ضخامت ندارد. سرور آن را از دورِ دوخته‌شده و نسبتِ مقطعِ تنه حساب می‌کند و
- * همین در صفحه هم نوشته می‌شود.
+ *   ۱) مانکن یک آدمِ کامل است، نه چند بیضیِ روی هم: سر و گردن و سرشانهٔ شیب‌دار،
+ *      دو دستِ باریک‌شونده و دو پای جدا — همه از اندازه‌های همان مشتری.
+ *
+ *   ۲) پارچه چین می‌خورد، و چینش ساختگی نیست: هر جا لباس از بدن گشادتر است،
+ *      آن پارچهٔ اضافه باید جایی برود. دامنهٔ چین از همان اختلاف درمی‌آید.
+ *      روی سرشانه صفر است (آن‌جا لباس آویزان و کشیده است) و رو به پایین باز
+ *      می‌شود، همان‌طور که پارچه می‌افتد.
+ *
+ *   ۳) نورپردازی و سایهٔ زمین، تا حجم دیده شود. بدون این هر چیزی تخت است.
  */
+
+import { buildBody, perimeter, sampleRing } from '../lib/mannequin';
 
 let THREE = null;
 
@@ -33,49 +39,54 @@ const contextFor = (element) => {
     return contexts.get(element);
 };
 
-/* سانتی‌متر به متر؛ صحنه با متر کار می‌کند تا نور و دوربین طبیعی بمانند */
+/* سانتی‌متر به متر */
 const CM = 0.01;
 
-/* چند ضلعی در هر حلقه: کمتر از این، بیضی گوشه‌دار دیده می‌شود */
-const SIDES = 48;
+/* چند ضلعی در هر حلقه */
+const SIDES = 64;
+
+const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+
+const track = (ctx, item) => {
+    ctx.disposables.push(item);
+
+    return item;
+};
 
 /**
- * یک لولهٔ بسته از روی حلقه‌ها.
+ * یک سطحِ لوله‌ای از روی حلقه‌ها.
  *
- * هر حلقه یک بیضی افقی است (rx و rz جدا)، و حلقه‌ها از بالا به پایین روی هم
- * چیده می‌شوند. سر و ته با یک بادبزن ساده بسته می‌شود تا از داخل تهی دیده نشود.
+ * هر حلقه بیضی است و می‌تواند شعاعش را با یک تابع تغییر دهد — همان‌جاست که چینِ
+ * پارچه وارد می‌شود. نرمال‌ها از خودِ مثلث‌ها حساب می‌شوند تا چین‌ها سایه بگیرند؛
+ * نرمالِ بیضیِ ساده روی سطحِ چین‌خورده غلط است و همه‌چیز تخت دیده می‌شود.
  */
-const loft = (rings, options = {}) => {
-    const rows = rings.filter((ring) => ring.rx > 0.05 && ring.rz > 0.05);
+const tube = (rings, options = {}) => {
+    const rows = rings.filter((ring) => ring.rx > 0.02 && ring.rz > 0.02);
 
     if (rows.length < 2) {
         return null;
     }
 
     const yOffset = options.yOffset || 0;
-    const grow = options.grow || 0;
+    const wave = options.wave || null;
+    const capTop = options.capTop !== false;
+    const capBottom = options.capBottom !== false;
+
     const positions = [];
-    const normals = [];
     const indexes = [];
 
-    rows.forEach((ring) => {
-        const rx = (ring.rx + grow) * CM;
-        const rz = (ring.rz + grow) * CM;
-        const y = -(ring.y + yOffset) * CM;
+    rows.forEach((ring, row) => {
+        const t = rows.length === 1 ? 0 : row / (rows.length - 1);
 
         for (let i = 0; i <= SIDES; i++) {
             const angle = (i / SIDES) * Math.PI * 2;
-            const cos = Math.cos(angle);
-            const sin = Math.sin(angle);
+            const push = wave ? wave(angle, t, ring) : 0;
 
-            positions.push(rx * cos, y, rz * sin);
-
-            // نرمالِ بیضی: مشتقِ مماس، چرخیده — نه خودِ شعاع، وگرنه نور روی
-            // بیضی‌های کشیده کج می‌افتد
-            const nx = rz * cos;
-            const nz = rx * sin;
-            const len = Math.hypot(nx, nz) || 1;
-            normals.push(nx / len, 0, nz / len);
+            positions.push(
+                (ring.rx + push) * CM * Math.cos(angle),
+                -(ring.y + yOffset) * CM,
+                (ring.rz + push) * CM * Math.sin(angle),
+            );
         }
     });
 
@@ -92,58 +103,29 @@ const loft = (rings, options = {}) => {
         }
     }
 
-    const caps = options.cap === false ? [] : (options.cap === 'bottom' ? [rows.length - 1] : [0, rows.length - 1]);
+    [[0, capTop], [rows.length - 1, capBottom]].forEach(([row, wanted]) => {
+        if (! wanted) {
+            return;
+        }
 
-    caps.forEach((row) => {
-        const which = row === 0 ? 0 : 1;
+        const centre = positions.length / 3;
 
-        {
-            const ring = rows[row];
-            const centre = positions.length / 3;
+        positions.push(0, -(rows[row].y + yOffset) * CM, 0);
 
-            positions.push(0, -(ring.y + yOffset) * CM, 0);
-            normals.push(0, which === 0 ? 1 : -1, 0);
+        for (let i = 0; i < SIDES; i++) {
+            const a = row * perRow + i;
+            const b = a + 1;
 
-            for (let i = 0; i < SIDES; i++) {
-                const a = row * perRow + i;
-                const b = a + 1;
-
-                which === 0 ? indexes.push(centre, b, a) : indexes.push(centre, a, b);
-            }
+            row === 0 ? indexes.push(centre, b, a) : indexes.push(centre, a, b);
         }
     });
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     geometry.setIndex(indexes);
+    geometry.computeVertexNormals();
 
     return geometry;
-};
-
-/** نیم‌پهنا و نیم‌ضخامتِ حلقه‌ها در ارتفاع دلخواه (میان‌یابی خطی). */
-const at = (rings, y) => {
-    if (rings.length === 0) {
-        return { rx: 0, rz: 0 };
-    }
-
-    if (y <= rings[0].y) {
-        return rings[0];
-    }
-
-    for (let i = 1; i < rings.length; i++) {
-        if (y <= rings[i].y) {
-            const span = rings[i].y - rings[i - 1].y || 1;
-            const t = (y - rings[i - 1].y) / span;
-
-            return {
-                rx: rings[i - 1].rx + (rings[i].rx - rings[i - 1].rx) * t,
-                rz: rings[i - 1].rz + (rings[i].rz - rings[i - 1].rz) * t,
-            };
-        }
-    }
-
-    return rings[rings.length - 1];
 };
 
 export default (initial = {}) => ({
@@ -178,43 +160,69 @@ export default (initial = {}) => ({
         const ctx = contextFor(this.$root);
         const canvas = this.$refs.canvas;
         const shell = this.payload;
+        const body = buildBody(shell.measurements || {});
+        ctx.body = body;
 
         const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         ctx.renderer = renderer;
 
         const scene = new THREE.Scene();
         ctx.scene = scene;
 
         /*
-         * دوربین از قدِ خودِ لباس تنظیم می‌شود، نه از عددی ثابت: یک تاپِ کوتاه و
-         * یک لباس شبِ صدوشصت سانتی هر دو باید کامل در قاب بیفتند.
+         * قاب از قدِ خودِ مانکن می‌آید، پس یک تاپ و یک لباس شب هر دو کامل در
+         * تصویر می‌افتند و نسبتشان به بدن حفظ می‌شود.
          */
-        const tall = Math.max(shell.height, 60) * CM;
-        const camera = new THREE.PerspectiveCamera(32, canvas.clientWidth / canvas.clientHeight, 0.05, 40);
-        camera.position.set(0, -tall * 0.45, tall * 2.6);
-        camera.lookAt(0, -tall * 0.45, 0);
+        const tall = body.level.ankle * CM;
+        const camera = new THREE.PerspectiveCamera(30, canvas.clientWidth / canvas.clientHeight, 0.05, 60);
+        camera.position.set(tall * 0.40, -tall * 0.45, tall * 1.9);
+        camera.lookAt(0, -tall * 0.47, 0);
         ctx.camera = camera;
 
-        scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7f76, 1.05));
+        scene.add(new THREE.HemisphereLight(0xf6f4f1, 0x59524c, 1.4));
 
-        const key = new THREE.DirectionalLight(0xffffff, 1.15);
-        key.position.set(1.2, 1.6, 2.2);
+        const key = new THREE.DirectionalLight(0xfff6ec, 2.0);
+        key.position.set(tall * 0.9, tall * 0.5, tall * 1.4);
+        key.castShadow = true;
+        key.shadow.mapSize.set(1024, 1024);
+        key.shadow.camera.near = 0.1;
+        key.shadow.camera.far = tall * 6;
+        key.shadow.camera.left = -tall;
+        key.shadow.camera.right = tall;
+        key.shadow.camera.top = tall;
+        key.shadow.camera.bottom = -tall;
         scene.add(key);
 
-        const rim = new THREE.DirectionalLight(0xffffff, 0.35);
-        rim.position.set(-1.6, 0.4, -1.8);
+        const fill = new THREE.DirectionalLight(0xdfe6ef, 0.65);
+        fill.position.set(-tall * 1.2, -tall * 0.2, tall * 0.7);
+        scene.add(fill);
+
+        const rim = new THREE.DirectionalLight(0xffffff, 0.85);
+        rim.position.set(-tall * 0.4, tall * 0.6, -tall * 1.4);
         scene.add(rim);
 
+        // زمین فقط سایه می‌گیرد؛ خودش دیده نمی‌شود
+        const floor = new THREE.Mesh(
+            track(ctx, new THREE.PlaneGeometry(tall * 4, tall * 4)),
+            track(ctx, new THREE.ShadowMaterial({ opacity: 0.2 })),
+        );
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -tall * 1.002;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
         const group = new THREE.Group();
+        group.rotation.y = -0.42;
         scene.add(group);
         ctx.group = group;
 
-        this.addBody(group, shell);
-        this.addGarment(group, shell);
+        this.addBody(group, body);
+        this.addGarment(group, shell, body);
 
-        // لباس روی مانکن نشسته؛ حالا هر دو با هم می‌چرخند
         let last = performance.now();
 
         const tick = (now) => {
@@ -222,7 +230,7 @@ export default (initial = {}) => ({
             last = now;
 
             if (this.spin) {
-                group.rotation.y += delta * 0.5;
+                group.rotation.y += delta * 0.42;
             }
 
             renderer.render(scene, camera);
@@ -230,155 +238,221 @@ export default (initial = {}) => ({
         };
 
         ctx.frame = requestAnimationFrame(tick);
-
-        this.$watch('spin', () => {});
     },
 
-    /** مانکن: تنه از حلقه‌های بدن، به‌علاوهٔ گردن و سر و دست‌ها. */
-    addBody(group, shell) {
+    /** مانکن: سر، گردن، تنه، دو دست و دو پا — همه از اندازه‌های مشتری. */
+    addBody(group, body) {
         const ctx = contextFor(this.$root);
-        const rings = shell.body || [];
 
-        if (rings.length < 2) {
-            return;
-        }
-
-        const material = new THREE.MeshStandardMaterial({
-            color: 0xd9cfc6,
-            roughness: 0.92,
+        const skin = track(ctx, new THREE.MeshStandardMaterial({
+            color: 0xcdc2b8,
+            roughness: 0.96,
             metalness: 0,
-        });
-        ctx.disposables.push(material);
+        }));
+        ctx.skin = skin;
 
-        const torso = loft(rings);
-
-        if (torso) {
-            ctx.disposables.push(torso);
-            group.add(new THREE.Mesh(torso, material));
-        }
-
-        // سر و گردن: مانکن است، پس صورت ندارد — فقط حجمی که نسبت را بفهماند
-        const neck = at(rings, 0);
-        const headR = Math.max(neck.rx * 1.5, 8) * CM;
-
-        const head = new THREE.SphereGeometry(headR, 24, 18);
-        ctx.disposables.push(head);
-        const headMesh = new THREE.Mesh(head, material);
-        headMesh.position.set(0, headR * 1.15, 0);
-        headMesh.scale.set(0.86, 1.12, 0.94);
-        group.add(headMesh);
-
-        // بازوها: از نوکِ سرشانه آویزان، کمی باز از تنه
-        const shoulder = rings[1] || rings[0];
-        const armR = Math.max(shoulder.rz * 0.34, 3.5);
-        const armLength = Math.max(shell.height * 0.62, 45);
-
-        [-1, 1].forEach((side) => {
-            const arm = loft([
-                { y: 0, rx: armR, rz: armR },
-                { y: armLength * 0.55, rx: armR * 0.82, rz: armR * 0.82 },
-                { y: armLength, rx: armR * 0.6, rz: armR * 0.6 },
-            ]);
-
-            if (! arm) {
+        const add = (geometry, x = 0, tilt = 0) => {
+            if (! geometry) {
                 return;
             }
 
-            ctx.disposables.push(arm);
-            const mesh = new THREE.Mesh(arm, material);
-            mesh.position.set(side * (shoulder.rx - armR * 0.6) * CM, -shoulder.y * CM, 0);
-            mesh.rotation.z = side * 0.07;
+            track(ctx, geometry);
+            const mesh = new THREE.Mesh(geometry, skin);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.position.x = x * CM;
+            mesh.rotation.z = tilt;
             group.add(mesh);
+        };
+
+        add(tube(body.torso));
+
+        // سر: بیضی‌گون، نه کره — کرهٔ کامل شبیه توپ می‌شود
+        const head = track(ctx, new THREE.SphereGeometry(body.head.radius * CM, 32, 24));
+        const headMesh = new THREE.Mesh(head, skin);
+        headMesh.scale.set(0.82, 1.12, 0.9);
+        headMesh.position.y = -body.head.centre * CM;
+        headMesh.castShadow = true;
+        group.add(headMesh);
+
+        const shoulder = body.shoulderRing;
+        const armX = shoulder.rx - body.arm[0].r * 0.8;
+        const armTop = shoulder.y + body.arm[0].r * 0.5;
+
+        [-1, 1].forEach((side) => {
+            const rings = body.arm.map((row) => ({ y: row.y, rx: row.r, rz: row.r }));
+            add(tube(rings, { yOffset: armTop }), side * armX, side * 0.085);
+        });
+
+        [-1, 1].forEach((side) => {
+            const rings = body.leg.map((row) => ({ y: row.y, rx: row.r, rz: row.r }));
+            add(tube(rings, { yOffset: body.level.crotch }), side * body.legGap, side * -0.012);
         });
     },
 
-    /** لباس: همان حلقه‌ها، روی مانکن و با رنگ و جنسِ پارچهٔ خودش. */
-    addGarment(group, shell) {
+    /** لباس: همان حلقه‌های الگو، با چینِ برخاسته از آزادیِ خودش. */
+    addGarment(group, shell, body) {
         const ctx = contextFor(this.$root);
         const fabric = shell.fabric || {};
 
-        const material = new THREE.MeshStandardMaterial({
+        const material = track(ctx, new THREE.MeshPhysicalMaterial({
             color: new THREE.Color(fabric.color || '#b9a48c'),
-            roughness: 1 - Math.min(0.75, (fabric.sheen ?? 0.15)),
+            roughness: clamp(1 - (fabric.sheen ?? 0.15) * 0.8, 0.4, 1),
             metalness: 0,
+            sheen: 0.6,
+            sheenRoughness: 0.75,
+            sheenColor: new THREE.Color(0xffffff),
             side: THREE.DoubleSide,
             transparent: (fabric.transparency ?? 0) > 0.05,
             opacity: 1 - Math.min(0.55, fabric.transparency ?? 0),
-        });
-        ctx.disposables.push(material);
+        }));
         ctx.fabric = material;
 
+        // لباس از سرشانه شروع می‌شود، یا از کمر اگر بالاتنه نداشته باشد
+        const top = shell.shoulder > 1 ? body.level.shoulder : body.level.waist;
+
         /*
-         * لباس از کجای بدن شروع می‌شود؟ اگر بالاتنه دارد، از سرشانه؛ اگر فقط
-         * پایین‌تنه است (دامن، شلوار) از خط کمر. همین یک عدد جای لباس را روی
-         * مانکن معلوم می‌کند و بقیه‌اش از خودِ حلقه‌ها می‌آید.
+         * چینِ پارچه.
+         *
+         * در هر ارتفاع، لباس یک دورِ مشخص دارد و بدن هم. اختلافشان پارچهٔ اضافه
+         * است، و پارچهٔ اضافه صاف نمی‌ماند — جمع می‌شود. پس دامنهٔ چین از همین
+         * اختلاف می‌آید و شمارِ چین‌ها هم از همان.
+         *
+         * دو چیز چین را شبیه پارچه می‌کند نه شبیه موج: روی سرشانه صفر است
+         * (آن‌جا لباس آویزان و کشیده است) و رو به پایین باز می‌شود؛ و فازش با
+         * ارتفاع کمی می‌چرخد تا چین‌ها ستون‌های صافِ عمودی نباشند.
          */
-        const body = shell.body || [];
-        const waistY = body.length >= 4 ? body[3].y : 0;
-        const top = shell.shoulder > 1 ? (body[1] ? body[1].y : 0) : waistY;
+        /*
+         * بالای خط سینه، لباس روی *بدن* می‌نشیند نه روی عددِ کاغذ: شانه آن را
+         * نگه داشته و پارچه همان‌جا کشیده است. اگر حلقه‌های کاغذی را همان‌طور
+         * بچرخانیم، روی شانه یک تختهٔ پهن و کم‌عمق درمی‌آید که به هیچ لباسی
+         * شبیه نیست.
+         *
+         * پس از خط سینه به بالا، حلقه‌ها به شکلِ خودِ بدن (به‌علاوهٔ یک آزادیِ
+         * کوچک) میل می‌کنند، و یک حلقهٔ گردن هم بالای همه گذاشته می‌شود تا
+         * دهانهٔ یقه دور گردن بسته شود نه دور شانه‌ها.
+         */
+        const bustRel = body.level.bust - top;
+        const skinGap = 1.1;
 
-        // بالای لباس باز است (خط یقه)، پس فقط ته لباس بسته می‌شود
-        const skin = loft(shell.rings, { yOffset: top, grow: 0.4, cap: shell.open_top ? 'bottom' : true });
+        let rings = shell.rings.map((ring) => {
+            if (bustRel <= 1 || ring.y >= bustRel) {
+                return ring;
+            }
 
-        if (skin) {
-            ctx.disposables.push(skin);
-            group.add(new THREE.Mesh(skin, material));
+            const skin = sampleRing(body.torso, ring.y + top);
+            const t = clamp(ring.y / bustRel, 0, 1);
+
+            return {
+                y: ring.y,
+                rx: (skin.rx + skinGap) + (ring.rx - (skin.rx + skinGap)) * t,
+                rz: (skin.rz + skinGap) + (ring.rz - (skin.rz + skinGap)) * t,
+            };
+        });
+
+        if (shell.open_top && bustRel > 1) {
+            // دهانهٔ یقه: یک حلقهٔ کوچک دور گردن، بالاتر از سرشانه
+            const neckDrop = body.level.shoulder - body.level.neck;
+            const neck = body.neckRadius + 1.4;
+
+            rings = [{ y: -neckDrop * 0.55, rx: neck, rz: neck * 0.92 }, ...rings];
         }
 
-        if (! shell.sleeve || shell.sleeve.length < 3) {
+        const excessAt = (ring) => {
+            const skinRing = sampleRing(body.torso, ring.y + top);
+            const bodyGirth = perimeter(skinRing.rx, skinRing.rz);
+            const cloth = perimeter(ring.rx, ring.rz);
+
+            return bodyGirth <= 1 ? 0 : clamp(cloth / bodyGirth - 1, 0, 1.6);
+        };
+
+        const tail = rings.length ? rings[rings.length - 1] : null;
+        const folds = Math.round(clamp(6 + (tail ? excessAt(tail) : 0) * 7, 6, 15));
+
+        const wave = (angle, t, ring) => {
+            const excess = excessAt(ring);
+
+            if (excess < 0.05) {
+                return 0;
+            }
+
+            const fall = Math.pow(clamp(t, 0, 1), 1.3);
+            const depth = Math.min(ring.rx * 0.2, excess * ring.rx * 0.55) * fall;
+
+            return depth * Math.cos(folds * angle + t * 0.8);
+        };
+
+        const geometry = tube(rings, {
+            yOffset: top,
+            wave,
+            capTop: ! shell.open_top,
+            capBottom: true,
+        });
+
+        if (geometry) {
+            track(ctx, geometry);
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            group.add(mesh);
+        }
+
+        this.addSleeves(group, shell, body, material);
+    },
+
+    /** آستین: لوله‌ای روی مسیرِ دست، با دور بازو و دم‌آستینِ خودِ الگو. */
+    addSleeves(group, shell, body, material) {
+        const ctx = contextFor(this.$root);
+        const sleeve = shell.sleeve;
+
+        if (! sleeve || sleeve.length < 4) {
             return;
         }
 
-        // آستین: لوله‌ای که از سرشانه با زاویه پایین می‌آید، با دور بازو و
-        // دم‌آستینِ خودِ الگو
-        const sleeve = shell.sleeve;
-
-        /*
-         * آستین باید از *خودِ لباس* بیرون بزند، نه از هوا. پس سرش را روی حلقهٔ
-         * لباس در ارتفاع سرشانه می‌گذاریم و کمی تو می‌بریم تا درزِ حلقه پوشیده
-         * بماند؛ وگرنه بین تنه و آستین یک شکاف دیده می‌شود.
-         */
-        const angle = 0.30;
-        const capY = 4;
-        const atCap = at(shell.rings, capY);
-
         /*
          * عددی که سرور می‌دهد نیم‌پهنای *تختِ* آستین است، پس دورِ آستینِ
-         * دوخته‌شده دو برابر آن است و شعاعش دور تقسیم بر دوپی. یک بار همان
-         * نیم‌پهنا را شعاع گرفتم و آستین دو برابر پهن درآمد.
+         * دوخته‌شده دو برابر آن و شعاعش همان تقسیم بر پی. یک بار همان نیم‌پهنا
+         * را شعاع گرفتم و آستین دو برابر پهن درآمد.
          */
         const radius = (half) => half / Math.PI;
-        const bicep = Math.max(radius(sleeve.bicep), 3);
-        const cuff = Math.max(radius(sleeve.cuff), 2);
+        const shoulder = body.shoulderRing;
+        const bicep = Math.max(radius(sleeve.bicep), body.arm[0].r * 1.05);
+        const cuff = Math.max(radius(sleeve.cuff), body.arm[3].r * 1.06);
+        const armX = shoulder.rx - body.arm[0].r * 0.8;
+        const armTop = shoulder.y + body.arm[0].r * 0.5;
 
         [-1, 1].forEach((side) => {
-            const tube = loft([
-                { y: -2, rx: bicep * 1.02, rz: bicep * 1.02 },
-                { y: sleeve.length * 0.55, rx: (bicep + cuff) / 2, rz: (bicep + cuff) / 2 },
-                { y: sleeve.length, rx: cuff, rz: cuff },
-            ], { cap: 'bottom' });
+            const mid = bicep + (cuff - bicep) * 0.45;
 
-            if (! tube) {
+            /*
+             * سرِ آستین چند سانت بالاتر از مفصل شروع می‌شود و کمی گشادتر است،
+             * تا زیر پوستهٔ تنه برود. وگرنه میان تنه و آستین یک شکاف می‌ماند و
+             * آستین مثل لولهٔ جدا آویزان دیده می‌شود.
+             */
+            const geometry = tube([
+                { y: body.arm[0].r * 0.15, rx: bicep * 1.1, rz: bicep * 1.1 },
+                { y: body.arm[0].r * 0.9, rx: bicep * 1.02, rz: bicep * 1.02 },
+                { y: sleeve.length * 0.45, rx: mid, rz: mid },
+                { y: sleeve.length * 0.8, rx: cuff * 1.05, rz: cuff * 1.05 },
+                { y: sleeve.length, rx: cuff, rz: cuff },
+            ], { yOffset: armTop, capTop: false, capBottom: false });
+
+            if (! geometry) {
                 return;
             }
 
-            ctx.disposables.push(tube);
-            const mesh = new THREE.Mesh(tube, material);
-
-            // نقطهٔ اتصال: لبهٔ پهلوی لباس روی خط حلقه، کمی به داخل
-            mesh.position.set(
-                side * (atCap.rx - bicep * 0.35) * CM,
-                -(top + capY) * CM,
-                0,
-            );
-            mesh.rotation.z = side * angle;
+            track(ctx, geometry);
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.castShadow = true;
+            mesh.position.x = side * armX * CM;
+            mesh.rotation.z = side * 0.085;
             group.add(mesh);
         });
     },
 
     /*
-     * عوض کردنِ پارچه فقط رنگ و براقی و شفافیتِ همان جنس را عوض می‌کند؛ شکل
-     * لباس از الگو می‌آید و به پارچه ربطی ندارد، پس صحنه دوباره ساخته نمی‌شود.
+     * عوض کردنِ پارچه فقط رنگ و براقی و شفافیت را عوض می‌کند؛ شکل لباس از
+     * الگو می‌آید و به پارچه ربطی ندارد، پس صحنه دوباره ساخته نمی‌شود.
      */
     wear(swatch) {
         const ctx = contextFor(this.$root);
@@ -389,7 +463,7 @@ export default (initial = {}) => ({
 
         this.chosen = swatch.id;
         ctx.fabric.color = new THREE.Color(swatch.color);
-        ctx.fabric.roughness = 1 - Math.min(0.75, swatch.sheen ?? 0.15);
+        ctx.fabric.roughness = clamp(1 - (swatch.sheen ?? 0.15) * 0.8, 0.4, 1);
         ctx.fabric.transparent = (swatch.transparency ?? 0) > 0.05;
         ctx.fabric.opacity = 1 - Math.min(0.55, swatch.transparency ?? 0);
         ctx.fabric.needsUpdate = true;
