@@ -3,6 +3,7 @@
 namespace App\Services\Pattern\Generators;
 
 use App\Services\Pattern\GeneratorRegistry;
+use InvalidArgumentException;
 
 /**
  * خانواده‌ای که روی درفت‌های *موجود* سوار می‌شود.
@@ -43,7 +44,32 @@ abstract class CatalogVariantBase extends BaseGenerator implements VariantAware
 
     public function defaultParams(): array
     {
-        return array_merge($this->inner()->defaultParams(), (array) ($this->spec()['params'] ?? []));
+        $inner = $this->inner();
+        $defaults = $inner->defaultParams();
+        $own = (array) ($this->spec()['params'] ?? []);
+
+        /*
+         * پارامتری که درفتِ پایه نمی‌شناسد، بی‌صدا گم می‌شود — و با آن، یک محورِ
+         * کاملِ جدول.
+         *
+         * این واقعاً پیش آمد: به خانوادهٔ پوشاک بیرونی محورِ «قد» داده شد و
+         * کتِ تک اصلاً پارامترِ قد ندارد. سه ردیفِ «کوتاه»، «تا باسن» و «تا ران»
+         * ساخته شد که هر سه دقیقاً یک الگو بودند با سه نامِ متفاوت. نه خطایی،
+         * نه هشداری — فقط سه ردیفِ بی‌معنا در فهرست.
+         *
+         * پس این‌جا سخت می‌گیریم: ردیفی که پارامترِ ناشناخته بدهد اصلاً ساخته
+         * نمی‌شود و نامِ پارامتر را می‌گوید.
+         */
+        $unknown = array_diff(array_keys($own), array_keys($defaults));
+
+        if ($unknown !== []) {
+            throw new InvalidArgumentException(
+                'درفت «'.(string) ($this->spec()['base'] ?? '?').'» پارامتر «'
+                    .implode('، ', $unknown).'» را نمی‌شناسد (ردیف '.$this->variantKey().').'
+            );
+        }
+
+        return array_merge($defaults, $own);
     }
 
     public function generate(array $measurements, array $ease, array $params): array

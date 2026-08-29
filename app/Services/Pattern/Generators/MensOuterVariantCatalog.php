@@ -20,12 +20,16 @@ class MensOuterVariantCatalog extends CatalogVariantBase
     }
 
     /**
-     * پوشاک بیرونی: کلید ⇒ [نام، درفتِ پایه، قدها].
+     * پوشاک بیرونی: کلید ⇒ [نام، درفتِ پایه، قدها، نامِ پارامترِ قد].
      *
-     * @var array<string, array{0: string, 1: string, 2: array<int, string>}>
+     * ستونِ چهارم برای کتِ تک است: درفتش «بلندی تنه از کمر» دارد نه «قد»، و تا
+     * وقتی جدول «قد» می‌فرستاد، پارامتر بی‌صدا دور ریخته می‌شد و دو ردیفِ «تا
+     * باسن» و «تا ران» یک الگو بودند.
+     *
+     * @var array<string, array{0: string, 1: string, 2: array<int, string>, 3?: string}>
      */
     protected const OUTER = [
-        'blazer' => ['کت تک', 'mens_blazer', ['hip', 'thigh']],
+        'blazer' => ['کت تک', 'mens_blazer', ['hip', 'thigh'], 'body_length'],
         'suitjacket' => ['کت رسمی', 'mens_suit_jacket', ['hip', 'thigh']],
         'overcoat' => ['پالتو', 'mens_overcoat', ['thigh', 'knee']],
         'trench' => ['بارانی', 'mens_trench', ['thigh', 'knee']],
@@ -54,14 +58,17 @@ class MensOuterVariantCatalog extends CatalogVariantBase
 
         $rows = [];
 
-        foreach (static::OUTER as $outer => [$outerName, $base, $lengths]) {
+        foreach (static::OUTER as $outer => $row) {
+            [$outerName, $base, $lengths] = $row;
+            $lengthParam = $row[3] ?? 'length';
+
             foreach ($lengths as $length) {
                 [$lengthName, $cm] = static::OUTER_LENGTHS[$length];
 
                 $rows['mens_outer_'.$outer.'_'.$length] = [
                     'title' => $outerName.' مردانه، '.$lengthName,
                     'base' => $base,
-                    'params' => ['length' => $cm],
+                    'params' => [$lengthParam => $cm],
                 ];
             }
         }

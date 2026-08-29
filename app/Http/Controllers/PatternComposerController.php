@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Customer;
 use App\Models\MeasurementSet;
 use App\Models\Pattern;
+use App\Services\Pattern\GeneratorRegistry;
 use App\Services\Pattern\PatternBuilder;
 use App\Services\Pattern\PatternComposer;
 use App\Services\Pattern\SeamAllowanceService;
@@ -15,6 +16,7 @@ use App\Support\WorkshopContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -33,6 +35,11 @@ class PatternComposerController extends Controller
 {
     /** بندانگشتی‌ها فقط به کد مدل بستگی دارند، پس یک روز کش می‌شوند. */
     protected const THUMBNAIL_VERSION = 'v2';
+
+    /** نشانِ «تصویری نیست» — همان اندازهٔ بندانگشتی‌های واقعی تا چیدمان نپرد. */
+    protected const MISSING_THUMBNAIL = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 160" '
+        .'width="220" height="160" role="img" aria-label="بدون تصویر"><rect width="220" height="160" fill="#fafaf9"/>'
+        .'<path d="M96 72h28v4H96zM110 60v28" stroke="#d6d3d1" stroke-width="4" fill="none"/></svg>';
 
     /** آیا صفحه از روی دستور یک الگوی ساخته‌شده باز شده است؟ */
     protected bool $reopened = false;
@@ -374,26 +381,61 @@ class PatternComposerController extends Controller
      *
      * @return array<string, mixed>
      */
+    /**
+     * فهرست کارگاه، با *نشانیِ* بندانگشتی‌ها نه خودشان.
+     *
+     * پیش‌تر این‌جا برای هر مدل یک بندانگشتی ساخته می‌شد. با چند ده مدل کُند بود
+     * و با هزاران مدل ناممکن: باز کردن صفحه یعنی ساختنِ هزاران الگو، و اگر هم
+     * همه در کش بودند، صفحه با هزاران نقشهٔ SVG تویش از دستِ مرورگر درمی‌رفت.
+     *
+     * حالا هر بندانگشتی نشانیِ خودش را دارد و مرورگر فقط آن‌هایی را می‌گیرد که
+     * واقعاً روی صفحه می‌آیند. ساختِ الگو همان‌جا و همان موقع انجام می‌شود و
+     * همان‌طور که بود کش می‌شود.
+     */
     protected function catalogue(): array
     {
-        $catalogue = $this->composer->catalogue();
+        /*
+         * فهرست فقط به کدِ برنامه بستگی دارد — نه به کاربر، نه به کارگاه، نه به
+         * پایگاه داده — پس یک بار ساخته و کش می‌شود. کلیدِ کش از خودِ فهرستِ
+         * مدل‌ها و سبک‌ها می‌آید، پس مدلِ تازه‌ای که اضافه شود همان لحظه فهرست را
+         * از نو می‌سازد و کسی لازم نیست کش را دستی پاک کند.
+         */
+        $fingerprint = md5(implode(',', array_keys(GeneratorRegistry::all()))
+            .'|'.implode(',', array_keys(StyleRegistry::all())));
 
-        foreach ($catalogue['base'] as $group => $items) {
-            foreach ($items as $key => $item) {
-                if ($key === 'none') {
-                    $catalogue['base'][$group][$key]['thumbnail'] = null;
-                    $catalogue['base'][$group][$key]['broken'] = false;
+        return Cache::remember(
+            'compose-catalogue:'.static::THUMBNAIL_VERSION.':'.$fingerprint,
+            now()->addDay(),
+            function () {
+                $catalogue = $this->composer->catalogue();
 
-                    continue;
+                foreach ($catalogue['base'] as $group => $items) {
+                    foreach ($items as $key => $item) {
+                        $catalogue['base'][$group][$key]['thumbnail'] = $key === 'none'
+                            ? null
+                            : route('patterns.compose.thumb', ['group' => $group, 'key' => $key]);
+                    }
                 }
 
-                $thumbnail = $this->thumbnail($group, $key);
-                $catalogue['base'][$group][$key]['thumbnail'] = $thumbnail;
-                $catalogue['base'][$group][$key]['broken'] = $thumbnail === null && $group !== 'collar';
-            }
-        }
+                return $catalogue;
+            },
+        );
+    }
 
-        return $catalogue;
+    /**
+     * بندانگشتی یک پایه، جدا از صفحه.
+     *
+     * مدلی که ساخته نمی‌شود، به‌جای خطا یک نشانِ خالی می‌گیرد؛ صفحه‌ای که صد
+     * بندانگشتی می‌خواهد نباید سرِ یکی‌شان بشکند.
+     */
+    public function thumb(string $group, string $key): Response
+    {
+        $svg = $this->thumbnail($group, $key) ?? static::MISSING_THUMBNAIL;
+
+        return response($svg, 200, [
+            'Content-Type' => 'image/svg+xml',
+            'Cache-Control' => 'public, max-age=86400',
+        ]);
     }
 
     /** بندانگشتی یک پایه (کش می‌شود چون فقط به کد آن بستگی دارد). */

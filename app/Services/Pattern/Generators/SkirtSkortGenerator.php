@@ -53,8 +53,17 @@ class SkirtSkortGenerator extends SkirtBaseGenerator
                     'default' => 4, 'unit' => 'سانتی‌متر',
                     'hint' => 'شلوارک باید کوتاه‌تر باشد وگرنه از زیر دامن پیداست.',
                 ],
-                'elastic_waist' => [
-                    'label' => 'کمر کشی', 'type' => 'toggle', 'default' => true,
+                /*
+                 * هم‌نامِ باقیِ دامن‌ها، نه «کمر کشی».
+                 *
+                 * اسم مهم است چون کاتالوگ روی همین نام محورِ «پرداختِ خطِ کمر» را
+                 * می‌چرخاند. تا وقتی اسکورت نامِ خودش را داشت، آن محور بی‌صدا از
+                 * دستش می‌رفت و دو ردیفِ «کمربنددار» و «بی‌کمربند» یک الگو
+                 * می‌دادند.
+                 */
+                'waistband' => [
+                    'label' => 'نوار کمر جدا', 'type' => 'toggle', 'default' => false,
+                    'hint' => 'خاموش یعنی کمر کشی؛ روشن یعنی نوار کمرِ دوخته با زیپ پهلو.',
                 ],
             ],
         );
@@ -62,7 +71,7 @@ class SkirtSkortGenerator extends SkirtBaseGenerator
 
     public function generate(array $measurements, array $ease, array $params): array
     {
-        $elastic = $this->flag($params, 'elastic_waist', true);
+        $elastic = ! $this->flag($params, 'waistband', false);
         $mx = $this->skirtMetrics($measurements, $ease, $params, ['dart_share' => $elastic ? 0 : 0.5]);
 
         $length = (float) $this->param($params, 'length', 42);

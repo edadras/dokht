@@ -65,6 +65,20 @@ class EveningVariantCatalog extends EveningGownBaseGenerator implements VariantA
         'empire' => 'کمر زیر سینه',
     ];
 
+    /**
+     * بستِ پشت: کلید ⇒ نام.
+     *
+     * سه ساختِ متفاوت، نه سه نام: زیپِ مخفی فقط یک نشانه می‌خواهد، بندِ کشی
+     * ردیفِ حلقه و پشت‌بندِ تقویتی می‌آورد، و دکمهٔ مروارید پاتلتِ زیرِ خودش را.
+     *
+     * @var array<string, string>
+     */
+    protected const CLOSURES = [
+        'zip' => 'زیپ مخفی',
+        'lacing' => 'بند کشی',
+        'buttons' => 'دکمه مروارید',
+    ];
+
     public static function variants(): array
     {
         static $rows = null;
@@ -87,16 +101,20 @@ class EveningVariantCatalog extends EveningGownBaseGenerator implements VariantA
                             continue;
                         }
 
-                        $key = 'evening_'.$skirt.'_'.$length.'_'.$neck.'_'.$waist;
+                        foreach (static::CLOSURES as $closure => $closureName) {
+                            $key = 'evening_'.$skirt.'_'.$length.'_'.$neck.'_'.$waist.'_'.$closure;
 
-                        $rows[$key] = [
-                            'title' => 'لباس مجلسی '.$skirtName.' '.$lengthName.'، '.$neckName.'، '.$waistName,
-                            'skirt' => $base,
-                            'length' => $cm,
-                            'neckline' => $neck,
-                            'bodice_length' => $waist,
-                            'skirt_params' => $skirt === 'mermaid' ? ['flare_start' => round($cm * 0.68)] : [],
-                        ];
+                            $rows[$key] = [
+                                'title' => 'لباس مجلسی '.$skirtName.' '.$lengthName.'، '.$neckName.'، '
+                                    .$waistName.'، '.$closureName,
+                                'skirt' => $base,
+                                'length' => $cm,
+                                'neckline' => $neck,
+                                'bodice_length' => $waist,
+                                'closure' => $closure,
+                                'skirt_params' => $skirt === 'mermaid' ? ['flare_start' => round($cm * 0.68)] : [],
+                            ];
+                        }
                     }
                 }
             }

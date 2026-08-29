@@ -56,6 +56,16 @@ class JumpsuitVariantCatalog extends JumpsuitBaseGenerator implements VariantAwa
         'plain' => ['جلو بسته', 'closed', 'none'],
     ];
 
+    /**
+     * فرم: کلید ⇒ نام. آزادیِ سینه و کمر و باسن را با هم عوض می‌کند.
+     *
+     * @var array<string, string>
+     */
+    protected const FITS = [
+        'regular' => 'فرم معمولی',
+        'loose' => 'فرم گشاد',
+    ];
+
     public static function variants(): array
     {
         static $rows = null;
@@ -75,10 +85,13 @@ class JumpsuitVariantCatalog extends JumpsuitBaseGenerator implements VariantAwa
                         continue;
                     }
 
-                    $key = 'jumpsuit_'.$leg.'_'.$sleeve.'_'.$front;
+                    foreach (static::FITS as $fit => $fitName) {
+                    $key = 'jumpsuit_'.$leg.'_'.$sleeve.'_'.$front.'_'.$fit;
 
                     $rows[$key] = [
-                        'title' => ($form === 'shorts' ? 'سرهمی کوتاه ' : 'سرهمی ').$legName.'، '.$sleeveName.'، '.$frontName,
+                        'title' => ($form === 'shorts' ? 'سرهمی کوتاه ' : 'سرهمی ').$legName.'، '.$sleeveName.'، '
+                            .$frontName.'، '.$fitName,
+                        'fit' => $fit,
                         'form' => $form,
                         'knee_ease' => $knee,
                         'hem_ease' => $hem,
@@ -93,6 +106,7 @@ class JumpsuitVariantCatalog extends JumpsuitBaseGenerator implements VariantAwa
                         'neck_depth' => $opening === 'closed' ? 7.0 : 2.5,
                         'neck_width' => $opening === 'closed' ? 3.0 : 1.0,
                     ];
+                    }
                 }
             }
         }

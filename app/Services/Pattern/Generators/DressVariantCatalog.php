@@ -72,6 +72,20 @@ class DressVariantCatalog extends DressCatalogBaseGenerator implements VariantAw
     ];
 
     /**
+     * فرمِ تنه: کلید ⇒ نام.
+     *
+     * فرم فقط برچسب نیست؛ آزادیِ سینه و کمر و باسن را با هم عوض می‌کند و شکلِ
+     * درزِ پهلو را. برندها همین را «fit» می‌نامند و یک مدل را در دو فرم
+     * می‌فروشند: همان سایه، یک بار اندام‌نما و یک بار راحت.
+     *
+     * @var array<string, string>
+     */
+    protected const FITS = [
+        'regular' => 'فرم معمولی',
+        'fitted' => 'فرم جذب',
+    ];
+
+    /**
      * یقه‌ها: کلید ⇒ [نام، پهنای اضافه، گودیِ اضافهٔ جلو].
      *
      * @var array<string, array{0: string, 1: float, 2: float}>
@@ -111,28 +125,31 @@ class DressVariantCatalog extends DressCatalogBaseGenerator implements VariantAw
                             continue;
                         }
 
-                        $key = 'dress_'.$shape.'_'.$length.'_'.$sleeve.'_'.$neck;
+                        foreach (static::FITS as $fit => $fitName) {
+                            $key = 'dress_'.$shape.'_'.$length.'_'.$sleeve.'_'.$neck.'_'.$fit;
 
-                        $rows[$key] = [
-                            'title' => 'پیراهن '.$shapeName.' '.$lengthName.'، '.$sleeveName.'، '.$neckName,
-                            'form' => $form,
-                            'shape' => $panel,
-                            'hem_flare' => $flare,
-                            'length' => $bodyLength,
-                            'skirt' => $skirt !== '' ? $skirt : null,
-                            'skirt_length' => $skirtLength,
-                            'sleeve' => $style,
-                            'sleeve_length' => $sleeveLength,
-                            'bust_dart' => true,
-                            'waist_dart' => $form === 'waisted',
-                            'block' => [
-                                'neck_width_extra' => 0.5 + $neckWidth,
-                                'front_neck_depth_extra' => 2.0 + $neckDepth,
-                            ],
-                        ];
+                            $rows[$key] = [
+                                'title' => 'پیراهن '.$shapeName.' '.$lengthName.'، '.$sleeveName.'، '.$neckName.'، '.$fitName,
+                                'form' => $form,
+                                'shape' => $panel,
+                                'fit' => $fit,
+                                'hem_flare' => $flare,
+                                'length' => $bodyLength,
+                                'skirt' => $skirt !== '' ? $skirt : null,
+                                'skirt_length' => $skirtLength,
+                                'sleeve' => $style,
+                                'sleeve_length' => $sleeveLength,
+                                'bust_dart' => true,
+                                'waist_dart' => $form === 'waisted',
+                                'block' => [
+                                    'neck_width_extra' => 0.5 + $neckWidth,
+                                    'front_neck_depth_extra' => 2.0 + $neckDepth,
+                                ],
+                            ];
 
-                        if ($skirt === '') {
-                            unset($rows[$key]['skirt'], $rows[$key]['skirt_length']);
+                            if ($skirt === '') {
+                                unset($rows[$key]['skirt'], $rows[$key]['skirt_length']);
+                            }
                         }
                     }
                 }

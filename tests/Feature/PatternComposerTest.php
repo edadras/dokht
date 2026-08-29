@@ -104,8 +104,66 @@ class PatternComposerTest extends TestCase
         $this->get(route('patterns.compose'))
             ->assertOk()
             ->assertSee('جستجوی نام مدل…')
-            ->assertSee('نمایش همه')
+            ->assertSee('مدل‌های بیشتر')
             ->assertSee('سبک‌های سازگار با این پایه');
+    }
+
+    /**
+     * صفحهٔ کارگاه نباید با بزرگ‌شدن کاتالوگ سنگین شود.
+     *
+     * تلهٔ واقعی این بود: صفحه برای *هر* مدل یک بندانگشتی می‌ساخت و همان‌جا در
+     * HTML می‌گذاشت. با چهل مدل کند بود؛ با هزاران مدل یعنی هزاران بار ساختِ
+     * الگو در یک درخواست و صفحه‌ای چند ده مگابایتی.
+     *
+     * حالا بندانگشتی نشانی دارد و مرورگر آن‌هایی را می‌گیرد که می‌بیند. این
+     * آزمون همان را می‌پاید: در صفحه باید نشانیِ بندانگشتی باشد، و تعدادِ
+     * نقشه‌های SVG که خودِ صفحه با خودش حمل می‌کند باید انگشت‌شمار بماند —
+     * نه به اندازهٔ فهرست مدل‌ها.
+     */
+    public function test_the_studio_page_does_not_grow_with_the_catalogue(): void
+    {
+        $this->actingAsWorkshopUser();
+
+        $models = count(GeneratorRegistry::all());
+        $this->assertGreaterThan(500, $models, 'این آزمون فقط با کاتالوگ بزرگ معنا دارد.');
+
+        $html = $this->get(route('patterns.compose'))->assertOk()->getContent();
+
+        $this->assertStringContainsString('compose/thumb/', $html, 'بندانگشتی‌ها باید نشانی داشته باشند.');
+
+        // آیکون‌های خود صفحه SVG‌اند و اشکالی ندارد؛ آنچه نباید باشد، یک نقشهٔ
+        // الگو به ازای هر مدل است
+        $svgs = substr_count($html, '<svg');
+        $this->assertLessThan(
+            200,
+            $svgs,
+            "صفحه {$svgs} نقشهٔ SVG با خودش دارد در حالی که کاتالوگ {$models} مدل دارد؛"
+                .' یعنی بندانگشتی‌ها دوباره در خود صفحه ساخته می‌شوند.',
+        );
+
+        // سهم هر مدل از حجم صفحه: نام و کلید و یک شمارهٔ توضیح، نه بیشتر
+        $perModel = strlen($html) / $models;
+        $this->assertLessThan(
+            400,
+            $perModel,
+            'هر مدل '.round($perModel).' بایت از صفحه را می‌گیرد؛ یعنی چیزی تکراری'
+                .' (متن جستجو، نشانی کامل، یا خود توضیح) دوباره برای هر ردیف فرستاده می‌شود.',
+        );
+    }
+
+    public function test_a_thumbnail_is_served_on_its_own_and_a_broken_one_does_not_break_the_page(): void
+    {
+        $this->actingAsWorkshopUser();
+
+        $this->get(route('patterns.compose.thumb', ['group' => 'bodice', 'key' => 'bodice_block']))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/svg+xml')
+            ->assertSee('<svg', false);
+
+        // مدلی که وجود ندارد باید نشانِ خالی بگیرد، نه خطای پانصد
+        $this->get(route('patterns.compose.thumb', ['group' => 'bodice', 'key' => 'no_such_model']))
+            ->assertOk()
+            ->assertSee('<svg', false);
     }
 
     public function test_the_advanced_settings_hold_the_expert_knobs(): void

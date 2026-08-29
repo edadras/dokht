@@ -45,6 +45,11 @@ class BlazerGenerator extends BaseGenerator
             'body_length' => [
                 'label' => 'بلندی تنه از کمر', 'min' => 5, 'max' => 60, 'step' => 1, 'default' => 22, 'unit' => 'سانتی‌متر',
             ],
+            'fit' => [
+                'label' => 'فرم کت', 'type' => 'select', 'default' => 'regular',
+                'options' => ['fitted' => 'جذب', 'regular' => 'معمولی', 'loose' => 'گشاد'],
+                'hint' => 'کتِ گشادتر روی لباسِ زیرین می‌نشیند: چند سانتی‌متر آزادی بیشتر روی سینه، کمر و باسن.',
+            ],
             'button_stand' => [
                 'label' => 'اضافه جای دکمه', 'min' => 1, 'max' => 8, 'step' => 0.5, 'default' => 2, 'unit' => 'سانتی‌متر',
             ],
@@ -65,7 +70,7 @@ class BlazerGenerator extends BaseGenerator
 
     public function generate(array $measurements, array $ease, array $params): array
     {
-        $g = $this->bodiceMetrics($measurements, $ease, $params);
+        $g = $this->bodiceMetrics($measurements, $this->fitEase($ease, $params), $params);
         $stand = (float) $this->param($params, 'button_stand', 2);
         $bottom = max($g['front_waist_y'], $g['back_waist_y']) + (float) $this->param($params, 'body_length', 22);
         $lapelWidth = (float) $this->param($params, 'lapel_width', 8);
@@ -147,6 +152,35 @@ class BlazerGenerator extends BaseGenerator
         }
 
         return $this->finish($pieces);
+    }
+
+    /**
+     * آزادیِ خواسته‌شده بعلاوهٔ آنچه «فرم کت» می‌طلبد.
+     *
+     * فرم اینجا یک برچسب نیست: کتِ گشاد باید روی پیراهن و پلیور بنشیند، پس دورِ
+     * سینه و کمر و باسنش واقعاً بازتر می‌شود. عدد روی *دورِ کامل* اضافه می‌شود،
+     * چون bodiceMetrics خودش بر چهار تقسیم می‌کند.
+     *
+     * @param  array<string, float>  $ease
+     * @return array<string, float>
+     */
+    protected function fitEase(array $ease, array $params): array
+    {
+        $grow = match ((string) $this->param($params, 'fit', 'regular')) {
+            'fitted' => -2.0,
+            'loose' => 6.0,
+            default => 0.0,
+        };
+
+        if ($grow === 0.0) {
+            return $ease;
+        }
+
+        return array_merge($ease, [
+            'bust' => $this->ease($ease, 'bust', 6) + $grow,
+            'waist' => $this->ease($ease, 'waist', 4) + $grow,
+            'hip' => $this->ease($ease, 'hip', 6) + $grow,
+        ]);
     }
 
     /**

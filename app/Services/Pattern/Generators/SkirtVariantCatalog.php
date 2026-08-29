@@ -21,14 +21,18 @@ class SkirtVariantCatalog extends CatalogVariantBase
     }
 
     /**
-     * فرم‌ها: کلید ⇒ [نام، درفتِ پایه، نامِ پارامترِ قد، قدهای پذیرفته، نسبت‌ها].
+     * فرم‌ها: کلید ⇒ [نام، درفتِ پایه، نامِ پارامترِ قد، قدهای پذیرفته، نسبت‌ها، پرداخت‌های کمر].
+     *
+     * «پرداخت‌های کمر» فقط برای دامن‌هایی نوشته می‌شود که کمرشان انتخابی نیست:
+     * دامنِ کمر کشی و کمرچین هر دو ساختِ کمرشان بخشی از هویتشان است و درفتشان
+     * اصلاً پارامترِ کمربند ندارد. فهرستِ خالی یعنی «این محور را نچرخان».
      *
      * «نسبت‌ها» پارامترهایی‌اند که باید با قد بالا و پایین بروند، نه ثابت
      * بمانند. دامنِ ماهی این را لازم کرد: شروعِ کلوشش عددی ثابت از کمر است و اگر
      * دامن کوتاه شود ولی آن عدد نه، تمامِ کلوش در ده سانتی‌متر جمع می‌شود و مسیرِ
      * قطعه خودش را قطع می‌کند.
      *
-     * @var array<string, array{0: string, 1: string, 2: string, 3: array<int, string>, 4?: array<string, float>}>
+     * @var array<string, array{0: string, 1: string, 2: string, 3: array<int, string>, 4?: array<string, float>, 5?: array<int, string>}>
      */
     protected const SHAPES = [
         'aline' => ['خط A', 'skirt_a_line', 'length', ['mini', 'short', 'knee', 'midi', 'maxi']],
@@ -50,8 +54,8 @@ class SkirtVariantCatalog extends CatalogVariantBase
         'tiered' => ['طبقه‌ای', 'skirt_tiered', 'length', ['knee', 'midi', 'maxi']],
         'wrap' => ['پاکتی', 'skirt_wrap', 'length', ['short', 'knee', 'midi', 'maxi']],
         'yoke' => ['یوک‌دار', 'skirt_yoke', 'length', ['mini', 'short', 'knee', 'midi']],
-        'paperbag' => ['کمرچین (پیپربگ)', 'skirt_paperbag', 'length', ['short', 'knee', 'midi']],
-        'elastic' => ['کمر کشی', 'skirt_elastic_waist', 'length', ['short', 'knee', 'midi', 'maxi']],
+        'paperbag' => ['کمرچین (پیپربگ)', 'skirt_paperbag', 'length', ['short', 'knee', 'midi'], [], []],
+        'elastic' => ['کمر کشی', 'skirt_elastic_waist', 'length', ['short', 'knee', 'midi', 'maxi'], [], []],
         'bubble' => ['بادکنکی', 'skirt_bubble', 'length', ['mini', 'short', 'knee']],
         'tulip' => ['لاله‌ای', 'skirt_tulip', 'length', ['short', 'knee']],
         'asymmetric' => ['نامتقارن', 'skirt_asymmetric', 'length', ['knee', 'midi', 'maxi']],
@@ -74,6 +78,20 @@ class SkirtVariantCatalog extends CatalogVariantBase
         'maxi' => ['ماکسی', 98.0],
     ];
 
+    /**
+     * پرداختِ خطِ کمر: کلید ⇒ [نام، کمربند دارد یا نه].
+     *
+     * این برچسب نیست، یک قطعهٔ کم و زیاد است: دامنِ کمربنددار یک نوارِ جدا دارد
+     * و دامنِ بی‌کمربند به‌جایش سجافِ هم‌شکلِ خطِ کمر می‌خواهد. برندها هر دو را
+     * می‌فروشند و روی الگو دو چیز متفاوت‌اند.
+     *
+     * @var array<string, array{0: string, 1: bool}>
+     */
+    protected const WAISTS = [
+        'band' => ['کمربنددار', true],
+        'faced' => ['بی‌کمربند (سجاف)', false],
+    ];
+
     public static function variants(): array
     {
         static $rows = null;
@@ -87,6 +105,7 @@ class SkirtVariantCatalog extends CatalogVariantBase
         foreach (static::SHAPES as $shape => $row) {
             [$shapeName, $base, $param, $lengths] = $row;
             $scaled = $row[4] ?? [];
+            $waists = $row[5] ?? array_keys(static::WAISTS);
 
             foreach ($lengths as $length) {
                 [$lengthName, $cm] = static::LENGTHS[$length];
@@ -96,11 +115,25 @@ class SkirtVariantCatalog extends CatalogVariantBase
                     $params[$name] = round($cm * $ratio);
                 }
 
-                $rows['skirt_'.$shape.'_'.$length] = [
-                    'title' => 'دامن '.$shapeName.' '.$lengthName,
-                    'base' => $base,
-                    'params' => $params,
-                ];
+                if ($waists === []) {
+                    $rows['skirt_'.$shape.'_'.$length] = [
+                        'title' => 'دامن '.$shapeName.' '.$lengthName,
+                        'base' => $base,
+                        'params' => $params,
+                    ];
+
+                    continue;
+                }
+
+                foreach ($waists as $waist) {
+                    [$waistName, $hasBand] = static::WAISTS[$waist];
+
+                    $rows['skirt_'.$shape.'_'.$length.'_'.$waist] = [
+                        'title' => 'دامن '.$shapeName.' '.$lengthName.'، '.$waistName,
+                        'base' => $base,
+                        'params' => array_merge($params, ['waistband' => $hasBand]),
+                    ];
+                }
             }
         }
 

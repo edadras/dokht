@@ -47,6 +47,7 @@ abstract class JumpsuitBaseGenerator extends OnePieceBaseGenerator
         $short = (string) ($j['form'] ?? 'pants') === 'shorts';
 
         $schema = array_merge(
+            $this->fitParam((string) ($j['fit'] ?? 'regular')),
             $this->onePieceSchema(array_merge([
                 'neck_width_extra' => (float) ($j['neck_width'] ?? 1.0),
                 'front_neck_depth_extra' => (float) ($j['neck_depth'] ?? 2.5),

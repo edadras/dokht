@@ -21,9 +21,14 @@ class PantsVariantCatalog extends CatalogVariantBase
     }
 
     /**
-     * فرم‌ها: کلید ⇒ [نام، درفتِ پایه، فاق‌های پذیرفته، قدهای پذیرفته].
+     * فرم‌ها: کلید ⇒ [نام، درفتِ پایه، فاق‌های پذیرفته، قدهای پذیرفته، پرداخت‌های کمر].
      *
-     * @var array<string, array{0: string, 1: string, 2: array<int, string>, 3: array<int, string>}>
+     * ستونِ آخر برای دو مدلی است که کمرشان قابلِ انتخاب نیست: شلوارِ کمر کشی و
+     * ساق‌شلواری هر دو روی کشِ دورِ کمر بسته می‌شوند و اصلاً بستِ دیگری ندارند.
+     * دادنِ محورِ «کمربنددار / بی‌کمربند» به آن‌ها فقط دو نامِ متفاوت روی یک الگو
+     * می‌ساخت.
+     *
+     * @var array<string, array{0: string, 1: string, 2: array<int, string>, 3: array<int, string>, 4?: array<int, string>}>
      */
     protected const SHAPES = [
         'skinny' => ['جذب', 'pants_skinny', ['mid', 'high'], ['ankle', 'full']],
@@ -36,12 +41,12 @@ class PantsVariantCatalog extends CatalogVariantBase
         'culottes' => ['کولوت', 'pants_culottes', ['mid', 'high'], ['crop', 'ankle']],
         'pleated' => ['پیلی‌دار', 'pants_pleated', ['mid', 'high'], ['ankle', 'full']],
         'cargo' => ['کارگو', 'pants_cargo', ['low', 'mid'], ['ankle', 'full']],
-        'jogger' => ['جاگر', 'pants_jogger', ['mid'], ['ankle', 'full']],
-        'harem' => ['هارمی', 'pants_harem', ['mid', 'high'], ['ankle', 'full']],
+        'jogger' => ['جاگر', 'pants_jogger', ['mid'], ['ankle', 'full'], []],
+        'harem' => ['هارمی', 'pants_harem', ['mid', 'high'], ['ankle', 'full'], []],
         'jodhpur' => ['سوارکاری', 'pants_jodhpur', ['high'], ['full']],
-        'paperbag' => ['کمرچین', 'pants_paperbag', ['high'], ['ankle', 'full']],
-        'elastic' => ['کمر کشی', 'pants_elastic_waist', ['mid', 'high'], ['ankle', 'full']],
-        'leggings' => ['ساق‌شلواری', 'leggings', ['mid', 'high'], ['ankle', 'full']],
+        'paperbag' => ['کمرچین', 'pants_paperbag', ['high'], ['ankle', 'full'], []],
+        'elastic' => ['کمر کشی', 'pants_elastic_waist', ['mid', 'high'], ['ankle', 'full'], []],
+        'leggings' => ['ساق‌شلواری', 'leggings', ['mid', 'high'], ['ankle', 'full'], []],
     ];
 
     /**
@@ -86,6 +91,16 @@ class PantsVariantCatalog extends CatalogVariantBase
         'knee' => 'تا زانو',
     ];
 
+    /**
+     * پرداختِ خطِ کمر: کلید ⇒ [نام، کمربند دارد یا نه].
+     *
+     * @var array<string, array{0: string, 1: bool}>
+     */
+    protected const WAISTS = [
+        'band' => ['کمربنددار', true],
+        'faced' => ['بی‌کمربند (سجاف)', false],
+    ];
+
     public static function variants(): array
     {
         static $rows = null;
@@ -96,16 +111,33 @@ class PantsVariantCatalog extends CatalogVariantBase
 
         $rows = [];
 
-        foreach (static::SHAPES as $shape => [$shapeName, $base, $rises, $lengths]) {
+        foreach (static::SHAPES as $shape => $row) {
+            [$shapeName, $base, $rises, $lengths] = $row;
+            $waists = $row[4] ?? array_keys(static::WAISTS);
+
             foreach ($rises as $rise) {
                 foreach ($lengths as $length) {
                     [$lengthName, $change] = static::LENGTHS[$length];
 
-                    $rows['pants_'.$shape.'_'.$rise.'_'.$length] = [
-                        'title' => 'شلوار '.$shapeName.'، '.static::RISES[$rise].'، '.$lengthName,
-                        'base' => $base,
-                        'params' => ['rise' => $rise, 'length_extra' => $change],
-                    ];
+                    if ($waists === []) {
+                        $rows['pants_'.$shape.'_'.$rise.'_'.$length] = [
+                            'title' => 'شلوار '.$shapeName.'، '.static::RISES[$rise].'، '.$lengthName,
+                            'base' => $base,
+                            'params' => ['rise' => $rise, 'length_extra' => $change],
+                        ];
+
+                        continue;
+                    }
+
+                    foreach ($waists as $waist) {
+                        [$waistName, $hasBand] = static::WAISTS[$waist];
+
+                        $rows['pants_'.$shape.'_'.$rise.'_'.$length.'_'.$waist] = [
+                            'title' => 'شلوار '.$shapeName.'، '.static::RISES[$rise].'، '.$lengthName.'، '.$waistName,
+                            'base' => $base,
+                            'params' => ['rise' => $rise, 'length_extra' => $change, 'waistband' => $hasBand],
+                        ];
+                    }
                 }
             }
         }

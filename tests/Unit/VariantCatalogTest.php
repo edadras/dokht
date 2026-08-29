@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Services\Pattern\GeneratorRegistry;
 use App\Services\Pattern\Generators\VariantAware;
+use App\Support\Measurements;
 use ReflectionClass;
 use Symfony\Component\Finder\Finder;
 use Tests\TestCase;
@@ -116,35 +117,50 @@ class VariantCatalogTest extends TestCase
     }
 
     /**
-     * دو ردیفِ یک خانواده نباید الگوی یکسان بدهند.
+     * دو ردیفِ یک خانواده نباید *الگوی* یکسان بدهند.
      *
-     * اگر بدهند یعنی محوری که در نام آمده در واقع هیچ کاری نمی‌کند و کاربر
-     * فهرستی می‌بیند که در آن ده مدل یک چیزند.
+     * مقایسه روی خودِ قطعه‌هاست، نه روی نام و پارامتر. علتش یک تلهٔ واقعی است:
+     * محوری به جدول اضافه شد که نامش در عنوان می‌آمد و در پارامترها هم بود، ولی
+     * درفتِ پایه اصلاً آن پارامتر را نمی‌شناخت — پس همهٔ ردیف‌هایش یک الگو
+     * می‌دادند با دو نامِ متفاوت. با مقایسهٔ نام و پارامتر این از دست می‌رفت،
+     * چون آن دو *واقعاً* فرق داشتند؛ آن‌چه فرق نمی‌کرد الگو بود.
+     *
+     * چند ردیفِ پراکنده از هر خانواده کافی است: اگر محوری بی‌اثر باشد، در همان
+     * چند ردیفِ نخست هم خودش را نشان می‌دهد.
      */
-    public function test_neighbouring_rows_really_differ(): void
+    public function test_rows_of_a_family_really_produce_different_patterns(): void
     {
         $problems = [];
+        $body = Measurements::complete(Measurements::fromSize('40'));
 
         foreach ($this->families() as $class) {
             $keys = array_keys($class::variants());
             $seen = [];
 
-            // چند ردیفِ پراکنده کافی است؛ ساختنِ همه در این آزمون کند می‌شود
-            foreach (array_slice($keys, 0, 12) as $key) {
+            foreach (array_slice($keys, 0, 16) as $key) {
                 $generator = GeneratorRegistry::make($key);
-                $signature = md5(json_encode([
-                    $generator->label(),
-                    $generator->defaultParams(),
-                ]));
+
+                try {
+                    $pieces = $generator->generate($body, [], $generator->defaultParams());
+                } catch (\Throwable $error) {
+                    $problems[] = $class.'|'.$key.' ساخته نشد: '.$error->getMessage();
+
+                    continue;
+                }
+
+                $signature = md5(json_encode(array_map(
+                    fn (array $piece) => [$piece['code'] ?? '', $piece['outline'] ?? []],
+                    $pieces,
+                )));
 
                 if (isset($seen[$signature])) {
-                    $problems[] = $class.': «'.$key.'» با «'.$seen[$signature].'» هیچ فرقی ندارد.';
+                    $problems[] = $class.': الگوی «'.$key.'» با «'.$seen[$signature].'» مو نمی‌زند.';
                 }
 
                 $seen[$signature] = $key;
             }
         }
 
-        $this->assertSame([], $problems);
+        $this->assertSame([], array_slice($problems, 0, 20));
     }
 }

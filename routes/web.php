@@ -144,6 +144,10 @@ Route::middleware(['auth', 'workshop'])->group(function () {
     Route::get('compose', [PatternComposerController::class, 'create'])->name('patterns.compose');
     Route::post('compose', [PatternComposerController::class, 'store'])->name('patterns.compose.store');
     Route::get('compose/preview', [PatternComposerController::class, 'preview'])->name('patterns.compose.preview');
+    // بندانگشتی هر مدل جدا صدا زده می‌شود تا صفحه هزاران نقشه را با خودش حمل نکند
+    Route::get('compose/thumb/{group}/{key}', [PatternComposerController::class, 'thumb'])
+        ->where('key', '[A-Za-z0-9_\-]+')
+        ->name('patterns.compose.thumb');
 
     // ساخت الگو از روی عکس لباس یا طرح دستی
     Route::get('design-import', [DesignImportController::class, 'create'])->name('design-import.create');

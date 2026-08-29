@@ -21,13 +21,38 @@
         }
     }
 
-    $search = [];
+    /*
+     * کارت‌های انتخابگر: کلید (k)، نام (l) و شمارهٔ توضیح (h).
+     *
+     * این فهرست هزاران ردیف دارد و تمامش به مرورگر می‌رود، پس هر بایتِ تکراری
+     * چند مگابایت می‌شود. سه چیز عمداً این‌جا نیست:
+     *
+     * — نشانیِ بندانگشتی، که از روی گروه و کلید ساخته می‌شود (یک الگو برای همه).
+     * — متنِ جستجو، که همان نام و کلید است و مرورگر خودش می‌سازد.
+     * — خودِ توضیح، که میان صدها مدل تکرار می‌شود؛ یک بار در فهرستِ توضیح‌ها
+     *   می‌آید و کارت فقط شماره‌اش را دارد.
+     */
+    $cards = [];
+    $hints = [];
+    $hintIndex = [];
 
     foreach ($catalogue['base'] as $group => $items) {
+        $cards[$group] = [];
+
         foreach ($items as $key => $item) {
-            $search[$group][$key] = mb_strtolower($item['label'].' '.($item['hint'] ?? '').' '.$key);
+            $hint = (string) ($item['hint'] ?? '');
+
+            if (! isset($hintIndex[$hint])) {
+                $hintIndex[$hint] = count($hints);
+                $hints[] = $hint;
+            }
+
+            $cards[$group][] = ['k' => $key, 'l' => $item['label'], 'h' => $hintIndex[$hint]];
         }
     }
+
+    // «none» قطعه‌ای ندارد، پس بندانگشتی هم ندارد؛ بقیه از این الگو ساخته می‌شوند
+    $thumbUrl = route('patterns.compose.thumb', ['group' => '__G__', 'key' => '__K__']);
 
     $roleTitles = [
         'garment' => 'لباس کامل',
@@ -41,7 +66,9 @@
         'styleMeta' => $styleMeta,
         'styleGroups' => $styleGroups,
         'roleTitles' => $roleTitles,
-        'search' => $search,
+        'cards' => $cards,
+        'hints' => $hints,
+        'thumbUrl' => $thumbUrl,
         'noteStyles' => $noteStyles,
         'previewUrl' => $previewUrl,
         'recipe' => $recipe,
@@ -101,7 +128,7 @@
             schemas: { roles: {}, styles: {} },
             paramsOf: {},
             q: { garment: '', bodice: '', sleeve: '', lower: '', collar: '' },
-            showAll: { garment: false, bodice: false, sleeve: false, lower: false, collar: false },
+            shown: { garment: 0, bodice: 0, sleeve: 0, lower: 0, collar: 0 },
             openGroups: {},
             svg: '', notes: [], pieces: [], metrics: {}, report: [], suggested: '',
             error: null, busy: false, ready: false, timer: null, startBase: '',
@@ -138,7 +165,7 @@
                 this.kind = kind;
                 // با رفتن به «یک لباس کامل» اگر هیچ لباسی انتخاب نشده، اولی برداشته می‌شود
                 if (kind === 'garment' && !this.base.garment) {
-                    this.base.garment = Object.keys(this.data.search.garment || {})[0] || null;
+                    this.base.garment = (this.all('garment')[0] || {}).k || null;
                 }
                 this.$nextTick(() => this.schedule());
             },
@@ -148,16 +175,34 @@
                     : 'blocks:' + [this.base.bodice, this.base.sleeve, this.base.lower, this.base.collar].join('+');
             },
             sameBase() { return this.startBase === this.baseKey(); },
-            visible(group, index, limit, key) {
-                const needle = (this.q[group] || '').trim().toLowerCase();
-                if (needle) { return ((this.data.search[group] || {})[key] || '').includes(needle); }
-                return this.showAll[group] || index < limit || this.base[group] === key;
+            /* فهرست کارت‌ها: همه‌شان این‌جاست، ولی هر بار یک بسته نشان داده می‌شود */
+            all(group) { return this.data.cards[group] || []; },
+            count(group) { return this.all(group).length; },
+            hint(item) { return this.data.hints[item.h] || ''; },
+            thumb(group, key) {
+                if (key === 'none') { return null; }
+                return this.data.thumbUrl.replace('__G__', group).replace('__K__', encodeURIComponent(key));
             },
-            hidden(group, count, limit) { return !this.showAll[group] && !(this.q[group] || '').trim() && count > limit; },
-            anyVisible(group) {
+            matches(group) {
                 const needle = (this.q[group] || '').trim().toLowerCase();
-                return Object.values(this.data.search[group] || {}).some(hay => hay.includes(needle));
+                if (!needle) { return this.all(group); }
+                return this.all(group).filter(item =>
+                    item.l.toLowerCase().includes(needle)
+                    || item.k.toLowerCase().includes(needle)
+                    || this.hint(item).toLowerCase().includes(needle));
             },
+            page(group, limit) {
+                const rows = this.matches(group);
+                const take = rows.slice(0, this.shown[group] || limit);
+                // انتخابِ فعلی هرگز از فهرست بیرون نمی‌افتد، وگرنه کاربر نمی‌بیند
+                // چه چیزی انتخاب کرده و کارت هیچ‌کدام روشن نیست
+                if (this.base[group] && !take.some(item => item.k === this.base[group])) {
+                    const chosen = this.all(group).find(item => item.k === this.base[group]);
+                    if (chosen) { return [chosen, ...take]; }
+                }
+                return take;
+            },
+            more(group, limit) { return this.matches(group).length > (this.shown[group] || limit); },
 
             /* --- گام دو: سبک‌ها --- */
             ok(key) { const row = this.availability[key]; return !row || row.ok; },

@@ -69,6 +69,20 @@ class ChildVariantCatalog extends ChildGarmentBaseGenerator implements VariantAw
         'micro' => ['شلوارک کوتاه', 12.0, 14.0, 16.0, false],
     ];
 
+    /**
+     * اندازهٔ درفت: کلید ⇒ [نام، ضریبِ آزادیِ رشد].
+     *
+     * لباسِ کودک را برای امروز می‌دوزند یا برای یک فصلِ جلوتر، و این دو الگوی
+     * متفاوت‌اند نه یک الگو با دو برچسب: آزادیِ رشد هم به بلندیِ تنه می‌رود هم
+     * به آستین. برندهای کودک همین را «سایزِ رشد» می‌نامند.
+     *
+     * @var array<string, array{0: string, 1: float}>
+     */
+    protected const GROWTH = [
+        'now' => ['اندازهٔ امروز', 0.6],
+        'grow' => ['با آزادی رشد', 1.6],
+    ];
+
     public static function variants(): array
     {
         static $rows = null;
@@ -91,10 +105,11 @@ class ChildVariantCatalog extends ChildGarmentBaseGenerator implements VariantAw
                         continue;
                     }
 
-                    $key = 'child_'.$shape.'_'.$sleeve.'_'.$use;
+                    foreach (static::GROWTH as $grade => [$gradeName, $factor]) {
+                    $key = 'child_'.$shape.'_'.$sleeve.'_'.$use.'_'.$grade;
 
                     $rows[$key] = [
-                        'title' => $shapeName.' بچگانه، '.$sleeveName.'، '.$useName,
+                        'title' => $shapeName.' بچگانه، '.$sleeveName.'، '.$useName.'، '.$gradeName,
                         'form' => $form,
                         'use' => $use,
                         'length' => $length,
@@ -106,9 +121,10 @@ class ChildVariantCatalog extends ChildGarmentBaseGenerator implements VariantAw
                         'sleeve_length' => $sleeveLength,
                         'pocket' => $pocket,
                         'play' => $play,
-                        'growth' => $growth,
+                        'growth' => round($growth * $factor, 1),
                         'knit' => in_array($shape, ['tee', 'cardigan'], true),
                     ];
+                    }
                 }
             }
         }
@@ -119,21 +135,23 @@ class ChildVariantCatalog extends ChildGarmentBaseGenerator implements VariantAw
                     continue;
                 }
 
-                $key = 'child_'.$bottom.'_'.$use;
+                foreach (static::GROWTH as $grade => [$gradeName, $factor]) {
+                $key = 'child_'.$bottom.'_'.$use.'_'.$grade;
 
                 $rows[$key] = [
-                    'title' => $bottomName.' بچگانه، '.$useName,
+                    'title' => $bottomName.' بچگانه، '.$useName.'، '.$gradeName,
                     'form' => 'pants',
                     'use' => $use,
                     'knee_ease' => $knee,
                     'hem_ease' => $hem,
                     'play' => $play,
-                    'growth' => $growth,
+                    'growth' => round($growth * $factor, 1),
                     'rib' => $rib,
                 ];
 
                 if ($legLength !== null) {
                     $rows[$key]['leg_length'] = $legLength;
+                }
                 }
             }
         }

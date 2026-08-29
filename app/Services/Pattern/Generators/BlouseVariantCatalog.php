@@ -50,6 +50,23 @@ class BlouseVariantCatalog extends BlouseBaseGenerator implements VariantAware
     ];
 
     /**
+     * یقهٔ دوخته: کلید ⇒ [نام، بستِ جلو].
+     *
+     * یقه و بستِ جلو با هم می‌آیند چون با هم قطعه می‌سازند: یقهٔ مردانه پایه و
+     * سرِ یقه می‌خواهد و روی جلوی بسته جایی برای نشستن ندارد؛ یقهٔ کرواتی و
+     * پاپیونی هم نوارِ خودشان را می‌آورند.
+     *
+     * @var array<string, array{0: string, 1: string}>
+     */
+    protected const COLLARS = [
+        'none' => ['بی‌یقه', 'closed'],
+        'shirt' => ['یقه مردانه', 'button'],
+        'stand' => ['یقه ایستاده', 'button'],
+        'tie' => ['یقه کرواتی', 'closed'],
+        'bow' => ['یقه پاپیونی', 'closed'],
+    ];
+
+    /**
      * آستین: کلید ⇒ نام.
      *
      * @var array<string, string>
@@ -82,25 +99,34 @@ class BlouseVariantCatalog extends BlouseBaseGenerator implements VariantAware
                         continue;
                     }
 
-                    // خطِ باز، یقهٔ دوخته را برنمی‌دارد
-                    $collar = $takesCollar && in_array($body, ['classic', 'fitted', 'longline'], true)
-                        ? 'shirt'
-                        : 'none';
+                    foreach (static::COLLARS as $collar => [$collarName, $opening]) {
+                        // خطِ یقهٔ باز پایه‌ای برای یقهٔ دوخته ندارد؛ یقه روی
+                        // سرشانه می‌ایستد به‌جای اینکه دورِ گردن بنشیند
+                        if ($collar !== 'none' && ! $takesCollar) {
+                            continue;
+                        }
 
-                    $key = 'blouse_'.$body.'_'.$line.'_'.$arm;
+                        // شومیزِ کراپ و اورسایز یقهٔ کرواتی و پاپیونی نمی‌گیرند
+                        if (in_array($collar, ['tie', 'bow'], true)
+                            && in_array($body, ['crop', 'oversized', 'tunic'], true)) {
+                            continue;
+                        }
 
-                    $rows[$key] = [
-                        'title' => 'شومیز '.$bodyName.'، '.$lineName.'، '.$armName,
-                        'fit' => $fit,
-                        'neckline' => $line,
-                        'collar' => $collar,
-                        'sleeve' => $arm,
-                        'body_length' => $length,
-                        'gathers' => $gathers,
-                        'bust_dart' => $dart,
-                        'use' => 'daily',
-                        'opening' => $collar === 'none' ? 'closed' : 'button',
-                    ];
+                        $key = 'blouse_'.$body.'_'.$line.'_'.$arm.'_'.$collar;
+
+                        $rows[$key] = [
+                            'title' => 'شومیز '.$bodyName.'، '.$lineName.'، '.$armName.'، '.$collarName,
+                            'fit' => $fit,
+                            'neckline' => $line,
+                            'collar' => $collar,
+                            'sleeve' => $arm,
+                            'body_length' => $length,
+                            'gathers' => $gathers,
+                            'bust_dart' => $dart,
+                            'use' => 'daily',
+                            'opening' => $opening,
+                        ];
+                    }
                 }
             }
         }

@@ -52,6 +52,7 @@ class CoatRaincoatGenerator extends BodiceGarmentBase
                 ],
             ],
             $this->pocketParam(true, 16, 17),
+            $this->liningParam(false),
         );
     }
 
