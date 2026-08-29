@@ -956,4 +956,49 @@ class DrapePayloadTest extends TestCase
 
         $this->assertGreaterThan(0, $seen, 'هیچ درزِ همسایه‌ای پیدا نشد؛ آزمون چیزی را نسنجید.');
     }
+
+    /**
+     * قطعهٔ آینه‌شده تکراری نیست؛ آن یکی طرف است.
+     *
+     * پاچهٔ راست و چپ یک کد دارند، یک بازهٔ زاویه‌ای و یک ارتفاع — فرقشان فقط
+     * آینه بودن است. حذفِ «هم‌جا»ها دومی را می‌انداخت و شلوار روی مانکن یک پاچه
+     * داشت. هر مدلی که قطعهٔ آینه‌شده دارد باید هر دو نمونه‌اش را ببیند.
+     */
+    public function test_a_mirrored_piece_is_not_dropped_as_a_duplicate(): void
+    {
+        foreach (['pants_straight', 'blazer'] as $key) {
+            $payload = $this->payload($key);
+            $byCode = [];
+
+            foreach ($payload['pieces'] as $piece) {
+                $byCode[$piece['code']][] = $piece;
+            }
+
+            $pattern = $this->pattern($key);
+            $checked = 0;
+
+            foreach ($pattern->pieces as $model) {
+                if (! $model->mirror || (int) $model->cut_quantity < 2) {
+                    continue;
+                }
+
+                $checked++;
+                $instances = $byCode[$model->code] ?? [];
+
+                $this->assertCount(
+                    2,
+                    $instances,
+                    "«{$key}»: قطعهٔ آینه‌شدهٔ {$model->code} باید دو نمونه داشته باشد.",
+                );
+
+                $this->assertNotSame(
+                    $instances[0]['mirrored'],
+                    $instances[1]['mirrored'],
+                    "«{$key}»: دو نمونهٔ {$model->code} هر دو یک طرف‌اند.",
+                );
+            }
+
+            $this->assertGreaterThan(0, $checked, "«{$key}» هیچ قطعهٔ آینه‌شده‌ای نداشت؛ آزمون چیزی را نسنجید.");
+        }
+    }
 }

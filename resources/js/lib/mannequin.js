@@ -250,11 +250,35 @@ export const buildBody = (m = {}) => {
         shoulderRing: torso[4],
         neckRadius: (neckRing.front + neckRing.back) / 2,
         shoulderHalf: shoulderWidth / 2,
+        armLength,
         torso,
         arm,
         leg,
     };
 };
+
+/*
+ * دستِ آویزان: از کجا شروع می‌شود و چقدر از بدن فاصله می‌گیرد.
+ *
+ * این‌ها شکلِ بدن‌اند، نه شکلِ نمایش، پس همین‌جا می‌مانند تا هم نمای مانکن و هم
+ * حل‌کنندهٔ پارچه از یک عدد بخوانند. وقتی هرکدام برای خودش حساب می‌کرد، آستین
+ * روی بازو نمی‌نشست و کسی هم نمی‌فهمید کدام‌شان درست است.
+ */
+export const ARM_TILT = 0.085;
+
+/**
+ * مفصلِ شانه: مرکز و ارتفاعِ سرِ بازو.
+ *
+ * عرض سرشانه تا نوکِ شانه اندازه گرفته می‌شود و بازو از همان‌جا به بیرون
+ * می‌افتد؛ برای همین آدم از روی بازوهایش پهن‌تر است تا از روی سرشانه‌اش.
+ */
+export const armJoint = (body) => ({
+    x: body.shoulderRing.rx - body.arm[0].r * 0.35,
+    y: body.shoulderRing.y + body.arm[0].r * 0.5,
+});
+
+/** مرکزِ دست در فاصلهٔ داده‌شده از مفصل. */
+export const armCentre = (body, along) => armJoint(body).x + Math.max(0, along) * ARM_TILT;
 
 /** تراز بدن در ارتفاع دلخواه، با میان‌یابی. */
 export const sampleRing = (rings, y) => {
@@ -287,3 +311,116 @@ export const sampleRing = (rings, y) => {
 export const girthOf = (ring) => (
     perimeter(ring.rx, ring.front) + perimeter(ring.rx, ring.back)
 ) / 2;
+
+/* ---------------------------------------------------------------------------
+ * همین بدن، به زبانِ حل‌کنندهٔ پارچه
+ * ---------------------------------------------------------------------------
+ *
+ * حل‌کننده و چیدنِ قطعه‌ها دستگاهِ خودشان را دارند: متر، y رو به *بالا* و صفر روی
+ * زمین. این‌جا سانتی‌متر است و y از بالای سر رو به پایین، مثل خودِ الگو. پس یک
+ * مترجم لازم است — و فقط یکی، وگرنه دو بدنِ متفاوت می‌شود و آستین روی بازویی
+ * می‌نشیند که آن‌جا نیست.
+ *
+ * چیدنِ قطعه‌ها از سرور «نامِ تراز» و «نامِ شعاع» می‌گیرد، نه عدد؛ پس هر بدنی که
+ * این نام‌ها را داشته باشد کار می‌کند و لباس روی اندامِ همین مشتری چیده می‌شود.
+ */
+
+/* از سانتی‌مترِ رو به پایین، به مترِ رو به بالا */
+const upright = (body, y) => (body.height - y) / 100;
+
+/** شعاعِ معادلِ یک تراز: دوری که آن تراز دارد، تقسیم بر دو پی. */
+const ringRadius = (body, y) => girthOf(sampleRing(body.torso, y)) / (2 * Math.PI) / 100;
+
+/**
+ * جدول‌هایی که buildDrape و برخوردگرها می‌خواهند.
+ *
+ * @param {object} body خروجی buildBody
+ */
+export const drapeBody = (body) => {
+    const level = body.level;
+    const knee = level.crotch + body.leg[2].y;
+
+    /*
+     * حلقهٔ آستین میانِ سرشانه و سینه است. جای دقیقش را کسی اندازه نمی‌گیرد،
+     * ولی چیدنِ آستین به آن نیاز دارد: نزدیک به نیمهٔ راه، کمی بالاتر.
+     */
+    const armhole = lerp(level.shoulder, level.bust, 0.47);
+
+    const at = (y) => upright(body, y);
+
+    /* از پایین به بالا، همان ترتیبی که برخوردگر می‌خواهد */
+    const ankleR = body.leg[body.leg.length - 1].r / 100;
+    const kneeR = body.leg[2].r / 100;
+    const legOut = body.leg[body.leg.length - 1].x / 100;
+
+    /*
+     * هر سطر پنج عدد دارد: ارتفاع، نیم‌پهنا، نیم‌عمقِ میانگین، و بعد جلو و پشتِ
+     * جدا. سه‌تای اول همان قراردادِ قدیمی است، پس هر چیزی که فقط [y, rx, rz]
+     * می‌خواند بی‌تغییر کار می‌کند؛ دو تای آخر برای برخوردگر است تا سینه و شکم و
+     * باسن از زیرِ پارچه پیدا باشند.
+     */
+    const profile = [
+        [at(level.ankle), legOut + ankleR * 1.25, ankleR * 1.6, ankleR * 1.6, ankleR * 1.6],
+        [at(knee), body.leg[2].x / 100 + kneeR, kneeR * 1.6, kneeR * 1.6, kneeR * 1.6],
+    ];
+
+    // تنه از فاق به بالا، از خودِ حلقه‌های مانکن
+    for (let i = body.torso.length - 1; i >= 0; i--) {
+        const ring = body.torso[i];
+        const mean = (ring.front + ring.back) / 2 / 100;
+
+        profile.push([at(ring.y), ring.rx / 100, mean, ring.front / 100, ring.back / 100]);
+    }
+
+    /* دست: صفر روی مفصل، منفی رو به پایین */
+    const armTable = [];
+
+    for (let i = body.arm.length - 1; i >= 0; i--) {
+        armTable.push([-body.arm[i].y / 100, body.arm[i].r / 100]);
+    }
+
+    return {
+        level: {
+            ankle: at(level.ankle),
+            knee: at(knee),
+            crotch: at(level.crotch),
+            hip: at(level.hip),
+            highHip: at(level.highHip),
+            waist: at(level.waist),
+            underBust: at(level.underBust),
+            bust: at(level.bust),
+            armhole: at(armhole),
+            shoulder: at(level.shoulder),
+            neck: at(level.neck),
+            chin: at(body.head.neckTop),
+            top: body.height / 100,
+        },
+        radii: {
+            hip: ringRadius(body, level.hip),
+            highHip: ringRadius(body, level.highHip),
+            waist: ringRadius(body, level.waist),
+            underBust: ringRadius(body, level.underBust),
+            bust: ringRadius(body, level.bust),
+            neck: ringRadius(body, level.neck),
+            /*
+             * «شعاعِ حلقهٔ آستین» دورِ خودِ حلقه است، نه پهنای تنه در آن ارتفاع —
+             * قراردادِ چیدنِ قطعه‌ها همین است و اگر پهنای تنه بدهیم، آستین دو
+             * برابر گشاد چیده می‌شود.
+             */
+            armhole: girthOf(sampleRing(body.torso, level.bust)) * 0.46 / (2 * Math.PI) / 100,
+            bicep: body.arm[1].r / 100,
+            wrist: body.arm[5].r / 100,
+            thigh: body.leg[0].r / 100,
+            knee: kneeR,
+            ankle: ankleR,
+            shoulder: body.shoulderHalf / 100,
+        },
+        profile,
+        armTable,
+        armLength: body.armLength / 100,
+        armOffset: armJoint(body).x / 100,
+        armTilt: ARM_TILT,
+        // ارتفاعِ مفصل، برای چیدنِ آستین و ساختِ برخوردگرِ بازو
+        armTop: at(armJoint(body).y),
+    };
+};

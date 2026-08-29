@@ -9,9 +9,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildBody } from '../../resources/js/lib/mannequin.js';
+import { armCentre, armJoint, buildBody } from '../../resources/js/lib/mannequin.js';
 import {
-    armCentre, armJoint, bodyEnvelope, chainAt, depthAt, smooth,
+    bodyColliders, bodyEnvelope, chainAt, depthAt, smooth,
 } from '../../resources/js/components/garment-solid.js';
 
 const body = buildBody({
@@ -126,4 +126,95 @@ test('میان‌یابیِ زنجیره در دو سرش گیر نمی‌کند
     const mid = chainAt(body.arm, body.arm[1].y);
 
     assert.ok(Math.abs(mid - body.arm[1].r) < 1e-9);
+});
+
+/*
+ * برخوردگرهای بدن باید همان بدنی باشند که دیده می‌شود.
+ *
+ * اگر پوستِ نامرئی با پوستِ دیده‌شده یکی نباشد، پارچه جایی می‌ایستد که چیزی
+ * آن‌جا نیست — و کسی نمی‌فهمد چرا. پس همان اندازه‌ها، همان ترازها.
+ */
+test('برخوردگرها بدن را کامل می‌پوشانند', async () => {
+    const { drapeBody } = await import('../../resources/js/lib/mannequin.js');
+    const { Collider } = await import('../../resources/js/lib/cloth-solver.js');
+
+    const table = drapeBody(body);
+    const parts = bodyColliders(Collider, body, table);
+    const names = parts.map((one) => one.name);
+
+    ['torso', 'neck', 'head', 'armL', 'armR', 'legL', 'legR'].forEach((name) => {
+        assert.ok(names.includes(name), `${name} برخوردگر ندارد`);
+    });
+
+    parts.forEach((one) => {
+        assert.ok(one.active, `${one.name} جای‌گذاری نشده`);
+
+        for (let i = 1; i < one.ys.length; i++) {
+            assert.ok(one.ys[i] > one.ys[i - 1], `${one.name}: مقطع‌ها صعودی نیستند`);
+        }
+    });
+
+    /* تنه باید از فاق تا بالای گردن برسد */
+    const torso = parts.find((one) => one.name === 'torso');
+
+    assert.ok(torso.ys[0] <= table.level.crotch + 1e-6);
+    assert.ok(torso.ys[torso.ys.length - 1] >= table.level.neck);
+});
+
+test('مقطعِ تنه جلو و پشتش را جدا می‌دهد', async () => {
+    const { drapeBody } = await import('../../resources/js/lib/mannequin.js');
+    const { Collider } = await import('../../resources/js/lib/cloth-solver.js');
+
+    const table = drapeBody(body);
+    const torso = bodyColliders(Collider, body, table).find((one) => one.name === 'torso');
+    const out = [0, 0, 0];
+
+    torso.sectionAt(table.level.hip, out);
+
+    assert.ok(out[2] > out[1] + 0.005, `باسن باید پشت بزند: جلو ${out[1]}، پشت ${out[2]}`);
+
+    torso.sectionAt(table.level.bust, out);
+
+    assert.ok(out[1] > out[2] + 0.005, `سینه باید جلو بزند: جلو ${out[1]}، پشت ${out[2]}`);
+});
+
+/*
+ * جدولِ بدن برای حل‌کننده باید همان بدنِ مانکن باشد، فقط به زبانِ دیگر: متر،
+ * y رو به بالا، صفر روی زمین.
+ */
+test('ترجمهٔ بدن به دستگاهِ حل‌کننده وارونه نمی‌شود', async () => {
+    const { drapeBody } = await import('../../resources/js/lib/mannequin.js');
+    const table = drapeBody(body);
+
+    assert.ok(Math.abs(table.level.top - body.height / 100) < 1e-9);
+    assert.ok(table.level.ankle < table.level.knee, 'مچ پا پایین‌تر از زانوست');
+    assert.ok(table.level.knee < table.level.crotch);
+    assert.ok(table.level.waist < table.level.bust, 'کمر پایین‌تر از سینه است');
+    assert.ok(table.level.bust < table.level.shoulder);
+    assert.ok(table.level.shoulder < table.level.neck);
+    assert.ok(table.level.neck < table.level.chin);
+    assert.ok(table.level.chin < table.level.top);
+
+    // نیم‌رخ از پایین به بالا مرتب است و هر سطر پنج عدد دارد
+    table.profile.forEach((row, i) => {
+        assert.equal(row.length, 5, 'هر سطرِ نیم‌رخ پنج عدد دارد');
+        assert.ok(row.slice(1).every((v) => v > 0), 'شعاع مثبت است');
+
+        if (i > 0) {
+            assert.ok(row[0] > table.profile[i - 1][0], 'نیم‌رخ باید صعودی باشد');
+        }
+    });
+
+    /* دور کمر همان دور کمر می‌ماند */
+    const waist = table.radii.waist * 2 * Math.PI * 100;
+
+    assert.ok(Math.abs(waist - 74) < 3, `دور کمرِ ترجمه‌شده ${waist.toFixed(1)} شد`);
+
+    // جدول دست از مچ (منفی) تا مفصل (صفر) بالا می‌رود
+    assert.ok(table.armTable[0][0] < 0);
+    assert.ok(table.armTable[table.armTable.length - 1][0] <= 0);
+
+    for (let i = 1; i < table.armTable.length; i++) {
+        assert.ok(table.armTable[i][0] > table.armTable[i - 1][0], 'جدول دست صعودی است');
+    }
 });

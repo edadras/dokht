@@ -1286,6 +1286,15 @@ const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 
  * قطعهٔ روی اندام (آستین، پاچه) جا ندارد: بازو ۴٫۵ سانتی‌متر شعاع دارد و حتی سه
  * سانتی‌متر لغزش آستین را از رویش کنار می‌برد؛ اندازه گرفتیم، پوششِ دورِ بازو از
  * ۳۶۰ درجه به ۵۰ افتاد و بازو لخت بیرون ماند. پس برای اندام صفر.
+ *
+ * و نواری که *دورِ تا دور* می‌پیچد هم جا ندارد، به همان دلیل و بدتر.
+ *
+ * یقه یک نوارِ ۵۵ سانتی‌متری است که روی استوانه‌ای به شعاع ۸٫۸ پیچیده. کشیدنش به
+ * پهلو یک طرف را به گردن می‌چسباند و طرفِ دیگر را همان‌قدر دور می‌کند — سود
+ * خالصش صفر است و شکلِ حلقه از بین می‌رود. اندازه گرفتیم: شعاعِ یقه به‌جای
+ * ۸٫۸، از ۳٫۹ تا ۱۹٫۴ پخش می‌شد؛ یعنی نوار نه دورِ گردن، که مثل شالی روی شانه‌ها
+ * افتاده بود — و بعد قیدِ درز و اتوی خطِ خواب همان را مچاله می‌کردند. درزِ نوارِ
+ * حلقه‌ای را چرخش و ارتفاع می‌بندد، نه جابه‌جایی.
  */
 const LATERAL_ROOM = 0.06;
 const LIMB_ROOM = 0;
@@ -1905,6 +1914,20 @@ const alignPatches = (patches, seams, rounds, radial = false) => {
      */
     const axis = patches.map((entry) => entry.axis || 0);
     /*
+     * نوارِ *بسته* مثل قطعهٔ روی اندام است: می‌چرخد و بالا-پایین می‌رود، نه بیشتر.
+     *
+     * شرطش این است که واقعاً دورِ تا دور برود. اول همهٔ نوارها را بستم و بندِ
+     * لباسِ راپ — که می‌پیچد ولی حلقه نمی‌شود — درزش از ۲٫۳ به ۵٫۱ سانتی‌متر باز
+     * شد: آن یکی *باید* بلغزد تا سرِ جایش برسد. حلقهٔ کامل است که از لغزیدن
+     * چیزی به دست نمی‌آورد؛ هرچه یک طرفش نزدیک شود، طرف دیگر همان‌قدر دور
+     * می‌شود.
+     */
+    const banded = patches.map((entry) => {
+        const at = entry.piece.placement || {};
+
+        return isStrip(entry.piece) && (at.u1 ?? 0) - (at.u0 ?? 0) >= Math.PI * 1.8;
+    });
+    /*
      * جابه‌جاییِ پهلوییِ هر قطعه سقف دارد.
      *
      * بی سقف، قطعه از استوانهٔ خودش بیرون می‌رود و برنمی‌گردد — برخوردگر فقط
@@ -2042,7 +2065,7 @@ const alignPatches = (patches, seams, rounds, radial = false) => {
              * بستنِ درز کارِ چرخش (دورِ محورِ خودِ قطعه) و ارتفاع است؛ باقی‌اش را
              * حل‌کننده می‌بندد.
              */
-            const budget = Math.abs(axis[p]) > 1e-6 ? LIMB_ROOM : LATERAL_ROOM;
+            const budget = Math.abs(axis[p]) > 1e-6 || banded[p] ? LIMB_ROOM : LATERAL_ROOM;
             const room = Math.max(0, budget - slid[p]);
             const step = Math.hypot(dx, dz);
             const slide = radial ? 1 : (step > 1e-9 ? Math.min(1, room / step) : 0);
@@ -2584,6 +2607,9 @@ export const buildDrape = (payload, body, options = {}) => {
     stats.bent = settings.warp === false ? 0 : warpToSeams(patches, seams);
     alignPatches(patches, seams, settings.alignRounds ?? 60, settings.alignSlide ?? false);
 
+    // و آخر، یقه اتو می‌شود — پس از آنکه نوار سرِ جای خودش نشست
+    stats.folded = foldCreases(creases, law.thickness, scale);
+
     stats.presettle = Math.ceil(settings.seamDuration * 60) + 140;
 
     /*
@@ -3065,6 +3091,131 @@ const unsquash = (patch, { heads, near, rest }, folded = null, floor = 0.7, pass
 };
 
 /*
+ * تا کردنِ یقه روی خطِ خواب — پیش از آنکه حل‌کننده شروع کند.
+ *
+ * قیدِ اتو دو سوی خط را به هم نزدیک می‌کند، ولی نمی‌گوید *به کدام سو* تا شود. و
+ * همین کافی نیست: پارچه راهِ ارزان‌تری پیدا می‌کند و کلِ نوار را در یک صفحه
+ * می‌خواباند. آنچه دیده می‌شد یقه‌ای نبود که ایستاده و رویه‌اش برگشته باشد؛
+ * نوارِ مچاله‌ای بود که روی شانه‌ها پهن شده بود — و همان، ناحیهٔ سرشانه را در
+ * هر مدلی خراب نشان می‌داد.
+ *
+ * خیاط یقه را *اتو می‌کند* و بعد می‌دوزد؛ تای درست از پیش هست. پس همین‌جا هم
+ * تا زده می‌شود: هر رأسِ رویه روی جفتِ خودش در پایه می‌نشیند، به‌اضافهٔ یک
+ * فاصلهٔ کوچکِ شعاعی تا دو لایه تویِ هم نروند. رأس‌هایی که آن‌سوی برد جفت
+ * افتاده‌اند (رویه از پایه بلندتر است) جابه‌جاییِ همسایه‌هایشان را می‌گیرند تا
+ * لبه پاره نشود.
+ *
+ * پس از این، قیدِ اتو تایی را نگه می‌دارد که *هست*، به‌جای آنکه دنبال تایی
+ * بگردد که نیست.
+ */
+const foldCreases = (creases, thickness, scale) => {
+    let folded = 0;
+
+    for (const { entry, pairs } of creases) {
+        const patch = entry.patch;
+        const positions = patch.positions;
+        const count = patch.count;
+        const axis = entry.axis || 0;
+        const gap = Math.max(0.004, thickness * 2);
+
+        const move = new Float64Array(count * 3);
+        const held = new Uint8Array(count);
+        const fall = new Uint8Array(count);
+
+        for (let i = 0; i < pairs.length; i += 2) {
+            const stand = pairs[i];
+            const over = pairs[i + 1];
+            const at = over * 3;
+            const to = stand * 3;
+
+            // بیرون از بدن، در همان ترازِ خودش
+            const ox = positions[at] - axis;
+            const oz = positions[at + 2];
+            const out = Math.hypot(ox, oz) || 1;
+
+            move[at] = positions[to] + (ox / out) * gap - positions[at];
+            move[at + 1] = positions[to + 1] - positions[at + 1];
+            move[at + 2] = positions[to + 2] + (oz / out) * gap - positions[at + 2];
+            held[over] = 1;
+            fall[over] = 1;
+        }
+
+        if (! pairs.length) {
+            continue;
+        }
+
+        /*
+         * رویه‌ی بی‌جفت: هرچه همسایه‌هایش می‌روند، آن هم می‌رود.
+         *
+         * فقط میان خودِ رویه پخش می‌شود — اگر پایه هم در میانگین بیاید، تای
+         * تازه‌ساخته را دوباره باز می‌کند.
+         */
+        const grain = entry.mesh.grain;
+        const rollY = Number(entry.piece.roll) * scale;
+
+        for (let v = 0; v < count; v++) {
+            if (grain[v * 2 + 1] < rollY) {
+                fall[v] = 1;
+            }
+        }
+
+        const indices = entry.mesh.indices;
+        const sum = new Float64Array(count * 3);
+        const seen = new Uint32Array(count);
+
+        for (let round = 0; round < 24; round++) {
+            sum.fill(0);
+            seen.fill(0);
+
+            for (let t = 0; t < indices.length; t += 3) {
+                for (let k = 0; k < 3; k++) {
+                    const a = indices[t + k];
+                    const b = indices[t + (k + 1) % 3];
+
+                    if (! fall[a] || ! fall[b]) {
+                        continue;
+                    }
+
+                    sum[a * 3] += move[b * 3];
+                    sum[a * 3 + 1] += move[b * 3 + 1];
+                    sum[a * 3 + 2] += move[b * 3 + 2];
+                    seen[a]++;
+                    sum[b * 3] += move[a * 3];
+                    sum[b * 3 + 1] += move[a * 3 + 1];
+                    sum[b * 3 + 2] += move[a * 3 + 2];
+                    seen[b]++;
+                }
+            }
+
+            for (let v = 0; v < count; v++) {
+                if (held[v] || ! fall[v] || seen[v] === 0) {
+                    continue;
+                }
+
+                move[v * 3] = sum[v * 3] / seen[v];
+                move[v * 3 + 1] = sum[v * 3 + 1] / seen[v];
+                move[v * 3 + 2] = sum[v * 3 + 2] / seen[v];
+            }
+        }
+
+        for (let v = 0; v < count; v++) {
+            if (! fall[v]) {
+                continue;
+            }
+
+            positions[v * 3] += move[v * 3];
+            positions[v * 3 + 1] += move[v * 3 + 1];
+            positions[v * 3 + 2] += move[v * 3 + 2];
+        }
+
+        patch.remember();
+        folded++;
+    }
+
+    return folded;
+};
+
+/*
  * خطِ خوابِ یقه: جفت‌های دو سوی خط، برای تا کردن.
  *
  * قیدِ خمشِ پارچه حالتِ استراحتش را از الگوی تخت می‌گیرد، یعنی پارچه «صاف» را
@@ -3353,7 +3504,14 @@ export const supportGarment = (drape, options = {}) => {
      * بی‌جا می‌ماند — همان نوار مچاله‌ای که کاربر دور کمر می‌دید. روی تن هم
      * همین است: کمرِ دامن روی خودِ کمر می‌ایستد، نه روی درز.
      */
-    const zones = options.zones || ['torso', 'collar', 'skirt', 'sleeve'];
+    /*
+     * پاچه هم مثل دامن است: از خط کمر آویزان می‌شود.
+     *
+     * «leg» در این فهرست نبود و هیچ‌کس متوجه نشد، چون سنجه هشت مدلِ بالاتنه
+     * داشت و یک دامن. شلوار هیچ تکیه‌گاهی نداشت و صاف می‌افتاد: اندازه گرفته
+     * شد، پاچه‌ها یک متر و سه سانتی‌متر *زیرِ کف* تمام می‌کردند.
+     */
+    const zones = options.zones || ['torso', 'collar', 'skirt', 'sleeve', 'leg'];
 
     for (const { piece, patch } of drape.patches) {
         const zone = piece.placement?.zone || '';

@@ -70,7 +70,11 @@ const applyMatrix = (m, x, y, z, out) => {
 export class Collider {
     /**
      * @param {object} options
-     * @param {number[][]} options.sections سطرهای [y, rx, rz] به ترتیب صعودی
+     * @param {number[][]} options.sections سطرهای [y, rx, rz] به ترتیب صعودی.
+     *   سطر می‌تواند دو عدد دیگر هم داشته باشد — [y, rx, rz, جلو, پشت] — و
+     *   آن‌وقت مقطع دو نیم‌بیضیِ جداگانه است، نه یک بیضیِ قرینه. بدنِ آدم قرینه
+     *   نیست: سینه و شکم جلو می‌زنند و باسن پشت، و پارچه‌ای که رویشان می‌افتد
+     *   باید همان را نشان بدهد. بی این، هر برجستگی زیر یک استوانه گم می‌شد.
      * @param {boolean} [options.capMin] سرِ پایین گرد باشد
      * @param {boolean} [options.capMax] سرِ بالا گرد باشد
      * @param {string} [options.name] فقط برای اشکال‌زدایی
@@ -82,6 +86,8 @@ export class Collider {
         this.ys = new Float32Array(rows);
         this.rxs = new Float32Array(rows);
         this.rzs = new Float32Array(rows);
+        this.fronts = new Float32Array(rows);
+        this.backs = new Float32Array(rows);
         this.capMin = capMin;
         this.capMax = capMax;
 
@@ -89,11 +95,15 @@ export class Collider {
         let maxRz = 0;
 
         for (let i = 0; i < rows; i++) {
-            this.ys[i] = sections[i][0];
-            this.rxs[i] = Math.max(1e-4, sections[i][1]);
-            this.rzs[i] = Math.max(1e-4, sections[i][2]);
+            const row = sections[i];
+
+            this.ys[i] = row[0];
+            this.rxs[i] = Math.max(1e-4, row[1]);
+            this.rzs[i] = Math.max(1e-4, row[2]);
+            this.fronts[i] = Math.max(1e-4, row.length > 3 ? row[3] : row[2]);
+            this.backs[i] = Math.max(1e-4, row.length > 4 ? row[4] : this.fronts[i]);
             maxRx = Math.max(maxRx, this.rxs[i]);
-            maxRz = Math.max(maxRz, this.rzs[i]);
+            maxRz = Math.max(maxRz, this.fronts[i], this.backs[i]);
         }
 
         this.capLow = capMin ? Math.min(this.rxs[0], this.rzs[0]) : 0;
@@ -159,21 +169,29 @@ export class Collider {
         this.active = true;
     }
 
-    /* نیم‌پهنا و نیم‌عمق در ارتفاع محلی y (درون‌یابی خطی روی جدول مقطع) */
+    /*
+     * نیم‌پهنا و نیم‌عمق در ارتفاع محلی y (درون‌یابی خطی روی جدول مقطع).
+     *
+     * out[0] نیم‌پهنا، out[1] نیم‌عمقِ جلو و out[2] نیم‌عمقِ پشت. اگر مقطع قرینه
+     * باشد هر دو یکی‌اند، پس هر خواننده‌ای که فقط out[1] را می‌خواند همان
+     * رفتار پیشین را می‌بیند.
+     */
     sectionAt(y, out) {
         const ys = this.ys;
         const last = ys.length - 1;
 
         if (y <= ys[0]) {
             out[0] = this.rxs[0];
-            out[1] = this.rzs[0];
+            out[1] = this.fronts[0];
+            out[2] = this.backs[0];
 
             return -1;
         }
 
         if (y >= ys[last]) {
             out[0] = this.rxs[last];
-            out[1] = this.rzs[last];
+            out[1] = this.fronts[last];
+            out[2] = this.backs[last];
 
             return 1;
         }
@@ -187,7 +205,8 @@ export class Collider {
         const t = (y - ys[i]) / Math.max(1e-6, ys[i + 1] - ys[i]);
 
         out[0] = this.rxs[i] + (this.rxs[i + 1] - this.rxs[i]) * t;
-        out[1] = this.rzs[i] + (this.rzs[i + 1] - this.rzs[i]) * t;
+        out[1] = this.fronts[i] + (this.fronts[i + 1] - this.fronts[i]) * t;
+        out[2] = this.backs[i] + (this.backs[i + 1] - this.backs[i]) * t;
 
         return 0;
     }
@@ -202,7 +221,7 @@ const MAX_SPEED = 6;
 /* بافرهای موقتِ سطح ماژول؛ داخل حلقه‌ی داغ هیچ شیئی ساخته نمی‌شود */
 const local = [0, 0, 0];
 const world = [0, 0, 0];
-const section = [0, 0];
+const section = [0, 0, 0];
 
 /* ---------------------------------------------------------------------------
  * پایه‌ی مشترک تکه‌های پارچه
@@ -574,7 +593,12 @@ class PatchBase {
                  * با شعاع بادکرده، «روی سطح بودن» یک حالت پایدار است.
                  */
                 const rx = section[0] + skin;
-                const rz = section[1] + skin;
+                /*
+                 * جلو یا پشت؟ ذره یا این‌سوی بدن است یا آن‌سو، و همان نیم‌بیضی
+                 * را می‌بیند. دو نیمه در پهلو (z=0) هم‌عمق‌اند و مماسشان
+                 * هم‌راستا، پس درزی میانشان نمی‌ماند.
+                 */
+                const rz = (local[2] >= 0 ? section[1] : section[2]) + skin;
 
                 let dy = 0;
                 let ry = 0;

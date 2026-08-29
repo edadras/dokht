@@ -32,7 +32,7 @@
  *   ۵) نورپردازی و سایهٔ زمین، تا حجم دیده شود. بدون این هر چیزی تخت است.
  */
 
-import { buildBody, girthOf, sampleRing } from '../lib/mannequin.js';
+import { armCentre, armJoint, buildBody, drapeBody, girthOf, sampleRing } from '../lib/mannequin.js';
 
 let THREE = null;
 
@@ -64,6 +64,9 @@ const lerp = (a, b, t) => a + (b - a) * t;
 
 /* کمترین فاصلهٔ پارچه از پوست؛ کمتر از این، بدن از لباس بیرون می‌زند */
 const SKIN_GAP = 0.35;
+
+/* ماتریسِ همانی — بدنِ این نما تکان نمی‌خورد، پس پین‌ها همان‌جا می‌مانند */
+const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
 const track = (ctx, item) => {
     ctx.disposables.push(item);
@@ -113,30 +116,142 @@ export const bodyEnvelope = (body, y) => {
     return { y, rx: chainAt(body.leg, local, 'x') + r, front: r, back: r };
 };
 
-/**
- * مفصلِ شانه: از کجا و از چه ارتفاعی دست شروع می‌شود.
- */
-export const armJoint = (body) => ({
-    /*
-     * دست بیرونِ تنه آویزان است، نه تویش.
-     *
-     * عرض سرشانه تا نوکِ شانه اندازه گرفته می‌شود و بازو از همان‌جا به بیرون
-     * می‌افتد؛ برای همین آدم از روی بازوهایش پهن‌تر است تا از روی سرشانه‌اش.
-     * با ضریبِ قبلی مرکزِ بازو تا وسطِ قفسهٔ سینه تو می‌رفت و نصفِ دست داخلِ
-     * تنه گم می‌شد — و لباس هم رویش می‌افتاد و شنل می‌شد.
-     */
-    x: body.shoulderRing.rx - body.arm[0].r * 0.35,
-    y: body.shoulderRing.y + body.arm[0].r * 0.5,
-});
+
 
 /**
- * مرکزِ دست در هر نقطه از طولش.
+ * برخوردگرهای بدن، برای حل‌کنندهٔ پارچه.
  *
- * دستِ آویزان کاملاً عمودی نیست، کمی از بدن فاصله می‌گیرد. اول این را با
- * چرخاندنِ کلِ لوله ساختم و دست پانزده سانت جابه‌جا شد: مرکزِ چرخش در سه‌بعدی
- * بالای سر است، نه سرِ شانه. حالا هر حلقه مرکزِ خودش را دارد.
+ * پارچه باید به چیزی بخورد، وگرنه از روی بدن رد می‌شود. همان مانکن، این بار
+ * به زبانِ حل‌کننده: تنه (با جلو و پشتِ جدا، تا سینه و شکم از زیرِ پارچه پیدا
+ * باشند)، گردن، سر، دو بازو و دو پا.
+ *
+ * دستگاهِ حل‌کننده متر است و y رو به بالا با صفرِ روی زمین، پس همه‌جا از
+ * drapeBody خوانده می‌شود نه از سانتی‌مترِ مانکن.
  */
-export const armCentre = (body, along) => armJoint(body).x + Math.max(0, along) * 0.085;
+export const bodyColliders = (Collider, body, table) => {
+    const out = [];
+    const level = table.level;
+
+    const at = (sections, name, offset = [0, 0, 0], spin = 0) => {
+        const cos = Math.cos(spin);
+        const sin = Math.sin(spin);
+        const collider = new Collider({ sections, name });
+
+        collider.setTransform(
+            new Float32Array([
+                cos, sin, 0, 0, -sin, cos, 0, 0, 0, 0, 1, 0,
+                offset[0], offset[1], offset[2], 1,
+            ]),
+            new Float32Array([
+                cos, -sin, 0, 0, sin, cos, 0, 0, 0, 0, 1, 0,
+                -(cos * offset[0] + sin * offset[1]),
+                -(-sin * offset[0] + cos * offset[1]),
+                -offset[2], 1,
+            ]),
+            0.03,
+        );
+
+        out.push(collider);
+    };
+
+    at(table.profile.filter(([y]) => y >= level.crotch - 1e-6), 'torso');
+
+    const neck = table.radii.neck;
+
+    at([
+        [level.neck - 0.02, neck * 1.05, neck * 1.05],
+        [level.chin, neck * 0.92, neck * 0.92],
+    ], 'neck');
+
+    const headR = body.head.radius / 100;
+    const headY = (body.height - body.head.centre) / 100;
+
+    at([
+        [headY - headR * 0.95, headR * 0.42, headR * 0.44],
+        [headY, headR * 0.9, headR * 0.95],
+        [headY + headR * 0.95, headR * 0.42, headR * 0.44],
+    ], 'head');
+
+    /* دست و پا: زنجیرهٔ خودشان، از پایین به بالا */
+    const chain = (rows) => rows
+        .map((row) => [-row.y / 100, row.r / 100, row.r / 100])
+        .sort((a, b) => a[0] - b[0]);
+
+    [[-1, 'armL'], [1, 'armR']].forEach(([side, name]) => {
+        at(chain(body.arm), name, [side * table.armOffset, table.armTop, 0], side * table.armTilt);
+    });
+
+    [[-1, 'legL'], [1, 'legR']].forEach(([side, name]) => {
+        at(chain(body.leg), name, [side * body.leg[0].x / 100, level.crotch, 0]);
+    });
+
+    return out;
+};
+
+/**
+ * آیا لباسِ دوخته‌شده واقعاً روی تن نشسته؟
+ *
+ * حل‌کننده همیشه جواب می‌دهد، ولی جوابش همیشه لباس نیست: قطعه‌ای که تکیه‌گاهش را
+ * از دست بدهد می‌افتد، و قطعه‌ای که جای شروعش غلط باشد پایین‌تر از جای خودش
+ * می‌نشیند. هر دو را دیده‌ایم — شلواری که تا زیرِ کف می‌رفت، پیراهنی که تا
+ * باسن سُر می‌خورد.
+ *
+ * پس پیش از آنکه جای نمای مطمئن را بگیرد، سه چیز سنجیده می‌شود. اگر رد شود،
+ * همان نمای چرخشی می‌ماند: ناقص است ولی روی تن است.
+ */
+const landedWell = (drape, table, anchor, seamError) => {
+    /*
+     * درزی که بسته نشده یعنی قطعه‌ها سرِ جای هم ننشسته‌اند. کتی با درزِ نُه
+     * سانتی، آستین‌هایش جلوی بدن گره می‌خورد — هندسه‌اش سالم بود و چشم می‌گفت
+     * خراب است.
+     */
+    if (! (seamError < 0.06)) {
+        return 'درزها بسته نشدند';
+    }
+
+    let lowest = Infinity;
+    let highest = -Infinity;
+
+    for (const mesh of drape.meshes) {
+        const p = mesh.positions;
+
+        for (let i = 1; i < p.length; i += 3) {
+            if (p[i] < lowest) {
+                lowest = p[i];
+            }
+
+            if (p[i] > highest) {
+                highest = p[i];
+            }
+        }
+    }
+
+    if (! Number.isFinite(lowest) || ! Number.isFinite(highest)) {
+        return 'لباسی ساخته نشد';
+    }
+
+    // زیرِ کف رفتن یعنی چیزی افتاده
+    if (lowest < -0.03) {
+        return 'قطعه‌ای از لباس زیر کف افتاد';
+    }
+
+    // بالاتر از چانه هم یعنی چیزی پرت شده
+    if (highest > table.level.chin + 0.08) {
+        return 'قطعه‌ای از لباس بالای سر رفت';
+    }
+
+    /*
+     * و بالای لباس باید نزدیکِ همان‌جایی باشد که الگو می‌گوید. کمی نشستن
+     * طبیعی است؛ ده سانتی‌متر یعنی لباس از تکیه‌گاهش سُر خورده.
+     */
+    const seat = (table.level[anchor.level] ?? table.level.waist) + (anchor.offset || 0) / 100;
+
+    if (highest < seat - 0.10) {
+        return 'لباس از جای خودش پایین‌تر نشست';
+    }
+
+    return null;
+};
 
 /**
  * حلقه‌های لباس را رقیق و صاف می‌کند.
@@ -266,6 +381,9 @@ export default (initial = {}) => ({
     chosen: null,
     ready: false,
     failed: false,
+    sewing: false,
+    sewn: false,
+    sewnNote: '',
     message: '',
     spin: true,
 
@@ -285,7 +403,101 @@ export default (initial = {}) => ({
         } catch (error) {
             this.failed = true;
             this.message = 'نمای سه‌بعدی در این مرورگر بالا نیامد.';
+
+            return;
         }
+
+        /*
+         * و حالا، اگر بسته‌ی قطعه‌ها آمده باشد، لباس *واقعاً* دوخته می‌شود.
+         *
+         * نمای بالا از چرخاندنِ نیم‌رخِ الگو ساخته می‌شود و یک جای مشخص را
+         * هیچ‌وقت درست نشان نمی‌دهد: سرشانه. پهنای الگو روی خط سرشانه، پهنای
+         * حلقهٔ آستین است نه پهنای تنه، و چرخاندنش یک تختهٔ پهن می‌سازد که دست
+         * را هم می‌بلعد.
+         *
+         * دوختِ واقعی این را ندارد، چون درزِ سرشانه و حلقهٔ آستین را از خودِ
+         * قطعه‌ها می‌گیرد. گران‌تر است — چند ثانیه — پس اول همان نمای سریع
+         * نشان داده می‌شود و بعد جایش را می‌دهد.
+         */
+        if (this.payload.drape) {
+            await this.stitch();
+        }
+    },
+
+    /** لباس را واقعاً می‌دوزد و روی همین مانکن می‌نشاند. */
+    async stitch() {
+        this.sewing = true;
+
+        // یک فریم فرصت، تا پیام «در حال دوخت» دیده شود
+        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
+        try {
+            const [{ ClothWorld, Collider }, { buildDrape, supportGarment, weldSeams }] = await Promise.all([
+                import('../lib/cloth-solver.js'),
+                import('../lib/pattern-drape.js'),
+            ]);
+
+            const ctx = contextFor(this.$root);
+            const body = ctx.body;
+            const table = drapeBody(body);
+            const fabric = this.payload.fabric || {};
+            const drape = buildDrape(this.payload.drape, table, { fabric });
+
+            if (! drape.patches.length) {
+                throw new Error('قطعه‌ای برای دوخت نماند');
+            }
+
+            const world = new ClothWorld({ fabric });
+
+            drape.patches.forEach((entry) => world.addPatch(entry.patch));
+            drape.seams.forEach((seam) => world.addSeam(seam));
+            world.setColliders(bodyColliders(Collider, body, table));
+
+            world.substeps = drape.stats.solver.substeps;
+            world.iterations = Math.max(6, drape.stats.solver.iterations);
+
+            /*
+             * ترتیبش مهم است: اول در بی‌وزنی دوخته می‌شود، بعد سرشانه گرفته
+             * می‌شود و وزن برمی‌گردد. برعکسش، قطعه‌ها پیش از بسته شدنِ درزها از
+             * روی بدن سُر می‌خورند.
+             */
+            const gravity = world.law.gravity;
+
+            world.law.gravity = 0;
+            world.presettle(drape.stats.presettle);
+
+            supportGarment(drape, { band: 0.08, strength: 1 });
+            drape.patches.forEach((entry) => entry.patch.applyPins(IDENTITY));
+
+            world.law.gravity = gravity;
+            world.presettle(40);
+            world.iterations = drape.stats.solver.iterations;
+            world.seamPasses = drape.stats.solver.seamPasses ?? world.seamPasses;
+            world.presettle(300);
+            weldSeams(drape);
+            world.presettle(150);
+
+            const wrong = landedWell(
+                drape,
+                table,
+                this.payload.anchor || { level: 'shoulder', offset: 0 },
+                world.seamError(),
+            );
+
+            if (wrong) {
+                this.sewnNote = wrong;
+
+                throw new Error(wrong);
+            }
+
+            this.showStitched(drape);
+            this.sewn = true;
+        } catch (error) {
+            // نمای چرخشی سرِ جایش می‌ماند؛ چیزی از دست نمی‌رود
+            this.sewn = false;
+        }
+
+        this.sewing = false;
     },
 
     build() {
@@ -353,7 +565,17 @@ export default (initial = {}) => ({
         ctx.group = group;
 
         this.addBody(group, body);
-        this.addGarment(group, shell, body);
+
+        /*
+         * نمای چرخشی در گروهِ خودش می‌ماند تا اگر دوختِ واقعی رسید، یک‌جا
+         * کنار برود — نه اینکه دو لباس روی هم بیفتند.
+         */
+        const spun = new THREE.Group();
+
+        group.add(spun);
+        ctx.spun = spun;
+
+        this.addGarment(spun, shell, body);
 
         let last = performance.now();
 
@@ -370,6 +592,45 @@ export default (initial = {}) => ({
         };
 
         ctx.frame = requestAnimationFrame(tick);
+    },
+
+    /**
+     * لباسِ دوخته‌شده جای نمای چرخشی را می‌گیرد.
+     *
+     * بافرِ هر قطعه همان بافرِ حل‌کننده است، پس چیزی رونویسی نمی‌شود. جنسِ پارچه
+     * هم همان است که بود، تا عوض کردنِ پارچه سرِ جایش کار کند.
+     */
+    showStitched(drape) {
+        const ctx = contextFor(this.$root);
+        const cloth = new THREE.Group();
+
+        /*
+         * حل‌کننده در دستگاهِ خودش کار می‌کند — متر، y رو به بالا، صفر روی زمین —
+         * و این صحنه از بالای سر رو به پایین می‌شمارد. یک جابه‌جاییِ ساده هر دو
+         * را یکی می‌کند؛ آینه لازم نیست، پس جهتِ مثلث‌ها هم به‌هم نمی‌ریزد.
+         */
+        cloth.position.y = -ctx.body.height * CM;
+
+        for (const mesh of drape.meshes) {
+            const geometry = track(ctx, new THREE.BufferGeometry());
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
+            geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+            geometry.computeVertexNormals();
+
+            const piece = new THREE.Mesh(geometry, ctx.fabric);
+
+            piece.castShadow = true;
+            piece.receiveShadow = true;
+            cloth.add(piece);
+        }
+
+        ctx.group.add(cloth);
+        ctx.stitched = cloth;
+
+        if (ctx.spun) {
+            ctx.spun.visible = false;
+        }
     },
 
     /** مانکن: سر، گردن، تنه، دو دست و دو پا — همه از اندازه‌های مشتری. */

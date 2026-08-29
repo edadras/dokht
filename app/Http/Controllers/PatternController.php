@@ -19,6 +19,7 @@ use App\Services\Pattern\PieceSplitter;
 use App\Services\Pattern\SeamAllowanceService;
 use App\Services\Pattern\SewingRelationBuilder;
 use App\Services\Pattern\SvgRenderer;
+use App\Services\Simulation\DrapePayloadService;
 use App\Support\Measurements;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -212,11 +213,47 @@ class PatternController extends Controller
             $shell['fabric'] = ['color' => '#b9a48c', 'sheen' => 0.15, 'transparency' => 0.0];
             $shell['fabrics'] = $this->fabricSwatches();
 
+            /*
+             * و بستهٔ خودِ قطعه‌ها، تا مرورگر لباس را *واقعاً* بدوزد.
+             *
+             * پوستهٔ بالا از چرخاندنِ نیم‌رخِ الگو می‌آید و یک جا را هیچ‌وقت درست
+             * نشان نمی‌دهد: سرشانه. پهنای الگو روی خط سرشانه پهنای حلقهٔ آستین
+             * است نه پهنای تنه، و چرخاندنش یک تختهٔ پهن می‌سازد که دست را هم
+             * می‌بلعد. دوختِ واقعی این را ندارد، چون درزِ سرشانه و حلقهٔ آستین را
+             * از خودِ قطعه‌ها می‌گیرد.
+             *
+             * جدا از پوسته می‌آید و جدا هم شکست می‌خورد: اگر ساخته نشود، همان
+             * نمای چرخشی می‌ماند و صفحه سفید نمی‌شود.
+             */
+            $shell['drape'] = $this->drapePackage($pattern);
+
             return $shell;
         } catch (Throwable $error) {
             report($error);
 
             return ['ok' => false, 'notes' => ['نمای مانکن ساخته نشد: '.$error->getMessage()]];
+        }
+    }
+
+    /**
+     * قطعه‌های الگو، آمادهٔ دوخت در مرورگر.
+     *
+     * برشی از همان چیزی است که «دوخت مجازی» می‌گیرد. اگر ساخته نشود null
+     * برمی‌گردد و نما بی سروصدا روی نمای چرخشی می‌ماند — این یکی تزئین است، نه
+     * ستون.
+     *
+     * @return array<string, mixed>|null
+     */
+    protected function drapePackage(Pattern $pattern): ?array
+    {
+        try {
+            $package = app(DrapePayloadService::class)->payload($pattern);
+
+            return ($package['pieces'] ?? []) === [] ? null : $package;
+        } catch (Throwable $error) {
+            report($error);
+
+            return null;
         }
     }
 
