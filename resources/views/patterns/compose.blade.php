@@ -22,34 +22,12 @@
     }
 
     /*
-     * کارت‌های انتخابگر: کلید (k)، نام (l) و شمارهٔ توضیح (h).
+     * کارت‌های انتخابگر دیگر یک‌جا در صفحه نمی‌آیند.
      *
-     * این فهرست هزاران ردیف دارد و تمامش به مرورگر می‌رود، پس هر بایتِ تکراری
-     * چند مگابایت می‌شود. سه چیز عمداً این‌جا نیست:
-     *
-     * — نشانیِ بندانگشتی، که از روی گروه و کلید ساخته می‌شود (یک الگو برای همه).
-     * — متنِ جستجو، که همان نام و کلید است و مرورگر خودش می‌سازد.
-     * — خودِ توضیح، که میان صدها مدل تکرار می‌شود؛ یک بار در فهرستِ توضیح‌ها
-     *   می‌آید و کارت فقط شماره‌اش را دارد.
+     * کاتالوگ ده‌ها هزار مدل دارد و فرستادنِ همه‌شان سه و نیم مگابایت بود — و با
+     * هر مدلِ تازه بیشتر. حالا کنترلر بستهٔ اولِ هر نقش را می‌دهد و بقیه با
+     * جستجو از سرور می‌آید، پس وزنِ صفحه دیگر به اندازهٔ کاتالوگ بستگی ندارد.
      */
-    $cards = [];
-    $hints = [];
-    $hintIndex = [];
-
-    foreach ($catalogue['base'] as $group => $items) {
-        $cards[$group] = [];
-
-        foreach ($items as $key => $item) {
-            $hint = (string) ($item['hint'] ?? '');
-
-            if (! isset($hintIndex[$hint])) {
-                $hintIndex[$hint] = count($hints);
-                $hints[] = $hint;
-            }
-
-            $cards[$group][] = ['k' => $key, 'l' => $item['label'], 'h' => $hintIndex[$hint]];
-        }
-    }
 
     // «none» قطعه‌ای ندارد، پس بندانگشتی هم ندارد؛ بقیه از این الگو ساخته می‌شوند
     $thumbUrl = route('patterns.compose.thumb', ['group' => '__G__', 'key' => '__K__']);
@@ -66,8 +44,8 @@
         'styleMeta' => $styleMeta,
         'styleGroups' => $styleGroups,
         'roleTitles' => $roleTitles,
-        'cards' => $cards,
-        'hints' => $hints,
+        'picker' => $picker,
+        'modelsUrl' => $modelsUrl,
         'thumbUrl' => $thumbUrl,
         'noteStyles' => $noteStyles,
         'previewUrl' => $previewUrl,
@@ -128,12 +106,13 @@
             schemas: { roles: {}, styles: {} },
             paramsOf: {},
             q: { garment: '', bodice: '', sleeve: '', lower: '', collar: '' },
-            shown: { garment: 0, bodice: 0, sleeve: 0, lower: 0, collar: 0 },
+            modelsUrl: @js($modelsUrl),
             openGroups: {},
             svg: '', notes: [], pieces: [], metrics: {}, report: [], suggested: '',
             error: null, busy: false, ready: false, timer: null, startBase: '',
 
             boot() {
+                this.bootLists();
                 this.availability = this.data.availability || {};
                 this.schemas = (this.data.initial || {}).schemas || { roles: {}, styles: {} };
                 this.startBase = this.baseKey();
@@ -165,7 +144,8 @@
                 this.kind = kind;
                 // با رفتن به «یک لباس کامل» اگر هیچ لباسی انتخاب نشده، اولی برداشته می‌شود
                 if (kind === 'garment' && !this.base.garment) {
-                    this.base.garment = (this.all('garment')[0] || {}).k || null;
+                    const first = this.page('garment')[0];
+                    if (first) { this.base.garment = first.k; this.remember('garment', first); }
                 }
                 this.$nextTick(() => this.schedule());
             },
@@ -175,34 +155,71 @@
                     : 'blocks:' + [this.base.bodice, this.base.sleeve, this.base.lower, this.base.collar].join('+');
             },
             sameBase() { return this.startBase === this.baseKey(); },
-            /* فهرست کارت‌ها: همه‌شان این‌جاست، ولی هر بار یک بسته نشان داده می‌شود */
-            all(group) { return this.data.cards[group] || []; },
-            count(group) { return this.all(group).length; },
-            hint(item) { return this.data.hints[item.h] || ''; },
+            /* فهرست هر نقش بسته‌بسته از سرور می‌آید؛ صفحه بستهٔ اول را دارد و
+               جستجو و بسته‌های بعدی را می‌خواهد */
+            lists: {},
+            pages: { garment: 1, bodice: 1, sleeve: 1, lower: 1, collar: 1 },
+            listBusy: {},
+            timers: {},
+            tickets: {},
+
+            bootLists() { this.lists = JSON.parse(JSON.stringify(this.data.picker)); },
+            count(group) { return (this.lists[group] || {}).total || 0; },
+            hint(item) { return item.h || ''; },
             thumb(group, key) {
                 if (key === 'none') { return null; }
                 return this.data.thumbUrl.replace('__G__', group).replace('__K__', encodeURIComponent(key));
             },
-            matches(group) {
-                const needle = (this.q[group] || '').trim().toLowerCase();
-                if (!needle) { return this.all(group); }
-                return this.all(group).filter(item =>
-                    item.l.toLowerCase().includes(needle)
-                    || item.k.toLowerCase().includes(needle)
-                    || this.hint(item).toLowerCase().includes(needle));
+            fetchList(group, reset) {
+                if (reset) { this.pages[group] = 1; }
+
+                const page = this.pages[group];
+                // پاسخ‌ها ممکن است نامرتب برسند؛ بستهٔ عقب‌مانده نباید نتیجهٔ
+                // جستجوی تازه را پاک کند، پس هر درخواست نشانِ خودش را دارد
+                const ticket = (this.tickets[group] || 0) + 1;
+                this.tickets[group] = ticket;
+                this.listBusy[group] = true;
+
+                const url = this.data.modelsUrl + '?group=' + encodeURIComponent(group)
+                    + '&q=' + encodeURIComponent(this.q[group] || '') + '&page=' + page;
+
+                fetch(url, { headers: { 'Accept': 'application/json' } })
+                    .then(response => response.ok ? response.json() : null)
+                    .then(data => {
+                        if (!data || this.tickets[group] !== ticket) { return; }
+                        const list = this.lists[group] || {};
+                        list.rows = page === 1 ? data.rows : (list.rows || []).concat(data.rows);
+                        list.total = data.total;
+                        list.more = data.more;
+                        this.lists[group] = list;
+                    })
+                    .finally(() => {
+                        if (this.tickets[group] === ticket) { this.listBusy[group] = false; }
+                    });
             },
-            page(group, limit) {
-                const rows = this.matches(group);
-                const take = rows.slice(0, this.shown[group] || limit);
+            searchList(group) {
+                clearTimeout(this.timers[group]);
+                this.timers[group] = setTimeout(() => this.fetchList(group, true), 300);
+            },
+            olderList(group) { this.pages[group] = (this.pages[group] || 1) + 1; this.fetchList(group, false); },
+            page(group) {
+                const list = this.lists[group] || {};
+                const rows = list.rows || [];
                 // انتخابِ فعلی هرگز از فهرست بیرون نمی‌افتد، وگرنه کاربر نمی‌بیند
                 // چه چیزی انتخاب کرده و کارت هیچ‌کدام روشن نیست
-                if (this.base[group] && !take.some(item => item.k === this.base[group])) {
-                    const chosen = this.all(group).find(item => item.k === this.base[group]);
-                    if (chosen) { return [chosen, ...take]; }
+                if (this.base[group] && list.chosen && !rows.some(item => item.k === this.base[group])) {
+                    return [list.chosen, ...rows];
                 }
-                return take;
+                return rows;
             },
-            more(group, limit) { return this.matches(group).length > (this.shown[group] || limit); },
+            more(group) { return !!(this.lists[group] || {}).more; },
+            shownCount(group) { return ((this.lists[group] || {}).rows || []).length; },
+            // انتخاب باید یادمان بماند، وگرنه با یک جستجوی تازه از فهرست بیرون
+            // می‌افتد و رادیوی انتخاب‌شده از صفحه پاک می‌شود — یعنی فرم بی‌پایه
+            remember(group, item) {
+                const list = this.lists[group];
+                if (list) { list.chosen = item; }
+            },
 
             /* --- گام دو: سبک‌ها --- */
             ok(key) { const row = this.availability[key]; return !row || row.ok; },
@@ -348,8 +365,6 @@
                             'title' => 'یک لباس کامل',
                             'subtitle' => 'همه قطعه‌های لباس از همین مدل می‌آید و سبک‌ها رویش می‌نشیند.',
                             'icon' => 'shirt',
-                            'items' => $catalogue['base']['garment'],
-                            'selected' => $recipe['garment'] ?? null,
                             'enabled' => "kind === 'garment'",
                         ])
                     </div>
@@ -360,8 +375,6 @@
                             'title' => 'بالاتنه',
                             'subtitle' => 'پایه لباس؛ حتماً باید انتخاب شود.',
                             'icon' => 'shirt',
-                            'items' => $catalogue['base']['bodice'],
-                            'selected' => $recipe['bodice'] ?? 'bodice_block',
                             'enabled' => "kind === 'blocks'",
                         ])
 
@@ -370,8 +383,6 @@
                             'title' => 'آستین',
                             'subtitle' => 'سرآستین خودکار با حلقه آستین همین بالاتنه جور می‌شود.',
                             'icon' => 'scissors',
-                            'items' => $catalogue['base']['sleeve'],
-                            'selected' => $recipe['sleeve'] ?? 'none',
                             'enabled' => "kind === 'blocks'",
                         ])
 
@@ -380,8 +391,6 @@
                             'title' => 'پایین‌تنه',
                             'subtitle' => 'دامن یا شلوار — فقط یکی؛ در خط کمر به بالاتنه دوخته می‌شود.',
                             'icon' => 'ruler',
-                            'items' => $catalogue['base']['lower'],
-                            'selected' => $recipe['lower'] ?? 'none',
                             'enabled' => "kind === 'blocks'",
                         ])
 
@@ -390,10 +399,7 @@
                             'title' => 'یقه دوخته‌شده',
                             'subtitle' => 'به اندازه خط یقه همین ترکیب بریده می‌شود (سبک‌های خط یقه جدا هستند).',
                             'icon' => 'stitch',
-                            'items' => $catalogue['base']['collar'],
-                            'selected' => $recipe['collar'] ?? 'none',
                             'enabled' => "kind === 'blocks'",
-                            'limit' => 6,
                         ])
                     </div>
                 </div>

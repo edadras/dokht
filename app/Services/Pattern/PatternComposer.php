@@ -177,6 +177,57 @@ class PatternComposer
     }
 
     /**
+     * همان نقش‌ها، ولی فقط با برچسب: کلید ← نام فارسی.
+     *
+     * options() برای هر مدل یک درفت می‌سازد و داکبلاکش را با Reflection می‌خواند
+     * تا توضیح دربیاورد. با هفده هزار مدل این نزدیک یک ثانیه و ده مگابایت است —
+     * و انتخابگرِ صفحه فقط دوازده تایش را نشان می‌دهد.
+     *
+     * پس این‌جا فقط نام‌ها می‌آید (که رجیستری همین حالا دارد) و توضیحِ همان چند
+     * ردیفی که واقعاً نمایش داده می‌شود، جداگانه با describe() ساخته می‌شود.
+     *
+     * @return array<string, array<string, string>>
+     */
+    public function optionLabels(): array
+    {
+        $of = function (array $groups): array {
+            $out = [];
+
+            foreach ($groups as $group) {
+                $out += GeneratorRegistry::group($group);
+            }
+
+            return $out;
+        };
+
+        $collar = ['none' => 'بدون یقه'];
+
+        foreach (static::COLLAR_STYLES as $style) {
+            $collar[$style] = static::COLLAR_LABELS[$style];
+        }
+
+        return [
+            'garment' => $of(['garment', 'accessory']),
+            'bodice' => $of(static::BODICE_GROUPS),
+            'sleeve' => ['none' => 'بدون آستین'] + $of(['sleeve']),
+            'lower' => ['none' => 'بدون پایین‌تنه'] + $of(static::LOWER_GROUPS),
+            'collar' => $collar,
+        ];
+    }
+
+    /** توضیح یک انتخاب، با همان متن‌های ثابتِ نقش‌های بی‌مدل. */
+    public function optionHint(string $group, string $key): string
+    {
+        return match (true) {
+            $group === 'collar' => static::COLLAR_HINTS[$key] ?? ($key === 'none' ? 'خط یقه با سجاف تمام می‌شود.' : ''),
+            $key !== 'none' => $this->describe($key),
+            $group === 'sleeve' => 'حلقه آستین با نوار یا سجاف تمام می‌شود.',
+            $group === 'lower' => 'فقط بالاتنه بریده می‌شود.',
+            default => '',
+        };
+    }
+
+    /**
      * فهرست کامل کارگاه ترکیب: پایه‌ها و سبک‌ها با هر چیزی که صفحه لازم دارد.
      *
      * هیچ‌چیز این‌جا دستی نوشته نشده؛ همه از رجیستری‌ها خوانده می‌شود تا مدل و سبک
@@ -186,7 +237,20 @@ class PatternComposer
      */
     public function catalogue(): array
     {
-        $options = $this->options();
+        return ['base' => $this->options()] + $this->styleCatalogue();
+    }
+
+    /**
+     * همان فهرست، بی بخشِ پایه‌ها.
+     *
+     * صفحهٔ کارگاه دیگر فهرستِ پایه‌ها را یک‌جا نمی‌خواهد (بسته‌بسته می‌گیردش)، و
+     * ساختنِ آن بخش گران‌ترین کارِ این متد است. پس جدا شد تا صفحه بی‌جهت پولش را
+     * ندهد.
+     *
+     * @return array<string, mixed>
+     */
+    public function styleCatalogue(): array
+    {
         $styles = [];
 
         foreach (StyleRegistry::grouped() as $group => $row) {
@@ -207,7 +271,6 @@ class PatternComposer
         }
 
         return [
-            'base' => $options,
             'styles' => $styles,
             'groups' => GeneratorRegistry::GROUPS,
             'seasons' => SeasonClassifier::SEASONS,

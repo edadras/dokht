@@ -39,7 +39,7 @@ class PatternComposerTest extends TestCase
         $this->post(route('patterns.compose.store'), $this->selection())->assertRedirect(route('login'));
     }
 
-    public function test_the_studio_shows_the_three_steps_and_the_whole_catalogue(): void
+    public function test_the_studio_shows_the_three_steps_and_the_first_pack_of_models(): void
     {
         $this->actingAsWorkshopUser();
 
@@ -58,15 +58,18 @@ class PatternComposerTest extends TestCase
             ->assertSee('<svg', false)
             ->assertSee('compose/preview', false);
 
-        // هر مدل و هر سبکِ رجیستری باید در صفحه باشد — نه فهرست دستی
-        foreach (GeneratorRegistry::group('bodice') as $label) {
-            $response->assertSee($label);
+        /*
+         * فهرستِ مدل‌ها دیگر یک‌جا در صفحه نیست — با هزاران مدل، صفحه چند مگابایت
+         * می‌شد. فقط بستهٔ اولِ هر نقش می‌آید و بقیه از سرور. پس این‌جا بستهٔ اول
+         * را می‌بینیم و در آزمونِ بعدی می‌بینیم که جستجو به بقیه هم می‌رسد.
+         */
+        foreach (['bodice', 'garment'] as $group) {
+            foreach (array_slice(app(PatternComposer::class)->catalogue()['base'][$group], 0, 3) as $item) {
+                $response->assertSee($item['label']);
+            }
         }
 
-        foreach (GeneratorRegistry::group('garment') as $label) {
-            $response->assertSee($label);
-        }
-
+        // سبک‌ها کم‌شمارند و همه در صفحه‌اند
         foreach (StyleRegistry::grouped() as $row) {
             $response->assertSee($row['label']);
 
@@ -109,16 +112,52 @@ class PatternComposerTest extends TestCase
     }
 
     /**
+     * فهرست بسته‌بسته از سرور می‌آید، پس جستجو باید به مدلی هم برسد که در صفحه نیست.
+     */
+    public function test_the_model_list_endpoint_pages_and_searches_the_whole_role(): void
+    {
+        $this->actingAsWorkshopUser();
+
+        $bodices = app(PatternComposer::class)->catalogue()['base']['bodice'];
+        $this->assertGreaterThan(12, count($bodices), 'این آزمون فقط با نقشِ پرمدل معنا دارد.');
+
+        $first = $this->getJson(route('patterns.compose.models', ['group' => 'bodice']))->assertOk();
+        $first->assertJsonPath('total', count($bodices))->assertJsonPath('more', true);
+        $this->assertCount(12, $first->json('rows'));
+
+        // بستهٔ دوم باید مدل‌های *دیگری* باشد، نه همان‌ها
+        $second = $this->getJson(route('patterns.compose.models', ['group' => 'bodice', 'page' => 2]))->assertOk();
+        $this->assertEmpty(array_intersect(
+            array_column($first->json('rows'), 'k'),
+            array_column($second->json('rows'), 'k'),
+        ), 'بستهٔ دوم همان بستهٔ اول است؛ صفحه‌بندی کار نمی‌کند.');
+
+        // و جستجو باید آخرین مدلِ فهرست را هم پیدا کند — همانی که در هیچ بسته‌ای نیامده
+        $lastKey = array_key_last($bodices);
+        $found = $this->getJson(route('patterns.compose.models', [
+            'group' => 'bodice',
+            'q' => $bodices[$lastKey]['label'],
+        ]))->assertOk();
+        $this->assertContains($lastKey, array_column($found->json('rows'), 'k'));
+
+        // نقشی که وجود ندارد نباید فهرستِ خالی بدهد، باید نبودنش را بگوید
+        $this->getJson(route('patterns.compose.models', ['group' => 'no_such_role']))->assertNotFound();
+    }
+
+    /**
      * صفحهٔ کارگاه نباید با بزرگ‌شدن کاتالوگ سنگین شود.
      *
      * تلهٔ واقعی این بود: صفحه برای *هر* مدل یک بندانگشتی می‌ساخت و همان‌جا در
      * HTML می‌گذاشت. با چهل مدل کند بود؛ با هزاران مدل یعنی هزاران بار ساختِ
      * الگو در یک درخواست و صفحه‌ای چند ده مگابایتی.
      *
-     * حالا بندانگشتی نشانی دارد و مرورگر آن‌هایی را می‌گیرد که می‌بیند. این
-     * آزمون همان را می‌پاید: در صفحه باید نشانیِ بندانگشتی باشد، و تعدادِ
-     * نقشه‌های SVG که خودِ صفحه با خودش حمل می‌کند باید انگشت‌شمار بماند —
-     * نه به اندازهٔ فهرست مدل‌ها.
+     * حالا بندانگشتی نشانی دارد و مرورگر آن‌هایی را می‌گیرد که می‌بیند. تلهٔ دوم
+     * ظریف‌تر بود: خودِ *فهرست* — فقط نام و کلید و توضیح — هم با هفده هزار مدل
+     * سه و نیم مگابایت می‌شد. آن هم رفت؛ صفحه بستهٔ اول را دارد و بس.
+     *
+     * پس این آزمون سه چیز را می‌پاید: نشانیِ بندانگشتی در صفحه باشد، شمارِ
+     * نقشه‌های SVG انگشت‌شمار بماند، و حجم صفحه *مطلقاً* کوچک بماند — نه اینکه
+     * فقط کندتر از کاتالوگ رشد کند.
      */
     public function test_the_studio_page_does_not_grow_with_the_catalogue(): void
     {
@@ -141,13 +180,22 @@ class PatternComposerTest extends TestCase
                 .' یعنی بندانگشتی‌ها دوباره در خود صفحه ساخته می‌شوند.',
         );
 
-        // سهم هر مدل از حجم صفحه: نام و کلید و یک شمارهٔ توضیح، نه بیشتر
-        $perModel = strlen($html) / $models;
+        // حجم صفحه باید به تعداد مدل‌ها بی‌اعتنا باشد
+        $kilobytes = strlen($html) / 1024;
         $this->assertLessThan(
             400,
-            $perModel,
-            'هر مدل '.round($perModel).' بایت از صفحه را می‌گیرد؛ یعنی چیزی تکراری'
-                .' (متن جستجو، نشانی کامل، یا خود توضیح) دوباره برای هر ردیف فرستاده می‌شود.',
+            $kilobytes,
+            'صفحه '.round($kilobytes)." کیلوبایت است با {$models} مدل در کاتالوگ؛"
+                .' یعنی فهرست دوباره یک‌جا در صفحه نوشته می‌شود.',
+        );
+
+        // و برای اطمینان: مدلی که در بستهٔ اول نیست نباید در صفحه باشد
+        $bodices = app(PatternComposer::class)->catalogue()['base']['bodice'];
+        $last = end($bodices);
+        $this->assertStringNotContainsString(
+            (string) $last['label'],
+            $html,
+            'آخرین مدلِ بالاتنه در صفحه هست؛ پس همهٔ فهرست فرستاده شده.',
         );
     }
 

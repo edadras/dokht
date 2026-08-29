@@ -154,6 +154,9 @@ Route::middleware(['auth', 'workshop'])->group(function () {
     Route::get('compose', [PatternComposerController::class, 'create'])->name('patterns.compose');
     Route::post('compose', [PatternComposerController::class, 'store'])->name('patterns.compose.store');
     Route::get('compose/preview', [PatternComposerController::class, 'preview'])->name('patterns.compose.preview');
+    // فهرست مدل‌ها بسته‌بسته و جستجویش از سرور می‌آید، نه همه‌اش در خود صفحه
+    Route::get('compose/models', [PatternComposerController::class, 'pickerSearch'])
+        ->name('patterns.compose.models');
     // بندانگشتی هر مدل جدا صدا زده می‌شود تا صفحه هزاران نقشه را با خودش حمل نکند
     Route::get('compose/thumb/{group}/{key}', [PatternComposerController::class, 'thumb'])
         ->where('key', '[A-Za-z0-9_\-]+')

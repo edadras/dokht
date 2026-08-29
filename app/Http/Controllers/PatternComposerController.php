@@ -36,6 +36,9 @@ class PatternComposerController extends Controller
     /** بندانگشتی‌ها فقط به کد مدل بستگی دارند، پس یک روز کش می‌شوند. */
     protected const THUMBNAIL_VERSION = 'v2';
 
+    /** چند کارت در هر بستهٔ انتخابگر. */
+    protected const PICKER_PAGE = 12;
+
     /** نشانِ «تصویری نیست» — همان اندازهٔ بندانگشتی‌های واقعی تا چیدمان نپرد. */
     protected const MISSING_THUMBNAIL = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 160" '
         .'width="220" height="160" role="img" aria-label="بدون تصویر"><rect width="220" height="160" fill="#fafaf9"/>'
@@ -65,6 +68,8 @@ class PatternComposerController extends Controller
             'seamTags' => SeamAllowanceService::TAGS,
             'defaultSeamAllowances' => $this->workshopSeamAllowances(),
             'previewUrl' => route('patterns.compose.preview'),
+            'modelsUrl' => route('patterns.compose.models'),
+            'picker' => $this->pickerLists($recipe),
             'reopened' => $this->reopened,
         ]);
     }
@@ -382,15 +387,19 @@ class PatternComposerController extends Controller
      * @return array<string, mixed>
      */
     /**
-     * فهرست کارگاه، با *نشانیِ* بندانگشتی‌ها نه خودشان.
+     * فهرست سبک‌های کارگاه — بی هیچ بندانگشتی، حتی بی نشانیِ بندانگشتی.
      *
      * پیش‌تر این‌جا برای هر مدل یک بندانگشتی ساخته می‌شد. با چند ده مدل کُند بود
      * و با هزاران مدل ناممکن: باز کردن صفحه یعنی ساختنِ هزاران الگو، و اگر هم
      * همه در کش بودند، صفحه با هزاران نقشهٔ SVG تویش از دستِ مرورگر درمی‌رفت.
      *
-     * حالا هر بندانگشتی نشانیِ خودش را دارد و مرورگر فقط آن‌هایی را می‌گیرد که
-     * واقعاً روی صفحه می‌آیند. ساختِ الگو همان‌جا و همان موقع انجام می‌شود و
-     * همان‌طور که بود کش می‌شود.
+     * بعد نشانی‌شان این‌جا ساخته می‌شد؛ آن هم هفده هزار بار صدا زدنِ route() سرِ
+     * هر بارِ خالی‌بودنِ کش بود. حالا صفحه یک *قالبِ* نشانی می‌گیرد و کلیدِ هر
+     * کارت را خودش تویش می‌گذارد؛ ساختِ الگو همان‌جا که تصویر خواسته شد انجام
+     * می‌شود و همان‌طور که بود کش می‌شود.
+     *
+     * فهرستِ خودِ پایه‌ها هم دیگر این‌جا نیست: صفحه بسته‌بسته می‌گیردش (pickerPage)
+     * و این‌جا فقط سبک‌ها می‌ماند، که چند دَه‌تایند نه چند هزارتا.
      */
     protected function catalogue(): array
     {
@@ -406,19 +415,7 @@ class PatternComposerController extends Controller
         return Cache::remember(
             'compose-catalogue:'.static::THUMBNAIL_VERSION.':'.$fingerprint,
             now()->addDay(),
-            function () {
-                $catalogue = $this->composer->catalogue();
-
-                foreach ($catalogue['base'] as $group => $items) {
-                    foreach ($items as $key => $item) {
-                        $catalogue['base'][$group][$key]['thumbnail'] = $key === 'none'
-                            ? null
-                            : route('patterns.compose.thumb', ['group' => $group, 'key' => $key]);
-                    }
-                }
-
-                return $catalogue;
-            },
+            fn () => $this->composer->styleCatalogue(),
         );
     }
 
@@ -436,6 +433,109 @@ class PatternComposerController extends Controller
             'Content-Type' => 'image/svg+xml',
             'Cache-Control' => 'public, max-age=86400',
         ]);
+    }
+
+    /**
+     * بستهٔ اولِ هر نقش، بعلاوهٔ کارتِ چیزی که همین حالا انتخاب شده.
+     *
+     * @return array<string, mixed>
+     */
+    protected function pickerLists(array $recipe): array
+    {
+        $lists = [];
+
+        foreach (array_keys($this->pickerLabels()) as $group) {
+            $lists[$group] = $this->pickerPage($group);
+            $lists[$group]['chosen'] = $this->pickerCard($group, $recipe[$group] ?? null);
+        }
+
+        return $lists;
+    }
+
+    /**
+     * نامِ همهٔ انتخاب‌ها، بی توضیح — همان چیزی که برای جستجو و شمارش لازم است.
+     *
+     * @return array<string, array<string, string>>
+     */
+    protected function pickerLabels(): array
+    {
+        $fingerprint = md5(implode(',', array_keys(GeneratorRegistry::all())));
+
+        return Cache::remember(
+            'compose-labels:'.$fingerprint,
+            now()->addDay(),
+            fn () => $this->composer->optionLabels(),
+        );
+    }
+
+    /**
+     * یک بسته از مدل‌های یک نقش: کلید، نام و توضیح.
+     *
+     * فهرست دیگر یک‌جا به مرورگر نمی‌رود. با هفده هزار مدل، فرستادنِ همه‌اش سه و
+     * نیم مگابایت بود و با هر مدلِ تازه بیشتر — و کاربر هر بار چند تایش را
+     * می‌بیند. صفحه یک بستهٔ کوچک می‌گیرد و جستجو از سرور می‌آید.
+     *
+     * جستجو روی نامِ مدل‌هاست، نه توضیحشان: توضیح از داکبلاکِ کلاس با Reflection
+     * درمی‌آید و ساختنش برای هفده هزار مدل نزدیک یک ثانیه است. پس فقط برای همان
+     * دوازده ردیفی ساخته می‌شود که واقعاً فرستاده می‌شوند.
+     *
+     * @return array{rows: array<int, array<string, mixed>>, total: int, more: bool}
+     */
+    protected function pickerPage(string $group, string $term = '', int $page = 1): array
+    {
+        $labels = $this->pickerLabels()[$group] ?? [];
+        $term = mb_strtolower(trim($term));
+        $page = max(1, $page);
+        $keys = [];
+
+        foreach ($labels as $key => $label) {
+            if ($term === '' || str_contains(mb_strtolower($label.' '.$key), $term)) {
+                $keys[] = $key;
+            }
+        }
+
+        $total = count($keys);
+        $rows = [];
+
+        foreach (array_slice($keys, ($page - 1) * static::PICKER_PAGE, static::PICKER_PAGE) as $key) {
+            $rows[] = [
+                'k' => $key,
+                'l' => (string) $labels[$key],
+                'h' => $this->composer->optionHint($group, $key),
+            ];
+        }
+
+        return [
+            'rows' => $rows,
+            'total' => $total,
+            'more' => ($page * static::PICKER_PAGE) < $total,
+        ];
+    }
+
+    /** همان بسته، برای جستجوی زندهٔ صفحه. */
+    public function pickerSearch(Request $request): JsonResponse
+    {
+        $group = (string) $request->query('group', '');
+
+        abort_unless(array_key_exists($group, $this->pickerLabels()), 404);
+
+        return response()->json($this->pickerPage(
+            $group,
+            (string) $request->query('q', ''),
+            $request->integer('page') ?: 1,
+        ));
+    }
+
+    /** یک کارت با کلید، برای وقتی انتخابِ فعلی در بستهٔ نمایش‌داده‌شده نیست. */
+    protected function pickerCard(string $group, ?string $key): ?array
+    {
+        $label = $key === null ? null : ($this->pickerLabels()[$group][$key] ?? null);
+
+        return $label === null ? null : [
+            'k' => $key,
+            'l' => (string) $label,
+            'h' => $this->composer->optionHint($group, $key),
+        ];
     }
 
     /** بندانگشتی یک پایه (کش می‌شود چون فقط به کد آن بستگی دارد). */

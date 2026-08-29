@@ -27,21 +27,27 @@
                 this.total = this.first.total;
                 this.hasMore = this.first.more;
             },
+            ticket: 0,
             find(reset) {
                 if (reset) { this.page = 1; }
+
+                const page = this.page;
+                // پاسخ‌ها ممکن است نامرتب برسند؛ بستهٔ عقب‌مانده نباید نتیجهٔ
+                // جستجوی تازه را پاک کند، پس هر درخواست نشانِ خودش را دارد
+                const ticket = ++this.ticket;
                 this.busy = true;
 
-                const url = this.searchUrl + '?q=' + encodeURIComponent(this.q) + '&page=' + this.page;
+                const url = this.searchUrl + '?q=' + encodeURIComponent(this.q) + '&page=' + page;
 
                 fetch(url, { headers: { 'Accept': 'application/json' } })
                     .then(response => response.ok ? response.json() : null)
                     .then(data => {
-                        if (! data) { return; }
-                        this.rows = this.page === 1 ? data.rows : this.rows.concat(data.rows);
+                        if (! data || this.ticket !== ticket) { return; }
+                        this.rows = page === 1 ? data.rows : this.rows.concat(data.rows);
                         this.total = data.total;
                         this.hasMore = data.more;
                     })
-                    .finally(() => { this.busy = false; });
+                    .finally(() => { if (this.ticket === ticket) { this.busy = false; } });
             },
             search() {
                 clearTimeout(this.timer);
