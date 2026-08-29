@@ -38,15 +38,20 @@ class GeneratorRegistryUniquenessTest extends TestCase
                 continue;
             }
 
-            $key = $class::key();
+            // خانوادهٔ جدولی چند کلید می‌دهد، نه یکی
+            $keys = is_subclass_of($class, \App\Services\Pattern\Generators\VariantAware::class)
+                ? array_keys($class::variants())
+                : [$class::key()];
 
-            if (isset($owners[$key])) {
-                $clashes[] = $key.' → '.$owners[$key].' و '.$class;
+            foreach ($keys as $key) {
+                if (isset($owners[$key])) {
+                    $clashes[] = $key.' → '.$owners[$key].' و '.$class;
 
-                continue;
+                    continue;
+                }
+
+                $owners[$key] = $class;
             }
-
-            $owners[$key] = $class;
         }
 
         $this->assertSame([], $clashes, 'دو مدل یک کلید گرفته‌اند؛ یکی از آن‌ها در فهرست ناپدید می‌شود.');

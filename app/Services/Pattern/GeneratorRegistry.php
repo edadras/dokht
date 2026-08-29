@@ -12,6 +12,7 @@ use App\Services\Pattern\Generators\PencilSkirtGenerator;
 use App\Services\Pattern\Generators\SleeveGenerator;
 use App\Services\Pattern\Generators\StraightPantsGenerator;
 use App\Services\Pattern\Generators\TShirtGenerator;
+use App\Services\Pattern\Generators\VariantAware;
 use App\Services\Pattern\Generators\WideLegPantsGenerator;
 use InvalidArgumentException;
 use ReflectionClass;
@@ -91,6 +92,16 @@ class GeneratorRegistry
                     continue;
                 }
 
+                // خانوادهٔ جدولی: یک کلاس، چند ده مدل. هر ردیف زیر کلیدِ خودش
+                // ثبت می‌شود و از بیرون مثل هر مدلِ دیگری دیده می‌شود.
+                if (is_subclass_of($class, VariantAware::class)) {
+                    foreach (array_keys($class::variants()) as $variant) {
+                        $generators[$variant] = $class;
+                    }
+
+                    continue;
+                }
+
                 $generators[$class::key()] = $class;
             }
         }
@@ -107,7 +118,9 @@ class GeneratorRegistry
             throw new InvalidArgumentException("تولیدکننده الگوی «{$key}» شناخته نشد.");
         }
 
-        return app($class);
+        $generator = app($class);
+
+        return $generator instanceof VariantAware ? $generator->forVariant($key) : $generator;
     }
 
     public static function has(string $key): bool
@@ -130,8 +143,10 @@ class GeneratorRegistry
     {
         $options = [];
 
-        foreach (static::all() as $key => $class) {
-            $options[$key] = app($class)->label();
+        foreach (array_keys(static::all()) as $key) {
+            // از make می‌گذرد نه از app: خانوادهٔ جدولی باید روی ردیفِ همین کلید
+            // تنظیم شود، وگرنه همهٔ ردیف‌هایش یک نام می‌گیرند
+            $options[$key] = static::make($key)->label();
         }
 
         asort($options);

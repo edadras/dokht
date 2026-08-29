@@ -91,6 +91,7 @@ class CatalogAuditTest extends TestCase
         // همان دامن پاکتی، این بار با قد دیگر و در قاب یک پیراهن
         'side_seam:skirt_wrap_midi' => 'همان دامن پاکتی است با قد میدی؛ جلوی روی‌هم‌آمده عمداً بلندتر از پشت است.',
         'side_seam:dress_wrap_midi' => 'دامن پاکتی درون پیراهن راپ؛ جلوی روی‌هم‌آمده عمداً بلندتر از پشت است.',
+        'side_seam:dress_wrapskirt_*' => 'همهٔ پیراهن‌های خانوادهٔ جدولی که روی دامن پاکتی ساخته می‌شوند همین را به ارث می‌برند: جلو یک دور و نیم می‌پیچد، پس عمداً بلندتر از پشت است.',
         'side_seam:skirt_tulip' => 'گلبرگ‌های دامن لاله روی هم می‌افتند و لبه رویهم‌آمدن هم side است؛ اندازه آن با درز پهلوی پشت جفت نمی‌شود.',
         'girth:*leg' => 'خط باسن روی پاچه شلوار شامل پیش‌آمدگی فاق هم هست؛ آن پارچه دور بدن نمی‌پیچد، پس عرض پاچه اندازه دور باسن نیست.',
         'girth:*panel' => 'وقتی مدل از چند پانل باریک (ترک، برش شاهزاده‌ای، لُنگه) ساخته شده باشد، خط نشانه تنها روی بعضی پانل‌ها هست و جمع آن‌ها دور کامل بدن را نمی‌دهد.',
@@ -294,9 +295,34 @@ class CatalogAuditTest extends TestCase
         return null;
     }
 
+    /**
+     * آیا این بررسی برای این مدل کنار گذاشته شده است؟
+     *
+     * کلیدِ استثنا می‌تواند ستاره داشته باشد تا یک *خانواده* را بپوشاند. این
+     * برای خانواده‌های جدولی لازم شد: دامنِ پاکتی جلویش عمداً روی هم می‌آید و
+     * بلندتر از پشت است، و این ویژگی به هر ده‌ها پیراهنی که روی همان دامن ساخته
+     * می‌شوند به ارث می‌رسد. نوشتنِ ده‌ها ردیفِ یکسان، فهرست را دراز می‌کند بی
+     * آنکه چیزی روشن‌تر شود.
+     */
     protected function allowed(string $check, string $key): bool
     {
-        return array_key_exists($check.':'.$key, static::ALLOW_LIST);
+        if (array_key_exists($check.':'.$key, static::ALLOW_LIST)) {
+            return true;
+        }
+
+        foreach (array_keys(static::ALLOW_LIST) as $rule) {
+            [$area, $pattern] = array_pad(explode(':', (string) $rule, 2), 2, '');
+
+            if ($area !== $check || ! str_contains($pattern, '*')) {
+                continue;
+            }
+
+            if (fnmatch($pattern, $key)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
