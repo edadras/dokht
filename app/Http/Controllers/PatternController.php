@@ -480,11 +480,27 @@ class PatternController extends Controller
             return $index[$text];
         };
 
-        $rows = $this->availableTemplates()->get()->map(fn (PatternTemplate $template) => [
-            'i' => $template->id,
-            'n' => $template->name_fa,
-            'g' => $code($template->garmentType?->name_fa),
-        ])->all();
+        /*
+         * پرس‌وجوی خام، نه مدل‌های Eloquent.
+         *
+         * هفت هزار مدلِ Eloquent ساختن برای خواندنِ سه ستون، ربع ثانیه از هر
+         * بار باز کردنِ صفحه می‌خورد. این‌جا فقط همان سه ستون لازم است.
+         */
+        $rows = PatternTemplate::query()
+            ->availableTo(auth()->user()->workshop_id)
+            ->leftJoin('garment_types', 'garment_types.id', '=', 'pattern_templates.garment_type_id')
+            ->orderBy('pattern_templates.sort')
+            ->orderBy('pattern_templates.id')
+            ->get([
+                'pattern_templates.id',
+                'pattern_templates.name_fa',
+                'garment_types.name_fa as garment_name',
+            ])
+            ->map(fn ($row) => [
+                'i' => (int) $row->id,
+                'n' => (string) $row->name_fa,
+                'g' => $code($row->garment_name),
+            ])->all();
 
         return ['rows' => $rows, 'words' => $words];
     }
