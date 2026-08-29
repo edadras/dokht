@@ -8,6 +8,7 @@ use App\Models\MeasurementSet;
 use App\Models\Pattern;
 use App\Models\PatternPiece;
 use App\Models\PatternTemplate;
+use App\Services\Pattern\GarmentFlatService;
 use App\Services\Pattern\GeneratorRegistry;
 use App\Services\Pattern\GradingService;
 use App\Services\Pattern\PatternBuilder;
@@ -26,6 +27,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use InvalidArgumentException;
+use Throwable;
 
 /**
  * الگوها.
@@ -48,6 +50,7 @@ class PatternController extends Controller
         protected PatternVersionService $versions,
         protected PatternInspector $inspector = new PatternInspector,
         protected PieceSplitter $splitter = new PieceSplitter,
+        protected GarmentFlatService $flats = new GarmentFlatService,
     ) {}
 
     public function index(Request $request): View
@@ -148,7 +151,37 @@ class PatternController extends Controller
             'relations' => $pattern->sewing_relations ?: SewingRelationBuilder::suggest($pattern),
             'versionCount' => $pattern->versions()->count(),
             'sizes' => Measurements::sizes(),
+            // شکلِ لباس روی همین اندازه‌ها؛ اگر ساختنش بگیرد، صفحه نباید بشکند
+            'flats' => $this->garmentFlats($pattern),
         ]);
+    }
+
+    /**
+     * چهار نمای لباسِ دوخته‌شده، با تور ایمنی.
+     *
+     * این بخش تزیینیِ صفحه است، نه کارِ اصلی‌اش. اگر مدلی قطعه‌بندیِ نامنتظری
+     * داشته باشد و نما ساخته نشود، صفحهٔ الگو نباید بشکند — پیغامش را نشان
+     * می‌دهد و بقیهٔ صفحه سر جایش می‌ماند.
+     *
+     * @return array{views: array<string, string>, measures: array<string, float>, notes: array<int, string>, ok: bool}
+     */
+    protected function garmentFlats(Pattern $pattern): array
+    {
+        try {
+            return $this->flats->flats(
+                $pattern->pieces,
+                Measurements::complete($pattern->measurements ?? []),
+            );
+        } catch (Throwable $error) {
+            report($error);
+
+            return [
+                'views' => [],
+                'measures' => [],
+                'notes' => ['نمای دوختِ این مدل ساخته نشد: '.$error->getMessage()],
+                'ok' => false,
+            ];
+        }
     }
 
     public function edit(Pattern $pattern): View
@@ -621,7 +654,7 @@ class PatternController extends Controller
                 'seam_allowance' => false,
                 'gap' => 3,
             ]);
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return '';
         }
     }

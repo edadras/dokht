@@ -439,4 +439,25 @@ class PatternTest extends TestCase
         $this->get(route('patterns.index'))->assertRedirect(route('login'));
         $this->get(route('patterns.show', $pattern))->assertRedirect(route('login'));
     }
+
+    /**
+     * صفحهٔ الگو باید شکلِ لباس را هم نشان بدهد، نه فقط نقشهٔ قطعه‌ها.
+     *
+     * نقشه را خیاط می‌خواند؛ مشتری از رویش نمی‌فهمد چه تنش می‌شود. چهار نمای
+     * دوخته‌شده همان‌جا و از همین الگو ساخته می‌شود.
+     */
+    public function test_the_pattern_page_shows_the_sewn_garment_from_four_sides(): void
+    {
+        $this->actingAsWorkshopUser();
+
+        $pattern = $this->pattern();
+
+        $this->get(route('patterns.show', $pattern))
+            ->assertOk()
+            ->assertSee('لباس دوخته‌شده')
+            ->assertSee('از جلو')
+            ->assertSee('از پشت')
+            ->assertSee('پهلوی راست')
+            ->assertSee('پهلوی چپ');
+    }
 }
