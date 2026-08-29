@@ -67,7 +67,13 @@ class TopOffShoulderGenerator extends TopBaseGenerator
 
         $shared = [
             'shape' => 'straight',
-            'length' => $this->bodyLength($params, $g, 4),
+            /*
+             * آف‌شولدر از خطِ سینه شروع می‌شود، نه از سرشانه، پس کوتاه‌کردنش
+             * زودتر از هر تاپِ دیگری به ته می‌رسد: با قدِ کراپ چیزی که می‌ماند
+             * نواری است که نه دوختنی است نه پوشیدنی. کفِ قدش را بالاتر
+             * می‌گذاریم تا همیشه یک تنهٔ واقعی بماند.
+             */
+            'length' => $this->bodyLength($params, $g, 4, clearance: 20.0),
             'bottom_tag' => 'hem',
             'waist_dart' => false,
         ];

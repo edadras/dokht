@@ -77,7 +77,7 @@ class TopBacklessGenerator extends TopBaseGenerator
              * گرد یا قلبی رویش جا نمی‌شود و مسیرِ قطعه خودش را قطع می‌کند. روی
              * تنِ کودک با قدِ کراپ دقیقاً همین می‌شد.
              */
-            'length' => $this->bodyLength($params, $g, 6, clearance: 18.0),
+            'length' => $this->bodyLength($params, $g, 6, clearance: 21.0),
             'grow' => $grow,
             'bottom_tag' => 'hem',
             'waist_dart' => true,

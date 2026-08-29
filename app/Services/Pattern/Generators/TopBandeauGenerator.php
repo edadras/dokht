@@ -64,7 +64,11 @@ class TopBandeauGenerator extends TopBaseGenerator
         $ease = $this->knitEase($ease, $negative);
 
         $g = $this->blockMetrics($measurements, $ease, $params);
-        $length = $this->bodyLength($params, $g, 0);
+        /*
+         * بندو هم مثل آف‌شولدر از خطِ سینه شروع می‌شود؛ قدِ کراپ رویش یعنی
+         * نوارِ چندسانتی‌متری. کفِ قد از خودِ اندازه‌ها می‌آید.
+         */
+        $length = $this->bodyLength($params, $g, 0, clearance: 18.0);
         $drop = (float) $this->param($params, 'top_drop', 2);
 
         $shared = [
