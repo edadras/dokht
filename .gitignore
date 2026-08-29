@@ -26,3 +26,7 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 storage/app/drape-bench
+
+# آزمون‌های موقتیِ سنجهٔ سرعت که هنگام کار ساخته و پاک می‌شوند
+/tests/Feature/PageBenchTest.php
+/tests/Feature/BenchTest.php
