@@ -512,8 +512,17 @@ abstract class ShirtBaseGenerator extends BaseGenerator
             $armhole += (float) ($piece['meta']['armhole_length'] ?? 0);
         }
 
+        /*
+         * حلقه از خودِ قطعه‌ها خوانده می‌شود، پس عددش درست است — مگر اینکه هیچ
+         * قطعه‌ای حلقه نداشته باشد، که آن‌وقت صفر می‌شود و آستین بی‌مرجع می‌ماند.
+         * کفِ سی سانتی که این‌جا بود همان تهِ صفر را می‌گرفت، ولی روی بدن‌های
+         * کوچک هم می‌نشست: حلقهٔ یک خردسال بیست‌وپنج سانت است و آستینش برای سی
+         * سانت بریده می‌شد — هفت سانت گشادتر از حلقه‌ای که قرار بود تویش برود.
+         *
+         * پس کف فقط وقتی به کار می‌آید که واقعاً اندازه‌ای نیامده باشد.
+         */
         return $this->sleevePieces($measurements, $ease, $params, array_merge([
-            'armhole_length' => max(30.0, $armhole),
+            'armhole_length' => $armhole > 1.0 ? $armhole : 30.0,
             'length' => (float) $this->param($params, 'sleeve_length', 24),
             'sleeve_name' => 'آستین',
         ], $o));

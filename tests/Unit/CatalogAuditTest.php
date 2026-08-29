@@ -132,6 +132,12 @@ class CatalogAuditTest extends TestCase
         'hip_girth:modest_lori_*' => 'همان پیراهن لری است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
         'hip_girth:modest_qashqai_*' => 'همان پیراهن قشقایی است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
         'hip_girth:modest_gilaki_*' => 'همان پیراهن گیلکی است با قد و آستین و یقهٔ انتخابی؛ سایه‌اش از سرشانه می‌ریزد.',
+        // کفِ مساحت برای گرفتنِ قطعهٔ *تخت‌شده* است — قطعه‌ای که سهواً به هیچ
+        // رسیده. ولی پشتِ یک تاپِ رکابیِ کراپ عمداً کوچک است: هم کوتاه است و هم
+        // بندهایش باریک. روی بدنِ ریزنقش این دو با هم مساحت را به دویست
+        // سانتی‌متر مربع می‌رسانند، که برای همان لباس درست است. مسیرش بسته و
+        // بی‌خودبرخورد است؛ فقط کوچک است.
+        'min_area:top_range_racer_crop_*' => 'پشتِ رکابیِ کراپ عمداً کوتاه و باریک است؛ کفِ مساحتِ یک بالاتنهٔ کامل به آن نمی‌خورد.',
         'max_area:trad_sari' => 'تختهٔ ساری بریده نمی‌شود؛ یک پارچهٔ شش‌متری است که دور بدن پیچیده می‌شود و فقط چهار لبه‌اش تمیز می‌شود. مساحتش عمداً بزرگ است.',
         'max_area:trad_chador' => 'چادر یک نیم‌دایره به شعاعِ قدِ کاربر است؛ ربعِ بریده‌شده‌اش هم بیش از سه متر مربع می‌شود و این درست است.',
         'max_area:bridal_veil' => 'تور عروس نیم‌دایره‌ای به شعاع بلندی خودش است؛ تور تا زمین (۱۸۰ سانتی‌متر) بیش از پنج متر مربع می‌شود و این درست است، نه خطای محاسبه.',
@@ -474,7 +480,7 @@ class CatalogAuditTest extends TestCase
             $part = (string) ($piece['meta']['part'] ?? '');
             $floor = round((static::MIN_AREA[$part] ?? static::MIN_AREA_ANY) * $this->areaScale($size), 1);
 
-            if ($area < $floor) {
+            if ($area < $floor && ! $this->allowed('min_area', $key)) {
                 $problems[] = "{$where} مساحت {$area} سانتی‌متر مربع است؛ برای «{$part}» دست‌کم {$floor} انتظار می‌رود.";
             }
 
@@ -804,60 +810,60 @@ class CatalogAuditTest extends TestCase
 
         // حلقهٔ یک‌باره تا «continue»های درونِ بررسی همان معنا را بدهند
         foreach ([$pieces] as $pieces) {
-                $group = GeneratorRegistry::groupOf($key);
-                $bodices = $this->partsLike($pieces, ['front_bodice', 'back_bodice']);
-                $sleeves = $this->partsLike($pieces, ['sleeve']);
-                // یوک هم بخشی از حلقه آستین را با خود می‌برد
-                $holders = array_merge($bodices, $this->partsLike($pieces, ['yoke']));
+            $group = GeneratorRegistry::groupOf($key);
+            $bodices = $this->partsLike($pieces, ['front_bodice', 'back_bodice']);
+            $sleeves = $this->partsLike($pieces, ['sleeve']);
+            // یوک هم بخشی از حلقه آستین را با خود می‌برد
+            $holders = array_merge($bodices, $this->partsLike($pieces, ['yoke']));
 
-                foreach ($bodices as $bodice) {
-                    // تاپ استرپلس و آفشولدر عمداً حلقه ندارند و خودشان می‌گویند؛
-                    // بقیه اگر حلقه نداشته باشند یعنی چیزی خراب شده
-                    if (! empty($bodice['meta']['sleeveless'])) {
-                        continue;
-                    }
+            foreach ($bodices as $bodice) {
+                // تاپ استرپلس و آفشولدر عمداً حلقه ندارند و خودشان می‌گویند؛
+                // بقیه اگر حلقه نداشته باشند یعنی چیزی خراب شده
+                if (! empty($bodice['meta']['sleeveless'])) {
+                    continue;
+                }
 
-                    if (Geometry::edgesWithTag($bodice, 'armhole') === []) {
-                        $problems[] = "{$key}|{$size}|{$bodice['code']} بالاتنه است ولی حلقه آستین ندارد.";
+                if (Geometry::edgesWithTag($bodice, 'armhole') === []) {
+                    $problems[] = "{$key}|{$size}|{$bodice['code']} بالاتنه است ولی حلقه آستین ندارد.";
+                }
+            }
+
+            if ($sleeves !== [] && $group !== 'sleeve' && $bodices !== []) {
+                $armhole = 0.0;
+
+                foreach ($holders as $holder) {
+                    if (Geometry::edgesWithTag($holder, 'armhole') !== []) {
+                        $armhole += PieceOps::edgeLength($holder, 'armhole');
                     }
                 }
 
-                if ($sleeves !== [] && $group !== 'sleeve' && $bodices !== []) {
-                    $armhole = 0.0;
+                $cap = 0.0;
 
-                    foreach ($holders as $holder) {
-                        if (Geometry::edgesWithTag($holder, 'armhole') !== []) {
-                            $armhole += PieceOps::edgeLength($holder, 'armhole');
-                        }
-                    }
+                foreach ($sleeves as $sleeve) {
+                    $edges = Geometry::edgesWithTag($sleeve, 'armhole');
 
-                    $cap = 0.0;
-
-                    foreach ($sleeves as $sleeve) {
-                        $edges = Geometry::edgesWithTag($sleeve, 'armhole');
-
-                        if ($edges !== []) {
-                            $cap += PieceOps::edgeLength($sleeve, $edges);
-                        }
-                    }
-
-                    if ($cap <= 0.0) {
-                        $problems[] = "{$key}|{$size} آستین دارد ولی هیچ لبه‌ای از آن برچسب حلقه آستین ندارد.";
-
-                        continue;
-                    }
-
-                    $ease = $cap - $armhole;
-
-                    // سرآستین باید کمی از حلقه بلندتر باشد تا سر آستین فرم بگیرد،
-                    // ولی بیش از یک‌چهارم حلقه یعنی درفت از دست رفته است
-                    if ($ease < -0.5 || $ease > max(6.0, $armhole * 0.25)) {
-                        $problems[] = sprintf(
-                            '%s|%s سرآستین %.1f و حلقه آستین %.1f است؛ آزادی %.1f سانتی‌متر پذیرفتنی نیست.',
-                            $key, $size, $cap, $armhole, $ease,
-                        );
+                    if ($edges !== []) {
+                        $cap += PieceOps::edgeLength($sleeve, $edges);
                     }
                 }
+
+                if ($cap <= 0.0) {
+                    $problems[] = "{$key}|{$size} آستین دارد ولی هیچ لبه‌ای از آن برچسب حلقه آستین ندارد.";
+
+                    continue;
+                }
+
+                $ease = $cap - $armhole;
+
+                // سرآستین باید کمی از حلقه بلندتر باشد تا سر آستین فرم بگیرد،
+                // ولی بیش از یک‌چهارم حلقه یعنی درفت از دست رفته است
+                if ($ease < -0.5 || $ease > max(6.0, $armhole * 0.25)) {
+                    $problems[] = sprintf(
+                        '%s|%s سرآستین %.1f و حلقه آستین %.1f است؛ آزادی %.1f سانتی‌متر پذیرفتنی نیست.',
+                        $key, $size, $cap, $armhole, $ease,
+                    );
+                }
+            }
         }
 
         return [$problems, 0];
@@ -879,27 +885,27 @@ class CatalogAuditTest extends TestCase
         $checked = 0;
 
         foreach ([$pieces] as $pieces) {
-                $upper = $this->waistGirth($pieces, ['front_bodice', 'back_bodice', 'yoke']);
-                // skirt_panel هم شمرده می‌شود: دامن ترک‌دار و گوده‌دار بیشترِ کمرشان
-                // روی همین ترک‌های میانی است، نه روی جلو و پشت. بدون آن، کمر
-                // پایین‌تنه یک‌چهارم واقعی گزارش می‌شد و لباسِ ترک‌دار بی‌صدا از
-                // زیر این بررسی رد می‌شد.
-                $lower = $this->waistGirth($pieces, [
-                    'skirt_front', 'skirt_back', 'skirt_panel', 'skirt_tier', 'peplum', 'front_leg', 'back_leg',
-                ]);
+            $upper = $this->waistGirth($pieces, ['front_bodice', 'back_bodice', 'yoke']);
+            // skirt_panel هم شمرده می‌شود: دامن ترک‌دار و گوده‌دار بیشترِ کمرشان
+            // روی همین ترک‌های میانی است، نه روی جلو و پشت. بدون آن، کمر
+            // پایین‌تنه یک‌چهارم واقعی گزارش می‌شد و لباسِ ترک‌دار بی‌صدا از
+            // زیر این بررسی رد می‌شد.
+            $lower = $this->waistGirth($pieces, [
+                'skirt_front', 'skirt_back', 'skirt_panel', 'skirt_tier', 'peplum', 'front_leg', 'back_leg',
+            ]);
 
-                if ($upper <= 0.0 || $lower <= 0.0) {
-                    continue;
-                }
+            if ($upper <= 0.0 || $lower <= 0.0) {
+                continue;
+            }
 
-                $checked++;
+            $checked++;
 
-                if (abs($upper - $lower) > 1.0) {
-                    $problems[] = sprintf(
-                        '%s|%s کمر بالاتنه %.1f و کمر پایین‌تنه %.1f است؛ این دو به هم دوخته می‌شوند.',
-                        $key, $size, $upper, $lower,
-                    );
-                }
+            if (abs($upper - $lower) > 1.0) {
+                $problems[] = sprintf(
+                    '%s|%s کمر بالاتنه %.1f و کمر پایین‌تنه %.1f است؛ این دو به هم دوخته می‌شوند.',
+                    $key, $size, $upper, $lower,
+                );
+            }
         }
 
         return [$problems, $checked];

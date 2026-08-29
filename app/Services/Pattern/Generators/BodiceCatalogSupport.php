@@ -229,7 +229,7 @@ trait BodiceCatalogSupport
 
         // درز پهلو
         [$sideOutline, $sideTags, $sideBottomX] = $this->sideEdge([
-            'cf' => $cf, 'qb' => $qb, 'qh' => $qh,
+            'cf' => $cf, 'qb' => $qb, 'qw' => $qw, 'qh' => $qh,
             'bust_y' => $bustY, 'waist_y' => $sideWaistY, 'hip_y' => $hipY, 'bottom_y' => $sideBottomY,
             'side_intake' => $sideIntake, 'shape' => $shape, 'flare' => $flare, 'hip_drop' => $g['hip_drop'],
             'bottom_tag' => $bottomTag,
@@ -259,7 +259,7 @@ trait BodiceCatalogSupport
         // سانتی‌متر می‌رسد. پس درز را دقیقاً به «درز پشت + دهانه ساسون» می‌رسانیم.
         if ($bustDart > 0.01) {
             [$plainSide] = $this->sideEdge([
-                'cf' => $cf, 'qb' => $qb, 'qh' => $qh,
+                'cf' => $cf, 'qb' => $qb, 'qw' => $qw, 'qh' => $qh,
                 'bust_y' => $bustY, 'waist_y' => $g['side_waist_y'], 'hip_y' => $g['side_waist_y'] + $g['hip_drop'],
                 'bottom_y' => $g['side_waist_y'] + $length,
                 'side_intake' => $sideIntake, 'shape' => $shape, 'flare' => $flare, 'hip_drop' => $g['hip_drop'],
@@ -336,8 +336,23 @@ trait BodiceCatalogSupport
             $this->marker($front ? 'cf' : 'cb', $front ? 'خط مرکز جلو' : 'خط مرکز پشت', $cf, $neckD, $cf, $centerBottomY),
         ];
 
+        /*
+         * پهنای خط کمر هم مثل خط باسن از خودِ مسیر خوانده می‌شود، نه از فرمولِ
+         * کمرگیری. این دو همیشه یکی نبودند: در فرم راسته، درزِ پهلو روی خط کمر
+         * می‌تواند از چارکِ سینه بازتر باشد (اندام سیبی، که کمرش از سینه‌اش
+         * بزرگ‌تر است). آن‌وقت قطعه درست بریده می‌شد ولی نشانه‌اش عددِ دیگری
+         * می‌گفت — و هر چیزی که از نشانه‌ها اندازه می‌گیرد، از گزارشِ کارگاه تا
+         * ممیزی، عددِ غلط می‌خواند.
+         */
         if ($length > 1.5) {
-            $markers[] = $this->marker('waist', 'خط کمر', $cf, $sideWaistY, $cf + $qb - $sideIntake, $sideWaistY);
+            $markers[] = $this->marker(
+                'waist',
+                'خط کمر',
+                $cf,
+                $sideWaistY,
+                $cf + max(0.0, $this->panelWidthAt(['outline' => $outline], $sideWaistY) - $cf),
+                $sideWaistY,
+            );
         }
 
         // پهنای خط باسن از خود مسیر خوانده می‌شود؛ در فرم راسته لبه پهلو از باسن بازتر است
@@ -499,29 +514,64 @@ trait BodiceCatalogSupport
         if ($s['shape'] === 'straight' || $s['shape'] === 'trapeze') {
             /*
              * لباس راسته از زیر بغل مستقیم پایین می‌آید، پس پهنایش را از سینه
-             * می‌گیرد و به باسن نگاه نمی‌کند. تا وقتی لباس بالای باسن تمام شود
-             * اشکالی ندارد؛ ولی تونیکی که از باسن پایین‌تر می‌رود، هرچه از سینه
-             * بگیرد روی باسن همان را دارد — و اگر باسن از سینه بزرگ‌تر باشد،
-             * لباس از رویش رد نمی‌شود.
+             * می‌گیرد و به کمر و باسن نگاه نمی‌کند. روی جدولِ سایز این پنهان
+             * می‌ماند چون سینه بزرگ‌ترینِ سه است. ولی بدنِ آدم‌ها همیشه این‌طور
+             * نیست:
              *
-             * روی سایز جدولی این خودش را کم نشان می‌دهد (باسن شش سانت از سینه
-             * بزرگ‌تر است)، ولی روی اندام گلابی با اختلاف سی‌وچهار سانتی‌متر،
-             * تونیکِ کشباف سی‌وشش سانت از باسن تنگ‌تر درمی‌آمد: لباسی که پوشیده
-             * نمی‌شود.
+             * — اندام سیبی کمرش از سینه‌اش بزرگ‌تر است، پس لباسِ راسته روی کمر
+             *   تا پانزده سانت تنگ می‌شد.
+             * — اندام گلابی باسنش تا سی‌وچهار سانت از سینه‌اش بزرگ‌تر است، پس
+             *   تونیکِ راسته اصلاً از روی باسن رد نمی‌شد.
              *
-             * نکتهٔ ظریف این است که خودِ درفت آزادی باسن را حساب کرده — کشباف
-             * منفی یک‌ونیم می‌خواهد — و همان‌جا دورش می‌ریخت. پس این‌جا فقط همان
-             * خواستهٔ خودش را به کار می‌گیریم: پهنای دم لباس دست‌کم به اندازهٔ
-             * چارکِ باسن، و اگر لباس بالاتر تمام شود به همان نسبت.
+             * نکتهٔ ظریف این است که خودِ درفت هر سه چارک را حساب کرده — با
+             * آزادیِ خواسته‌شدهٔ خودش، حتی وقتی منفی است — و فقط دوتایش را دور
+             * می‌ریخت. پس این‌جا چیزی اختراع نمی‌شود؛ همان خواستهٔ خودِ درفت به
+             * کار می‌رود: درزِ پهلو در هر ارتفاع دست‌کم به اندازهٔ چارکِ همان
+             * ارتفاع باز می‌شود، و اگر هیچ‌کدام از سینه بزرگ‌تر نباشد خطِ راسته
+             * دست‌نخورده می‌ماند.
              */
+            $qw = (float) ($s['qw'] ?? $s['qb']);
+            $onWaist = abs($bottomY - $waistY) < 0.5;
+            $freeHem = ($s['bottom_tag'] ?? 'hem') === 'hem';
+
+            /*
+             * لبهٔ پایین یا دمِ آزادِ لباس است، یا درزی که قطعهٔ دیگری به آن
+             * دوخته می‌شود. درز را نمی‌شود سرخود گشاد کرد — مگر درزِ خودِ خط
+             * کمر، که آن‌طرفش هم از همین چارکِ کمر بریده شده. یک بار این را
+             * نادیده گرفتم و کمرِ ۲۶۱۶ مدل ناجور شد.
+             */
+            $mayGrow = $freeHem || $onWaist;
+
+            // روی خط کمر: نقطهٔ میانی فقط وقتی لازم است که لباس از آن رد شود
+            if ($mayGrow && $bottomY > $waistY + 0.5 && $qw > $s['qb']) {
+                $points[] = Geometry::point($cf + $qw, $waistY);
+                $tags[] = 'side';
+            }
+
+            // روی خط باسن: همان‌جا باز می‌شود، نه سرِ دم لباس — وگرنه جلو و
+            // پشتی که دمشان هم‌ارتفاع نیست، دو درزِ پهلوی نابرابر می‌گیرند
+            if ($mayGrow && $bottomY > $hipY + 0.5 && $s['qh'] > $s['qb']) {
+                $points[] = Geometry::point($cf + max($s['qh'], $qw), $hipY);
+                $tags[] = 'side';
+            }
+
             $hemX = $cf + $s['qb'] + $flare;
 
-            // فقط دمِ *آزاد* لباس. اگر این لبه درزی باشد که دامن یا پیلی‌دار
-            // دیگری به آن دوخته می‌شود، گشادکردنش یعنی دو خط درز دیگر هم‌اندازه
-            // نباشند — و آن، ایرادی بدتر از تنگی است.
-            if (($s['bottom_tag'] ?? 'hem') === 'hem' && $bottomY > $waistY + 0.05 && $s['qh'] > $s['qb']) {
-                $reach = min(1.0, ($bottomY - $waistY) / max(0.1, $hipY - $waistY));
-                $hemX = max($hemX, $cf + $s['qb'] + (($s['qh'] - $s['qb']) * $reach));
+            if ($mayGrow) {
+                $need = $s['qb'];
+
+                if ($bottomY > $waistY - 0.5) {
+                    $need = max($need, $qw);
+                }
+
+                if ($bottomY > $hipY - 0.5) {
+                    $need = max($need, $s['qh']);
+                } elseif ($bottomY > $waistY + 0.5 && $s['qh'] > $need) {
+                    $reach = min(1.0, ($bottomY - $waistY) / max(0.1, $hipY - $waistY));
+                    $need += ($s['qh'] - $need) * $reach;
+                }
+
+                $hemX = max($hemX, $cf + $need + $flare);
             }
 
             $points[] = Geometry::point($hemX, $bottomY);
@@ -1048,7 +1098,7 @@ trait BodiceCatalogSupport
             : 0.7;
 
         [$sidePoints, $sideTags, $sideBottomX] = $this->sideEdge([
-            'cf' => $cf, 'qb' => $qb, 'qh' => $qh,
+            'cf' => $cf, 'qb' => $qb, 'qw' => $qw, 'qh' => $qh,
             'bust_y' => $bustY, 'waist_y' => $waistY, 'hip_y' => $hipY, 'bottom_y' => $sideBottomY,
             'side_intake' => $sideIntake, 'shape' => $shape, 'flare' => $flare, 'hip_drop' => $g['hip_drop'],
         ]);
