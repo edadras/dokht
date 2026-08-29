@@ -130,6 +130,9 @@ Route::middleware(['auth', 'workshop'])->group(function () {
     // پارامترهای همان مدلی که انتخاب شده، نه همهٔ مدل‌ها
     Route::get('patterns/templates/{template}/params', [PatternController::class, 'templateParams'])
         ->name('patterns.templates.params');
+    // جستجوی زندهٔ فهرست الگوها؛ صفحه یک بسته می‌گیرد نه همهٔ کاتالوگ را
+    Route::get('patterns/templates', [PatternController::class, 'templateSearch'])
+        ->name('patterns.templates.search');
     Route::resource('patterns', PatternController::class);
     Route::get('patterns/{pattern}/editor', [PatternController::class, 'editor'])->name('patterns.editor');
     Route::put('patterns/{pattern}/geometry', [PatternController::class, 'updateGeometry'])->name('patterns.geometry');

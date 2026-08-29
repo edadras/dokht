@@ -73,8 +73,10 @@ class PatternController extends Controller
     {
         return view('patterns.create', [
             'templateCards' => $this->templateCards(),
+            'selectedCard' => $this->templateCard($request->integer('template') ?: null),
             'templatePreviewUrl' => route('patterns.templates.preview', ['template' => '__ID__']),
             'templateParamsUrl' => route('patterns.templates.params', ['template' => '__ID__']),
+            'templateSearchUrl' => route('patterns.templates.search'),
             'customers' => Customer::query()->with('defaultMeasurementSet')->orderBy('name')->get(),
             'sizes' => Measurements::sizes(),
             'selectedTemplate' => $request->integer('template') ?: null,
@@ -448,49 +450,38 @@ class PatternController extends Controller
     }
 
     /** الگوهای پایه در دسترس این کارگاه. */
+    /** چند کارت در هر بستهٔ فهرستِ انتخابگر. */
+    protected const CARD_PAGE = 24;
+
     /**
-     * فهرست مدل‌ها برای انتخابگر: شناسه، نام، و شمارهٔ نوعِ لباس و توضیح.
+     * یک بسته از فهرستِ مدل‌ها: شناسه، نام و نوعِ لباس.
      *
-     * این فهرست هزاران ردیف دارد و تمامش به مرورگر می‌رود، پس هر بایتِ تکراری
-     * چند مگابایت می‌شود. سه چیز عمداً این‌جا نیست:
+     * فهرست دیگر یک‌جا به مرورگر نمی‌رود. با هفت هزار مدل، فرستادنِ همه‌اش
+     * هشتصد کیلوبایت بود و با هفده هزار مدل دو و نیم مگابایت — و با هر مدلِ
+     * تازه بیشتر. حالا صفحه یک بستهٔ کوچک می‌گیرد و جستجو از سرور می‌آید، پس
+     * وزنش دیگر به اندازهٔ کاتالوگ بستگی ندارد.
      *
-     * — تصویر، که نشانی‌اش از روی شناسه ساخته می‌شود.
-     * — متن جستجو، که همان نام است و مرورگر خودش می‌سازد.
-     * — توضیحِ هر مدل، که برای هر ردیف یکتاست و حدود دویست بایت؛ یعنی دو مگابایت
-     *   برای متنی که کاربر فقط زیرِ *یک* کارت می‌خواند. توضیحِ مدلِ انتخاب‌شده
-     *   جداگانه خوانده می‌شود.
-     * — نامِ نوعِ لباس، که میان صدها مدل تکرار می‌شود؛ یک بار در فهرستِ مشترک
-     *   می‌آید و کارت فقط شماره‌اش را دارد.
-     *
-     * @return array{rows: array<int, array<string, mixed>>, words: array<int, string>}
+     * @return array{rows: array<int, array<string, mixed>>, total: int, more: bool}
      */
-    protected function templateCards(): array
+    protected function templateCards(string $term = '', int $page = 1): array
     {
-        $words = [];
-        $index = [];
+        $term = trim($term);
+        $page = max(1, $page);
 
-        $code = function (?string $text) use (&$words, &$index): int {
-            $text = (string) $text;
-
-            if (! isset($index[$text])) {
-                $index[$text] = count($words);
-                $words[] = $text;
-            }
-
-            return $index[$text];
-        };
-
-        /*
-         * پرس‌وجوی خام، نه مدل‌های Eloquent.
-         *
-         * هفت هزار مدلِ Eloquent ساختن برای خواندنِ سه ستون، ربع ثانیه از هر
-         * بار باز کردنِ صفحه می‌خورد. این‌جا فقط همان سه ستون لازم است.
-         */
-        $rows = PatternTemplate::query()
+        $query = PatternTemplate::query()
             ->availableTo(auth()->user()->workshop_id)
             ->leftJoin('garment_types', 'garment_types.id', '=', 'pattern_templates.garment_type_id')
+            ->when($term !== '', fn ($q) => $q->where(fn ($inner) => $inner
+                ->where('pattern_templates.name_fa', 'like', '%'.$term.'%')
+                ->orWhere('pattern_templates.code', 'like', '%'.$term.'%')
+                ->orWhere('garment_types.name_fa', 'like', '%'.$term.'%')));
+
+        $total = (clone $query)->count('pattern_templates.id');
+
+        $rows = $query
             ->orderBy('pattern_templates.sort')
             ->orderBy('pattern_templates.id')
+            ->forPage($page, static::CARD_PAGE)
             ->get([
                 'pattern_templates.id',
                 'pattern_templates.name_fa',
@@ -499,10 +490,51 @@ class PatternController extends Controller
             ->map(fn ($row) => [
                 'i' => (int) $row->id,
                 'n' => (string) $row->name_fa,
-                'g' => $code($row->garment_name),
+                'g' => (string) ($row->garment_name ?? ''),
             ])->all();
 
-        return ['rows' => $rows, 'words' => $words];
+        return [
+            'rows' => $rows,
+            'total' => $total,
+            'more' => ($page * static::CARD_PAGE) < $total,
+        ];
+    }
+
+    /**
+     * همان فهرست، این بار برای جستجوی زندهٔ صفحه.
+     *
+     * صفحه با هر تایپ این را صدا می‌زند و بستهٔ بعدی را هم از همین‌جا می‌گیرد.
+     */
+    public function templateSearch(Request $request): JsonResponse
+    {
+        return response()->json($this->templateCards(
+            (string) $request->query('q', ''),
+            $request->integer('page') ?: 1,
+        ));
+    }
+
+    /** یک کارت با شناسه، برای وقتی انتخابِ فعلی در بستهٔ نمایش‌داده‌شده نیست. */
+    protected function templateCard(?int $id): ?array
+    {
+        if (! $id) {
+            return null;
+        }
+
+        $row = PatternTemplate::query()
+            ->availableTo(auth()->user()->workshop_id)
+            ->leftJoin('garment_types', 'garment_types.id', '=', 'pattern_templates.garment_type_id')
+            ->where('pattern_templates.id', $id)
+            ->first([
+                'pattern_templates.id',
+                'pattern_templates.name_fa',
+                'garment_types.name_fa as garment_name',
+            ]);
+
+        return $row === null ? null : [
+            'i' => (int) $row->id,
+            'n' => (string) $row->name_fa,
+            'g' => (string) ($row->garment_name ?? ''),
+        ];
     }
 
     protected function availableTemplates()

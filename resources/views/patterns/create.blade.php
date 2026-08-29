@@ -11,33 +11,53 @@
         x-data="{
             template: @js($selectedTemplate),
             source: @js(old('customer_id') ? 'customer' : 'size'),
-            data: JSON.parse(document.getElementById('template-list').textContent),
-            get all() { return this.data.rows; },
-            word(at) { return this.data.words[at] || ''; },
-            q: '',
-            shown: 12,
+            first: JSON.parse(document.getElementById('template-list').textContent),
+            chosen: @js($selectedCard),
+            searchUrl: @js($templateSearchUrl),
             previewUrl: @js($templatePreviewUrl),
             digits(value) { return String(value ?? '').replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); },
             thumb(id) { return this.previewUrl.replace('__ID__', id); },
-            matches() {
-                const needle = this.q.trim().toLowerCase();
-                if (! needle) { return this.all; }
-                return this.all.filter(row =>
-                    row.n.toLowerCase().includes(needle)
-                    || this.word(row.g).toLowerCase().includes(needle));
+            rows: [], total: 0, hasMore: false, page: 1, q: '', busy: false, timer: null,
+
+            /* فهرست از سرور می‌آید، نه از خودِ صفحه: کاتالوگ ده‌ها هزار مدل
+               دارد و فرستادنِ همه‌اش یعنی صفحه‌ای که با هر مدلِ تازه سنگین‌تر
+               می‌شود. صفحه یک بسته می‌گیرد و بقیه را با جستجو می‌خواهد. */
+            boot() {
+                this.rows = this.first.rows;
+                this.total = this.first.total;
+                this.hasMore = this.first.more;
             },
-            page() {
-                const rows = this.matches();
-                const take = rows.slice(0, this.shown);
-                // مدلِ انتخاب‌شده هرگز از فهرست بیرون نمی‌افتد، وگرنه فرم خالی
-                // فرستاده می‌شود و کاربر نمی‌بیند چه چیزی انتخاب کرده
-                if (this.template && !take.some(row => row.i === this.template)) {
-                    const chosen = this.all.find(row => row.i === this.template);
-                    if (chosen) { return [chosen, ...take]; }
+            find(reset) {
+                if (reset) { this.page = 1; }
+                this.busy = true;
+
+                const url = this.searchUrl + '?q=' + encodeURIComponent(this.q) + '&page=' + this.page;
+
+                fetch(url, { headers: { 'Accept': 'application/json' } })
+                    .then(response => response.ok ? response.json() : null)
+                    .then(data => {
+                        if (! data) { return; }
+                        this.rows = this.page === 1 ? data.rows : this.rows.concat(data.rows);
+                        this.total = data.total;
+                        this.hasMore = data.more;
+                    })
+                    .finally(() => { this.busy = false; });
+            },
+            search() {
+                clearTimeout(this.timer);
+                this.timer = setTimeout(() => this.find(true), 300);
+            },
+            older() { this.page += 1; this.find(false); },
+
+            page_() { return this.rows; },
+            // مدلِ انتخاب‌شده همیشه در فهرست هست، حتی وقتی جستجو کنارش گذاشته
+            cards() {
+                if (this.chosen && ! this.rows.some(row => row.i === this.chosen.i)) {
+                    return [this.chosen, ...this.rows];
                 }
-                return take;
+                return this.rows;
             },
-            more() { return this.matches().length > this.shown; },
+            more() { return this.hasMore; },
 
             params: { name: '', description: '', schema: {}, defaults: {} },
             paramsUrl: @js($templateParamsUrl),
@@ -48,7 +68,7 @@
                     .then(data => { this.params = data || { name: '', description: '', schema: {}, defaults: {} }; })
                     .catch(() => { this.params = { name: '', description: '', schema: {}, defaults: {} }; });
             },
-        }" x-effect="template, loadParams()" class="space-y-6">
+        }" x-init="boot()" x-effect="template, loadParams()" class="space-y-6">
         @csrf
 
         {{-- گام یک: انتخاب مدل از کتابخانه --}}
@@ -62,16 +82,17 @@
 
             <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <p class="text-xs text-stone-500">
-                    <span x-text="digits(matches().length)"></span> مدل در کتابخانه
+                    <span x-text="digits(total)"></span> مدل در کتابخانه
                 </p>
 
                 <label class="sr-only" for="template-search">جستجوی مدل</label>
-                <input id="template-search" type="search" x-model="q" placeholder="جستجوی نام مدل…"
+                <input id="template-search" type="search" x-model="q" @input="search()"
+                    placeholder="جستجوی نام مدل…"
                     class="w-56 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs shadow-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-200">
             </div>
 
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <template x-for="row in page()" :key="row.i">
+                <template x-for="row in cards()" :key="row.i">
                     <label class="cursor-pointer">
                         <input type="radio" name="pattern_template_id" x-bind:value="row.i" class="peer sr-only"
                             x-model.number="template" required>
@@ -83,7 +104,7 @@
                             </div>
 
                             <p class="mt-3 font-bold text-stone-900" x-text="row.n"></p>
-                            <p class="text-xs text-brand-600" x-show="word(row.g)" x-text="word(row.g)"></p>
+                            <p class="text-xs text-brand-600" x-show="row.g" x-text="row.g"></p>
                         </div>
                     </label>
                 </template>
@@ -96,17 +117,17 @@
                 x-text="params.description"></p>
 
             <div class="mt-4 flex flex-wrap items-center gap-3">
-                <button type="button" x-show="more()" x-cloak @click="shown += 24"
-                    class="rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-600 transition hover:border-brand-400 hover:text-brand-700">
+                <button type="button" x-show="more()" x-cloak @click="older()" x-bind:disabled="busy"
+                    class="rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-600 transition hover:border-brand-400 hover:text-brand-700 disabled:opacity-50">
                     مدل‌های بیشتر
                 </button>
 
                 <p x-show="more()" x-cloak class="text-xs text-stone-400">
-                    <span x-text="digits(matches().length - page().length)"></span>
+                    <span x-text="digits(total - rows.length)"></span>
                     مدل دیگر هم هست؛ با جستجوی نام زودتر پیدا می‌شود.
                 </p>
 
-                <p x-show="q && matches().length === 0" x-cloak class="text-xs font-medium text-amber-700">
+                <p x-show="q && ! busy && rows.length === 0" x-cloak class="text-xs font-medium text-amber-700">
                     هیچ مدلی با این نام پیدا نشد.
                 </p>
             </div>

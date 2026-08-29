@@ -108,6 +108,44 @@ class PatternTest extends TestCase
         $this->assertSame(1, substr_count($html, 'پارامترهای مدل انتخاب‌شده'));
     }
 
+    /**
+     * فهرست الگوها بسته‌بسته از سرور می‌آید، نه یک‌جا در صفحه.
+     *
+     * تا وقتی همهٔ فهرست در خودِ صفحه بود، وزنِ صفحه با تعدادِ مدل‌ها بالا
+     * می‌رفت: هشتصد کیلوبایت با هفت هزار مدل و دو و نیم مگابایت با هفده هزار.
+     * حالا صفحه یک بستهٔ ثابت می‌گیرد و بقیه را با جستجو می‌خواهد.
+     */
+    public function test_the_template_list_comes_in_pages_from_the_server(): void
+    {
+        $this->actingAsWorkshopUser();
+
+        for ($i = 0; $i < 60; $i++) {
+            PatternTemplate::factory()->generator('skirt_a_line')->create([
+                'name_fa' => $i < 3 ? 'دامن ویژه '.$i : 'مدل شماره '.$i,
+            ]);
+        }
+
+        $html = $this->get(route('patterns.create'))->assertOk()->getContent();
+
+        // فقط بستهٔ اول در صفحه است، نه هر شصت مدل
+        $this->assertStringNotContainsString('مدل شماره 59', $html);
+
+        $first = $this->getJson(route('patterns.templates.search'))->assertOk()->json();
+        $this->assertSame(60, $first['total']);
+        $this->assertCount(24, $first['rows']);
+        $this->assertTrue($first['more']);
+
+        // بستهٔ دوم ادامهٔ همان فهرست است
+        $second = $this->getJson(route('patterns.templates.search', ['page' => 2]))->assertOk()->json();
+        $this->assertCount(24, $second['rows']);
+        $this->assertNotSame($first['rows'][0]['i'], $second['rows'][0]['i']);
+
+        // جستجو روی *همهٔ* مدل‌ها کار می‌کند، نه فقط بستهٔ نشان‌داده‌شده
+        $found = $this->getJson(route('patterns.templates.search', ['q' => 'دامن ویژه']))->assertOk()->json();
+        $this->assertSame(3, $found['total']);
+        $this->assertFalse($found['more']);
+    }
+
     public function test_a_template_preview_is_served_on_its_own(): void
     {
         $this->actingAsWorkshopUser();
