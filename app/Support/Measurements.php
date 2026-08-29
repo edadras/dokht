@@ -98,21 +98,38 @@ class Measurements
     }
 
     /**
+     * تخمین‌هایی که برای بدنِ مردانه فرق می‌کنند.
+     *
+     * «زیر سینه» تنها اندازه‌ای است که تخمینش برای زن و مرد یکی نیست، و اثرش هم
+     * کوچک نیست: اختلافِ دور سینه با زیرسینه همان چیزی است که ساسون سینه از آن
+     * درمی‌آید و برجستگی سینهٔ مانکن هم از همان. با فرمولِ زنانه، پیراهنِ هر
+     * آقایی یک ساسون سه‌سانتی می‌گرفت و مانکنش هم سینه پیدا می‌کرد.
+     */
+    protected const MALE_DERIVE = [
+        'under_bust' => 'bust-5',
+    ];
+
+    /**
      * اندازه‌های خالی را از روی اندازه‌های ضروری تخمین می‌زند.
      *
      * این کار باعث می‌شود کاربر مبتدی بتواند تنها با شش عدد یک الگوی کامل بسازد.
+     *
+     * @param  string|null  $shape  جنسیت مشتری، اگر معلوم باشد
      */
-    public static function complete(array $values): array
+    public static function complete(array $values, ?string $shape = null): array
     {
         $values = static::clean($values);
+        $overrides = $shape === 'male' ? static::MALE_DERIVE : [];
 
         foreach (static::FIELDS as $key => $def) {
             if (isset($values[$key])) {
                 continue;
             }
 
-            if (isset($def['derive'])) {
-                $derived = static::evaluateDerive($def['derive'], $values);
+            $formula = $overrides[$key] ?? $def['derive'] ?? null;
+
+            if ($formula !== null) {
+                $derived = static::evaluateDerive($formula, $values);
 
                 if ($derived !== null) {
                     $values[$key] = round(max($def['min'], min($def['max'], $derived)), 1);

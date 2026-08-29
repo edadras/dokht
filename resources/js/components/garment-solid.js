@@ -11,20 +11,28 @@
  * نمای جلو و پشت و پهلو را ساختند. پس آنچه روی مانکن دیده می‌شود نمی‌تواند با
  * نمای دوبعدی نخواند.
  *
- * سه چیز باعث می‌شود این «لولهٔ رنگی» نباشد بلکه لباس دیده شود:
+ * چند چیز باعث می‌شود این «لولهٔ رنگی» نباشد بلکه لباس دیده شود:
  *
  *   ۱) مانکن یک آدمِ کامل است، نه چند بیضیِ روی هم: سر و گردن و سرشانهٔ شیب‌دار،
- *      دو دستِ باریک‌شونده و دو پای جدا — همه از اندازه‌های همان مشتری.
+ *      دو دستِ باریک‌شونده و دو پای جدا — همه از اندازه‌های همان مشتری. و قرینه
+ *      هم نیست: سینه جلو می‌زند و باسن پشت (mannequin.js).
  *
- *   ۲) پارچه چین می‌خورد، و چینش ساختگی نیست: هر جا لباس از بدن گشادتر است،
+ *   ۲) لباس شکلِ همان بدن را می‌گیرد. دورِ هر تراز از الگو می‌آید و دست‌نخورده
+ *      می‌ماند، ولی جای پارچه جابه‌جا می‌شود تا برجستگی‌های بدن از زیرش پیدا
+ *      باشند — و هرچه لباس تنگ‌تر، بیشتر.
+ *
+ *   ۳) لباس از جای درستش آویزان است: پیراهن از سرشانه، شلوار از کمر. و شلوار
+ *      دو پاچه دارد، نه یک لوله.
+ *
+ *   ۴) پارچه چین می‌خورد، و چینش ساختگی نیست: هر جا لباس از بدن گشادتر است،
  *      آن پارچهٔ اضافه باید جایی برود. دامنهٔ چین از همان اختلاف درمی‌آید.
  *      روی سرشانه صفر است (آن‌جا لباس آویزان و کشیده است) و رو به پایین باز
  *      می‌شود، همان‌طور که پارچه می‌افتد.
  *
- *   ۳) نورپردازی و سایهٔ زمین، تا حجم دیده شود. بدون این هر چیزی تخت است.
+ *   ۵) نورپردازی و سایهٔ زمین، تا حجم دیده شود. بدون این هر چیزی تخت است.
  */
 
-import { buildBody, perimeter, sampleRing } from '../lib/mannequin';
+import { buildBody, girthOf, sampleRing } from '../lib/mannequin.js';
 
 let THREE = null;
 
@@ -42,16 +50,140 @@ const contextFor = (element) => {
 /* سانتی‌متر به متر */
 const CM = 0.01;
 
-/* چند ضلعی در هر حلقه */
-const SIDES = 64;
+/*
+ * چند ضلعی در هر حلقه.
+ *
+ * این عدد باید چند برابرِ شمارِ چین‌ها باشد. با شصت‌وچهار ضلع و پانزده چین، هر
+ * چین چهار ضلع می‌گرفت و به‌جای پارچه، راه‌راهِ مخملِ کبریتی درمی‌آمد.
+ */
+const SIDES = 96;
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/* کمترین فاصلهٔ پارچه از پوست؛ کمتر از این، بدن از لباس بیرون می‌زند */
+const SKIN_GAP = 0.35;
 
 const track = (ctx, item) => {
     ctx.disposables.push(item);
 
     return item;
 };
+
+/** حلقه‌ای دایره‌ای — دست و پا و آستین که جلو و پشتشان فرقی ندارد. */
+const round = (y, r, x = 0) => ({ y, rx: r, front: r, back: r, x });
+
+/** یک مقدار روی زنجیرهٔ دست یا پا (شعاع یا مرکز)، در ارتفاع دلخواه. */
+export const chainAt = (rows, y, key = 'r') => {
+    if (rows.length === 0) {
+        return 0;
+    }
+
+    if (y <= rows[0].y) {
+        return rows[0][key] || 0;
+    }
+
+    for (let i = 1; i < rows.length; i++) {
+        if (y <= rows[i].y) {
+            const span = rows[i].y - rows[i - 1].y || 1;
+
+            return lerp(rows[i - 1][key] || 0, rows[i][key] || 0, (y - rows[i - 1].y) / span);
+        }
+    }
+
+    return rows[rows.length - 1][key] || 0;
+};
+
+/**
+ * پوستِ بدن در هر ارتفاع — بالای فاق تنه، پایین‌ترش دو پا.
+ *
+ * پایینِ فاق تنه‌ای در کار نیست، و اگر همان حلقهٔ فاق را ادامه بدهیم دامن و
+ * شلوار روی یک استوانهٔ پهنِ نبوده می‌نشینند. پس آن‌جا پوشش از دو پا حساب
+ * می‌شود: نیم‌پهنا تا لبهٔ بیرونیِ پا و عمق به اندازهٔ خودِ پا.
+ */
+export const bodyEnvelope = (body, y) => {
+    if (y <= body.level.crotch) {
+        return sampleRing(body.torso, y);
+    }
+
+    const local = y - body.level.crotch;
+    const r = chainAt(body.leg, local);
+
+    return { y, rx: chainAt(body.leg, local, 'x') + r, front: r, back: r };
+};
+
+/**
+ * مفصلِ شانه: از کجا و از چه ارتفاعی دست شروع می‌شود.
+ */
+export const armJoint = (body) => ({
+    /*
+     * دست بیرونِ تنه آویزان است، نه تویش.
+     *
+     * عرض سرشانه تا نوکِ شانه اندازه گرفته می‌شود و بازو از همان‌جا به بیرون
+     * می‌افتد؛ برای همین آدم از روی بازوهایش پهن‌تر است تا از روی سرشانه‌اش.
+     * با ضریبِ قبلی مرکزِ بازو تا وسطِ قفسهٔ سینه تو می‌رفت و نصفِ دست داخلِ
+     * تنه گم می‌شد — و لباس هم رویش می‌افتاد و شنل می‌شد.
+     */
+    x: body.shoulderRing.rx - body.arm[0].r * 0.35,
+    y: body.shoulderRing.y + body.arm[0].r * 0.5,
+});
+
+/**
+ * مرکزِ دست در هر نقطه از طولش.
+ *
+ * دستِ آویزان کاملاً عمودی نیست، کمی از بدن فاصله می‌گیرد. اول این را با
+ * چرخاندنِ کلِ لوله ساختم و دست پانزده سانت جابه‌جا شد: مرکزِ چرخش در سه‌بعدی
+ * بالای سر است، نه سرِ شانه. حالا هر حلقه مرکزِ خودش را دارد.
+ */
+export const armCentre = (body, along) => armJoint(body).x + Math.max(0, along) * 0.085;
+
+/**
+ * حلقه‌های لباس را رقیق و صاف می‌کند.
+ *
+ * سرور هر هشت میلی‌متر یک حلقه می‌دهد و اعدادش هم گرد شده‌اند. آن ریزلرزشِ صدم
+ * سانتی روی سطح دیده نمی‌شد اگر چین نبود؛ با چین، دو الگوی نزدیک‌به‌هم روی هم
+ * می‌افتند و موج‌های تداخلی می‌سازند. پس فاصله‌ها بازتر می‌شود و هر حلقه با
+ * همسایه‌هایش میانگین می‌گیرد.
+ */
+export const smooth = (rings, step = 1.6) => {
+    let last = -Infinity;
+
+    const kept = rings.filter((ring, i) => {
+        if (i === rings.length - 1 || ring.y - last >= step) {
+            last = ring.y;
+
+            return true;
+        }
+
+        return false;
+    });
+
+    if (kept.length < 3) {
+        return kept;
+    }
+
+    return kept.map((ring, i) => {
+        if (i === 0 || i === kept.length - 1) {
+            return ring;
+        }
+
+        const a = kept[i - 1];
+        const b = kept[i + 1];
+        const mix = (key) => (a[key] + ring[key] * 2 + b[key]) / 4;
+
+        return { y: ring.y, rx: mix('rx'), front: mix('front'), back: mix('back') };
+    });
+};
+
+/**
+ * عمقِ یک حلقه در زاویهٔ دلخواه.
+ *
+ * نیمهٔ جلو و نیمهٔ پشت دو بیضیِ جداگانه‌اند که در پهلو به هم می‌رسند. همان‌جا
+ * هر دو نیمه z=0 دارند و مماسشان هم‌راستاست، پس درزی دیده نمی‌شود — ولی برخلافِ
+ * یک بیضیِ ساده، سینه می‌تواند جلو بیاید بی‌آنکه پشت هم باد کند.
+ */
+export const depthAt = (ring, angle) => (Math.sin(angle) >= 0 ? ring.front : ring.back);
 
 /**
  * یک سطحِ لوله‌ای از روی حلقه‌ها.
@@ -61,7 +193,7 @@ const track = (ctx, item) => {
  * نرمالِ بیضیِ ساده روی سطحِ چین‌خورده غلط است و همه‌چیز تخت دیده می‌شود.
  */
 const tube = (rings, options = {}) => {
-    const rows = rings.filter((ring) => ring.rx > 0.02 && ring.rz > 0.02);
+    const rows = rings.filter((ring) => ring.rx > 0.02 && ring.front > 0.02 && ring.back > 0.02);
 
     if (rows.length < 2) {
         return null;
@@ -83,9 +215,9 @@ const tube = (rings, options = {}) => {
             const push = wave ? wave(angle, t, ring) : 0;
 
             positions.push(
-                (ring.rx + push) * CM * Math.cos(angle),
+                ((ring.x || 0) + (ring.rx + push) * Math.cos(angle)) * CM,
                 -(ring.y + yOffset) * CM,
-                (ring.rz + push) * CM * Math.sin(angle),
+                (depthAt(ring, angle) + push) * CM * Math.sin(angle),
             );
         }
     });
@@ -110,7 +242,7 @@ const tube = (rings, options = {}) => {
 
         const centre = positions.length / 3;
 
-        positions.push(0, -(rows[row].y + yOffset) * CM, 0);
+        positions.push((rows[row].x || 0) * CM, -(rows[row].y + yOffset) * CM, 0);
 
         for (let i = 0; i < SIDES; i++) {
             const a = row * perRow + i;
@@ -251,7 +383,7 @@ export default (initial = {}) => ({
         }));
         ctx.skin = skin;
 
-        const add = (geometry, x = 0, tilt = 0) => {
+        const add = (geometry) => {
             if (! geometry) {
                 return;
             }
@@ -260,8 +392,6 @@ export default (initial = {}) => ({
             const mesh = new THREE.Mesh(geometry, skin);
             mesh.castShadow = true;
             mesh.receiveShadow = true;
-            mesh.position.x = x * CM;
-            mesh.rotation.z = tilt;
             group.add(mesh);
         };
 
@@ -275,18 +405,26 @@ export default (initial = {}) => ({
         headMesh.castShadow = true;
         group.add(headMesh);
 
-        const shoulder = body.shoulderRing;
-        const armX = shoulder.rx - body.arm[0].r * 0.8;
-        const armTop = shoulder.y + body.arm[0].r * 0.5;
+        const joint = armJoint(body);
 
         [-1, 1].forEach((side) => {
-            const rings = body.arm.map((row) => ({ y: row.y, rx: row.r, rz: row.r }));
-            add(tube(rings, { yOffset: armTop }), side * armX, side * 0.085);
+            /*
+             * سرِ شانه گِرد است. بی این حلقه، بالای بازو یک صفحهٔ تخت می‌ماند که
+             * از کنارِ تنه بیرون می‌زند و مثل تختهٔ چوب دیده می‌شود.
+             */
+            const ball = body.arm[0].r;
+            const rings = [
+                round(-ball * 0.85, ball * 0.55, side * (joint.x - ball * 0.35)),
+                round(-ball * 0.45, ball * 0.86, side * (joint.x - ball * 0.12)),
+                ...body.arm.map((row) => round(row.y, row.r, side * armCentre(body, row.y))),
+            ];
+
+            add(tube(rings, { yOffset: joint.y }));
         });
 
         [-1, 1].forEach((side) => {
-            const rings = body.leg.map((row) => ({ y: row.y, rx: row.r, rz: row.r }));
-            add(tube(rings, { yOffset: body.level.crotch }), side * body.legGap, side * -0.012);
+            const rings = body.leg.map((row) => round(row.y, row.r, side * row.x));
+            add(tube(rings, { yOffset: body.level.crotch }));
         });
     },
 
@@ -308,8 +446,13 @@ export default (initial = {}) => ({
         }));
         ctx.fabric = material;
 
-        // لباس از سرشانه شروع می‌شود، یا از کمر اگر بالاتنه نداشته باشد
-        const top = shell.shoulder > 1 ? body.level.shoulder : body.level.waist;
+        /*
+         * لباس کجای بدن می‌نشیند؟ سرور می‌گوید — نامِ ترازِ بدن و فاصله‌اش از
+         * بالای لباس. پیراهن روی سرشانه، شلوار روی کمر، تاپِ بی‌بند روی سینه.
+         */
+        const anchor = shell.anchor || { level: shell.shoulder > 1 ? 'shoulder' : 'waist', offset: 0 };
+        const top = (body.level[anchor.level] ?? body.level.waist) - (anchor.offset || 0);
+        const hangs = anchor.level === 'shoulder';
 
         /*
          * چینِ پارچه.
@@ -335,58 +478,130 @@ export default (initial = {}) => ({
         const bustRel = body.level.bust - top;
         const skinGap = 1.1;
 
-        let rings = shell.rings.map((ring) => {
-            if (bustRel <= 1 || ring.y >= bustRel) {
-                return ring;
+        /*
+         * این پیوند باید کوتاه باشد، به‌بلندیِ حلقهٔ آستین — نه تا خط سینه.
+         *
+         * پهنای سرشانه تا نوکِ شانه است و دست از همان‌جا آویزان می‌شود. اگر لباس
+         * تا خط سینه همان پهنا را نگه دارد، دست کامل تویش می‌ماند و لباس مثل
+         * شنل روی شانه‌ها می‌افتد. در واقعیت، پارچه چند سانت پایین‌تر از سرشانه
+         * به اندازهٔ خودش برمی‌گردد و دست از حلقهٔ آستین بیرون می‌آید.
+         */
+        const armholeRel = Math.max(2, bustRel * 0.32);
+
+        /*
+         * حلقهٔ کاغذ فقط یک دور است: پهنا و ضخامت، هر دو قرینه. ولی بدنی که
+         * زیرش است قرینه نیست، و لباس شکلِ همان بدن را می‌گیرد — سینه پارچه را
+         * جلو می‌برد و باسن پشت را. پس همان دور را نگه می‌داریم و فقط جابه‌جایش
+         * می‌کنیم: هرچه به جلو رفت، از پشت کم می‌شود.
+         *
+         * چقدر پیروی کند؟ به‌اندازهٔ تنگی‌اش. لباسِ چسبان تمامِ برجستگی را نشان
+         * می‌دهد؛ مانتوی گشاد آویزان است و کمتر.
+         */
+        let rings = smooth(shell.rings.map((ring) => {
+            const skin = bodyEnvelope(body, ring.y + top);
+            const skinGirth = girthOf(skin);
+            const cloth = girthOf({ rx: ring.rx, front: ring.rz, back: ring.rz });
+            const excess = skinGirth <= 1 ? 0 : clamp(cloth / skinGirth - 1, 0, 1.6);
+            const follow = clamp(1.1 - excess * 1.5, 0.2, 1);
+            const lean = clamp((skin.front - skin.back) / 2 * follow, -ring.rz * 0.55, ring.rz * 0.55);
+
+            let out = { y: ring.y, rx: ring.rx, front: ring.rz + lean, back: ring.rz - lean };
+
+            if (bustRel > 1 && ring.y < armholeRel) {
+                const t = clamp(ring.y / armholeRel, 0, 1);
+
+                out = {
+                    y: ring.y,
+                    rx: lerp(skin.rx + skinGap, out.rx, t),
+                    front: lerp(skin.front + skinGap, out.front, t),
+                    back: lerp(skin.back + skinGap, out.back, t),
+                };
             }
 
-            const skin = sampleRing(body.torso, ring.y + top);
-            const t = clamp(ring.y / bustRel, 0, 1);
-
+            // پارچه بیرونِ پوست است، همیشه
             return {
-                y: ring.y,
-                rx: (skin.rx + skinGap) + (ring.rx - (skin.rx + skinGap)) * t,
-                rz: (skin.rz + skinGap) + (ring.rz - (skin.rz + skinGap)) * t,
+                y: out.y,
+                rx: Math.max(out.rx, skin.rx + SKIN_GAP),
+                front: Math.max(out.front, skin.front + SKIN_GAP),
+                back: Math.max(out.back, skin.back + SKIN_GAP),
             };
-        });
+        }));
 
-        if (shell.open_top && bustRel > 1) {
-            // دهانهٔ یقه: یک حلقهٔ کوچک دور گردن، بالاتر از سرشانه
-            const neckDrop = body.level.shoulder - body.level.neck;
-            const neck = body.neckRadius + 1.4;
+        if (hangs && bustRel > 1) {
+            /*
+             * سرشانه یک پله نیست.
+             *
+             * لباسی که از سرشانه آویزان است، از دهانهٔ یقه تا نوکِ شانه شیب
+             * دارد — همان شیبی که خودِ شانه دارد. اگر فقط یک حلقهٔ گردن بالای
+             * حلقهٔ شانه بگذاریم، میانشان یک مخروطِ تیز درمی‌آید که مثل چوب‌لباسی
+             * دیده می‌شود. پس چند تراز از خودِ بدن برداشته می‌شود و پارچه روی
+             * همان‌ها می‌خوابد.
+             */
+            const neckY = body.level.neck;
+            const drop = body.level.shoulder - neckY;
 
-            rings = [{ y: -neckDrop * 0.55, rx: neck, rz: neck * 0.92 }, ...rings];
+            /*
+             * دهانهٔ یقه باید دورِ گردن را بگیرد. اگر کمی گشادتر از گردن باشد،
+             * از همان درز، داخلِ لباس دیده می‌شود — یک مثلثِ سیاه کنارِ گردن.
+             */
+            const collar = sampleRing(body.torso, neckY);
+            const hug = 0.5;
+
+            const slope = [0, 0.34, 0.62, 0.84].map((t) => {
+                const y = neckY + drop * t;
+                const skin = sampleRing(body.torso, y);
+                const ease = lerp(hug, skinGap, t);
+
+                return {
+                    y: y - top,
+                    rx: lerp(collar.rx + hug, skin.rx + ease, t),
+                    front: lerp(collar.front + hug, skin.front + ease, t),
+                    back: lerp(collar.back + hug, skin.back + ease, t),
+                };
+            });
+
+            rings = [...slope, ...rings];
         }
 
         const excessAt = (ring) => {
-            const skinRing = sampleRing(body.torso, ring.y + top);
-            const bodyGirth = perimeter(skinRing.rx, skinRing.rz);
-            const cloth = perimeter(ring.rx, ring.rz);
+            const skinGirth = girthOf(bodyEnvelope(body, ring.y + top));
 
-            return bodyGirth <= 1 ? 0 : clamp(cloth / bodyGirth - 1, 0, 1.6);
+            return skinGirth <= 1 ? 0 : clamp(girthOf(ring) / skinGirth - 1, 0, 1.6);
         };
 
         const tail = rings.length ? rings[rings.length - 1] : null;
-        const folds = Math.round(clamp(6 + (tail ? excessAt(tail) : 0) * 7, 6, 15));
+        const folds = Math.round(clamp(5 + (tail ? excessAt(tail) : 0) * 5, 5, 11));
 
         const wave = (angle, t, ring) => {
             const excess = excessAt(ring);
 
-            if (excess < 0.05) {
+            if (excess < 0.08) {
                 return 0;
             }
 
             const fall = Math.pow(clamp(t, 0, 1), 1.3);
-            const depth = Math.min(ring.rx * 0.2, excess * ring.rx * 0.55) * fall;
+            const depth = Math.min(ring.rx * 0.16, (excess - 0.08) * ring.rx * 0.5) * fall;
 
             return depth * Math.cos(folds * angle + t * 0.8);
         };
 
-        const geometry = tube(rings, {
+        /*
+         * شلوار دو پاچه دارد، و این را نمی‌شود از نمای تخت فهمید: نیم‌رخِ
+         * شلوار از بیرونِ یک پا تا بیرونِ پای دیگر است، درست مثل دامن. اگر
+         * همان را بچرخانیم، شلوار دامن می‌شود — و شد.
+         *
+         * پس از خط فاق به پایین، تنه تمام می‌شود و دو پاچه جدا ساخته می‌شود.
+         * دورِ هر پاچه نصفِ دورِ همان تراز است و مرکزش روی مرکزِ پای مانکن.
+         */
+        const crotchRel = body.level.crotch - top;
+        const split = shell.legs && rings.some((ring) => ring.y > crotchRel + 3);
+        const trunk = split ? rings.filter((ring) => ring.y <= crotchRel) : rings;
+
+        const geometry = tube(trunk, {
             yOffset: top,
             wave,
-            capTop: ! shell.open_top,
-            capBottom: true,
+            capTop: false,
+            capBottom: ! split,
         });
 
         if (geometry) {
@@ -397,7 +612,49 @@ export default (initial = {}) => ({
             group.add(mesh);
         }
 
+        if (split) {
+            this.addLegs(group, rings, crotchRel, top, body, material);
+        }
+
         this.addSleeves(group, shell, body, material);
+    },
+
+    /** پاچه‌ها: هرکدام نصفِ دورِ لباس، روی مسیرِ پای خودش. */
+    addLegs(group, rings, crotchRel, top, body, material) {
+        const ctx = contextFor(this.$root);
+
+        /*
+         * پاچه چند سانت بالاتر از فاق شروع می‌شود تا زیر تنه برود، وگرنه
+         * میانشان یک شکاف می‌ماند. پایینِ تنه هم بسته نیست، پس درزی دیده
+         * نمی‌شود.
+         */
+        const rows = rings.filter((ring) => ring.y > crotchRel - 4);
+
+        if (rows.length < 2) {
+            return;
+        }
+
+        [-1, 1].forEach((side) => {
+            const path = rows.map((ring) => {
+                const local = Math.max(0, ring.y + top - body.level.crotch);
+                const skin = chainAt(body.leg, local);
+                const r = Math.max(girthOf(ring) / 2 / (Math.PI * 2), skin + SKIN_GAP);
+
+                return round(ring.y, r, side * chainAt(body.leg, local, 'x'));
+            });
+
+            const geometry = tube(path, { yOffset: top, capTop: false, capBottom: true });
+
+            if (! geometry) {
+                return;
+            }
+
+            track(ctx, geometry);
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            group.add(mesh);
+        });
     },
 
     /** آستین: لوله‌ای روی مسیرِ دست، با دور بازو و دم‌آستینِ خودِ الگو. */
@@ -417,25 +674,46 @@ export default (initial = {}) => ({
         const radius = (half) => half / Math.PI;
         const shoulder = body.shoulderRing;
         const bicep = Math.max(radius(sleeve.bicep), body.arm[0].r * 1.05);
-        const cuff = Math.max(radius(sleeve.cuff), body.arm[3].r * 1.06);
-        const armX = shoulder.rx - body.arm[0].r * 0.8;
-        const armTop = shoulder.y + body.arm[0].r * 0.5;
+
+        /*
+         * دم‌آستین جایی از دست را می‌گیرد که آستین آن‌جا تمام می‌شود — آستین
+         * کوتاه روی بازو و آستین بلند روی مچ — پس شعاعِ کفِ آن از همان نقطهٔ
+         * دست خوانده می‌شود، نه از یک حلقهٔ ثابت.
+         */
+        const cuff = Math.max(radius(sleeve.cuff), chainAt(body.arm, sleeve.length) * 1.06);
+        const joint = armJoint(body);
 
         [-1, 1].forEach((side) => {
             const mid = bicep + (cuff - bicep) * 0.45;
 
             /*
-             * سرِ آستین چند سانت بالاتر از مفصل شروع می‌شود و کمی گشادتر است،
-             * تا زیر پوستهٔ تنه برود. وگرنه میان تنه و آستین یک شکاف می‌ماند و
-             * آستین مثل لولهٔ جدا آویزان دیده می‌شود.
+             * سرِ آستین.
+             *
+             * آستین از حلقهٔ آستین بیرون می‌آید، نه از هوا. پس بالاترین حلقه‌اش
+             * بالاتر از مفصل و کشیده به سمتِ مرکزِ بدن گذاشته می‌شود تا کاملاً
+             * زیر پوستهٔ تنه پنهان شود. پیش از این، لولهٔ آستین از کنارِ تنه
+             * شروع می‌شد و دهانهٔ بازش دیده می‌شد — مثل لوله‌ای که کنارِ آدم
+             * آویزان است.
+             *
+             * ارتفاعش هم باید داخلِ خودِ آستین بماند: آستینِ حلقه‌ای چند سانت
+             * بیشتر نیست و با عددِ ثابت، حلقهٔ سرشانه از دم‌آستین پایین‌تر
+             * می‌افتاد و لوله روی خودش تا می‌خورد.
              */
+            const head = Math.min(body.arm[0].r * 0.9, sleeve.length * 0.3);
+            const at = (along, r, pull = 0) => round(
+                along,
+                r,
+                side * lerp(armCentre(body, along), shoulder.rx * 0.45, pull),
+            );
+
             const geometry = tube([
-                { y: body.arm[0].r * 0.15, rx: bicep * 1.1, rz: bicep * 1.1 },
-                { y: body.arm[0].r * 0.9, rx: bicep * 1.02, rz: bicep * 1.02 },
-                { y: sleeve.length * 0.45, rx: mid, rz: mid },
-                { y: sleeve.length * 0.8, rx: cuff * 1.05, rz: cuff * 1.05 },
-                { y: sleeve.length, rx: cuff, rz: cuff },
-            ], { yOffset: armTop, capTop: false, capBottom: false });
+                at(-body.arm[0].r * 1.1, bicep * 0.86, 0.85),
+                at(head * 0.17, bicep * 1.08, 0.22),
+                at(head, bicep * 1.02),
+                at(sleeve.length * 0.45, mid),
+                at(sleeve.length * 0.8, cuff * 1.05),
+                at(sleeve.length, cuff),
+            ], { yOffset: joint.y, capTop: false, capBottom: true });
 
             if (! geometry) {
                 return;
@@ -444,8 +722,7 @@ export default (initial = {}) => ({
             track(ctx, geometry);
             const mesh = new THREE.Mesh(geometry, material);
             mesh.castShadow = true;
-            mesh.position.x = side * armX * CM;
-            mesh.rotation.z = side * 0.085;
+            mesh.receiveShadow = true;
             group.add(mesh);
         });
     },

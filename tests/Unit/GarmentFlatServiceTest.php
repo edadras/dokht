@@ -301,6 +301,39 @@ class GarmentFlatServiceTest extends TestCase
         );
     }
 
+    /**
+     * هر لباسی از جای خودش آویزان است.
+     *
+     * پیراهن و کت وزنشان روی سرشانه است، شلوار و دامن روی کمر. پیش از این
+     * فقط «پهنای بالای لباس» را نگاه می‌کردیم و شلوار هم بالایی داشت — پس از
+     * سرشانه آویزان می‌شد و روی مانکن دقیقاً مثل دامنِ بلند درمی‌آمد.
+     */
+    public function test_each_garment_reports_where_it_hangs_from(): void
+    {
+        $body = Measurements::fromSize('40');
+
+        foreach (['dress', 'blazer', 'shirt_classic'] as $key) {
+            $shell = $this->flats->shell($this->pieces($key, $body), $body);
+
+            $this->assertSame('shoulder', $shell['anchor']['level'], $key.' باید از سرشانه آویزان باشد.');
+        }
+
+        foreach (['pants_straight', 'skirt_a_line'] as $key) {
+            $shell = $this->flats->shell($this->pieces($key, $body), $body);
+
+            $this->assertSame('waist', $shell['anchor']['level'], $key.' باید روی کمر بنشیند.');
+        }
+    }
+
+    /** شلوار دو پاچه دارد و باید بگوید، وگرنه روی مانکن دامن می‌شود. */
+    public function test_trousers_are_marked_as_having_two_legs(): void
+    {
+        $body = Measurements::fromSize('40');
+
+        $this->assertTrue($this->flats->shell($this->pieces('pants_straight', $body), $body)['legs']);
+        $this->assertFalse($this->flats->shell($this->pieces('skirt_a_line', $body), $body)['legs']);
+    }
+
     /** مدلی که پوسته نمی‌گیرد باید بگوید، نه اینکه چیزی الکی بسازد. */
     public function test_a_model_without_a_shell_says_so_and_still_returns_a_mannequin(): void
     {

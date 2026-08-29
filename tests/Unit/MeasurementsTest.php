@@ -53,6 +53,40 @@ class MeasurementsTest extends TestCase
         $this->assertLessThan($completed['outseam'], $completed['inseam']);
     }
 
+    /**
+     * زیرسینهٔ حدس‌زده‌شده برای مرد و زن یکی نیست.
+     *
+     * اختلاف دور سینه با زیرسینه همان چیزی است که ساسون سینه از آن درمی‌آید و
+     * برجستگیِ سینهٔ مانکن هم از همان. با فرمولِ زنانه، پیراهنِ هر آقایی یک
+     * ساسون سه‌سانتی می‌گرفت و مانکنش هم سینه پیدا می‌کرد.
+     */
+    public function test_a_flat_chest_is_estimated_flat(): void
+    {
+        $base = ['height' => 178, 'bust' => 100, 'waist' => 88, 'hip' => 98];
+
+        $woman = Measurements::complete($base);
+        $man = Measurements::complete($base, 'male');
+
+        $this->assertSame(86.0, $woman['under_bust']);
+        $this->assertSame(95.0, $man['under_bust']);
+        $this->assertGreaterThan(
+            $woman['under_bust'],
+            $man['under_bust'],
+            'قفسهٔ مردانه صاف‌تر است، پس زیرسینه‌اش به دور سینه نزدیک‌تر.'
+        );
+    }
+
+    /** اندازه‌ای که خودِ خیاط گرفته، هیچ‌وقت با حدس عوض نمی‌شود. */
+    public function test_a_measured_value_is_never_replaced_by_a_guess(): void
+    {
+        $out = Measurements::complete(
+            ['height' => 178, 'bust' => 100, 'waist' => 88, 'hip' => 98, 'under_bust' => 90],
+            'male'
+        );
+
+        $this->assertSame(90.0, $out['under_bust']);
+    }
+
     public function test_it_clamps_values_to_the_allowed_range(): void
     {
         $cleaned = Measurements::clean(['height' => 500, 'bust' => 10, 'unknown_field' => 42]);

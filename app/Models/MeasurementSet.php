@@ -29,10 +29,16 @@ class MeasurementSet extends Model
         return $this->belongsTo(Customer::class);
     }
 
-    /** اندازه‌ها با پر شدن خودکار موارد خالی. */
+    /**
+     * اندازه‌ها با پر شدن خودکار موارد خالی.
+     *
+     * جنسیت مشتری هم رد می‌شود، چون یکی دو تخمین برای بدن مردانه فرق می‌کند.
+     * اندازه‌هایی که خودِ خیاط وارد کرده دست‌نخورده می‌مانند؛ این فقط جای
+     * خالی‌ها را بهتر پر می‌کند.
+     */
     public function completed(): array
     {
-        return Measurements::complete($this->values ?? []);
+        return Measurements::complete($this->values ?? [], $this->customer?->gender);
     }
 
     public function value(string $key): ?float

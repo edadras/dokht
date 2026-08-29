@@ -308,6 +308,15 @@ class GarmentFlatService
             'halves' => $halves,
             'neck' => $neck,
             'shoulder' => $shoulder > 0 ? $shoulder : ($halves[0] ?? 0.0),
+            /*
+             * آیا این لباس واقعاً درزِ سرشانه دارد؟
+             *
+             * «shoulder» بالا اگر سرشانه‌ای نباشد به پهنای بالای لباس برمی‌گردد،
+             * که برای نماهای دوبعدی کافی است. ولی برای مانکن کافی نیست: شلوار
+             * هم بالایی دارد، و با همان عدد از سرشانه آویزان می‌شد و مثل دامن
+             * دیده می‌شد. این پرچم می‌گوید لباس از کجا آویزان است.
+             */
+            'shoulder_seam' => $shoulder > 0,
             'top' => $heights[0],
             'bottom' => $heights[count($heights) - 1],
             'legs' => $this->hasLegs($lower),
@@ -369,6 +378,7 @@ class GarmentFlatService
             'halves' => $halves,
             'neck' => ['width' => 0.0, 'depth' => 0.0],
             'shoulder' => $halves[0] ?? 0.0,
+            'shoulder_seam' => false,
             'top' => $heights[0],
             'bottom' => $heights[count($heights) - 1],
             'legs' => false,
@@ -1280,12 +1290,48 @@ class GarmentFlatService
             'sleeve' => $this->sleeve($pieces),
             'neck' => $front['neck'],
             'shoulder' => round($shoulder, 2),
-            // بالای لباس باز است (خط یقه)، مگر لباسی که از کمر شروع می‌شود
-            'open_top' => $shoulder > 1.0,
+            'anchor' => $this->anchor($front),
+            // بالای لباس همیشه باز است: بدن از همان‌جا تویش می‌رود
+            'open_top' => true,
             'legs' => (bool) ($front['legs'] || $back['legs']),
             'height' => round($span, 2),
             'notes' => $notes,
         ];
+    }
+
+    /**
+     * لباس از کجای بدن آویزان است.
+     *
+     * هر لباسی یک جای مشخص روی بدن دارد که وزنش را همان‌جا می‌گذارد: پیراهن و
+     * کت روی سرشانه، شلوار و دامن روی کمر، تاپِ بی‌بند روی سینه. اگر این را
+     * حدس بزنیم، لباس چند سانت بالا یا پایین می‌افتد و بقیهٔ نما هم با آن
+     * غلط می‌شود — یک بار شلوار از سرشانه آویزان شد و مثل دامنِ بلند درآمد.
+     *
+     * پس به‌جای حدس، همان‌جایی را می‌فرستیم که خودِ الگو نشان می‌دهد: نامِ ترازِ
+     * بدن، و فاصلهٔ آن تراز از بالای لباس. مانکن در مرورگر ساخته می‌شود، پس
+     * ارتفاعِ ترازها را همان‌جا حساب می‌کند و این‌جا فقط اسمش می‌رود.
+     *
+     * @param  array<string, mixed>  $front
+     * @return array{level: string, offset: float}
+     */
+    protected function anchor(array $front): array
+    {
+        $top = (float) $front['top'];
+        $levels = (array) ($front['levels'] ?? []);
+
+        // درزِ سرشانه یعنی لباس روی شانه سوار است
+        if ($front['shoulder_seam'] ?? false) {
+            return ['level' => 'shoulder', 'offset' => 0.0];
+        }
+
+        foreach (['waist', 'bust'] as $level) {
+            if (isset($levels[$level])) {
+                return ['level' => $level, 'offset' => round((float) $levels[$level] - $top, 2)];
+            }
+        }
+
+        // بی‌سرشانه و بی‌خط کمر: پایین‌تنه است، پس از کمر
+        return ['level' => 'waist', 'offset' => 0.0];
     }
 
     /**
@@ -1300,9 +1346,9 @@ class GarmentFlatService
     protected function mannequinMeasurements(array $body): array
     {
         $keys = [
-            'height', 'bust', 'under_bust', 'waist', 'hip', 'neck', 'shoulder_width',
-            'back_length', 'waist_to_hip', 'inseam', 'arm_length', 'bicep', 'wrist',
-            'thigh', 'knee', 'ankle',
+            'height', 'bust', 'under_bust', 'waist', 'high_hip', 'hip', 'neck',
+            'shoulder_width', 'back_length', 'waist_to_hip', 'inseam', 'arm_length',
+            'bicep', 'elbow', 'wrist', 'thigh', 'knee', 'ankle',
         ];
 
         $out = [];
