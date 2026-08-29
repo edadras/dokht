@@ -1028,8 +1028,32 @@ trait BodiceCatalogSupport
             }
         }
 
-        $ys = array_values(array_unique(array_map(fn ($y) => round($y, 3), $ys)));
+        /*
+         * ردیف‌های نمونه‌برداری روی *همان شبکه‌ای* یکتا می‌شوند که الگو رویش ثبت
+         * می‌شود — دو رقم اعشار.
+         *
+         * پیش‌تر با سه رقم یکتا می‌شدند و همان یک رقمِ اضافه یک تلهٔ نادر ساخت:
+         * وقتی یکی از خط‌های قفل‌شده (سینه، کمر، باسن) چهار هزارم با یکی از بیست
+         * ردیفِ یکنواخت فاصله داشت، هر دو می‌ماندند؛ بعد در ثبتِ نهایی به دو رقم
+         * گرد می‌شدند و دقیقاً روی هم می‌افتادند. نتیجه یک لبه با طول صفر بود که
+         * نه بریده می‌شود نه دوخته. فقط روی یک ترکیبِ خاص دیده شد (کتِ رسمی، قد
+         * ۴۸، فرم معمولی، بدنِ ۴۸) و همین نادر بودنش نشان می‌دهد که چرا باید در
+         * ریشه حل شود، نه با استثنا.
+         */
         sort($ys);
+        $rows = [];
+
+        foreach ($ys as $y) {
+            $y = round($y, 2);
+
+            if ($rows !== [] && abs($y - $rows[count($rows) - 1]) < 0.01) {
+                continue;
+            }
+
+            $rows[] = $y;
+        }
+
+        $ys = $rows;
 
         $centerLine = [];
         $sideLine = [];
@@ -1088,11 +1112,7 @@ trait BodiceCatalogSupport
 
         $seamStart = count($edges);
         [$points, $tags] = $this->polylineEdge($centerLine, 'default');
-
-        foreach ($points as $index => $point) {
-            $outline[] = $point;
-            $edges[] = $tags[$index];
-        }
+        $this->appendPolyline($outline, $edges, $points, $tags);
 
         $centerSeamEdges = range($seamStart, count($edges) - 1);
 
@@ -1169,12 +1189,9 @@ trait BodiceCatalogSupport
         $edges[] = 'armhole';
         $armholeEdge = count($edges) - 1;
 
-        foreach ($sidePoints as $index => $point) {
-            $outline[] = $point;
-            $edges[] = $sideTags[$index];
-        }
-
-        $sideEdgeIndexes = range(count($edges) - count($sideTags), count($edges) - 1);
+        $beforeSide = count($edges);
+        $this->appendPolyline($outline, $edges, $sidePoints, $sideTags);
+        $sideEdgeIndexes = range($beforeSide, count($edges) - 1);
 
         $seamEnd = $sideLine[count($sideLine) - 1];
         $outline[] = Geometry::point($seamEnd['x'], $seamEnd['y']);
@@ -1185,11 +1202,7 @@ trait BodiceCatalogSupport
         array_pop($back); // نقطه پایانی همان نقطه شروع مسیر است
 
         [$points, $tags] = $this->polylineEdge($back, 'default');
-
-        foreach ($points as $index => $point) {
-            $outline[] = $point;
-            $edges[] = $tags[$index];
-        }
+        $this->appendPolyline($outline, $edges, $points, $tags);
 
         $edges[] = 'default'; // لبه بسته‌شدن: بالای درز پرنسسی
         $sideSeamEdges = range($seamStart, count($edges) - 1);
@@ -1357,18 +1370,86 @@ trait BodiceCatalogSupport
      *
      * @return array{0: array<int, array<string, mixed>>, 1: array<int, string>}
      */
+    /**
+     * چسباندنِ یک زنجیرهٔ نقطه به مسیرِ در دستِ ساخت، بی نقطهٔ تکراری.
+     *
+     * نقطهٔ نخستِ درزِ پرنسسی گاهی دقیقاً همان‌جایی می‌افتد که لبهٔ پیش از آن
+     * (حلقهٔ آستین) تمام شده است. آن‌وقت مسیر دو نقطهٔ روی‌هم می‌گیرد و لبه‌ای با
+     * طولِ صفر می‌سازد: نه بریده می‌شود، نه دوخته. به‌جای دور انداختنِ نقطه،
+     * برچسبِ لبه جابه‌جا می‌شود تا شمارشِ لبه‌ها هم دست‌نخورده بماند.
+     *
+     * @param  array<int, array<string, mixed>>  $outline
+     * @param  array<int, string>  $edges
+     * @param  array<int, array<string, mixed>>  $points
+     * @param  array<int, string>  $tags
+     */
+    /**
+     * فاصله‌ای که زیرِ آن، دو نقطه «یکی» شمرده می‌شوند (سانتی‌متر).
+     *
+     * شش هزارم، نه یک ده‌هزارم. علتش شبکهٔ نهاییِ الگوست: مسیرِ هر قطعه پیش از
+     * ثبت به دو رقم اعشار گرد می‌شود، پس دو گره که چهار هزارم از هم فاصله دارند
+     * روی کاغذ دقیقاً یک نقطه‌اند. با آستانهٔ ریزتر، این دو از دستِ ما رد می‌شدند
+     * و بعد از گرد شدن روی هم می‌افتادند — و همان بود که در بازرسی گیر می‌کرد.
+     */
+    protected const SAME_POINT = 0.006;
+
+    protected function appendPolyline(array &$outline, array &$edges, array $points, array $tags): void
+    {
+        foreach ($points as $index => $point) {
+            $previous = $outline === [] ? null : $outline[count($outline) - 1];
+
+            if ($previous !== null && Geometry::distance(
+                ['x' => (float) $previous['x'], 'y' => (float) $previous['y']],
+                ['x' => (float) $point['x'], 'y' => (float) $point['y']],
+            ) < static::SAME_POINT) {
+                if ($edges !== []) {
+                    $edges[count($edges) - 1] = $tags[$index] ?? 'default';
+                }
+
+                continue;
+            }
+
+            $outline[] = $point;
+            $edges[] = $tags[$index] ?? 'default';
+        }
+    }
+
     protected function polylineEdge(array $line, string $tag, bool $skipFirst = true): array
     {
         $points = [];
         $tags = [];
+        $last = null;
 
         foreach (array_values($line) as $index => $point) {
             if ($skipFirst && $index === 0) {
+                $first = Geometry::point((float) $point['x'], (float) $point['y']);
+                $last = ['x' => (float) $first['x'], 'y' => (float) $first['y']];
+
                 continue;
             }
 
-            $points[] = Geometry::point($point['x'], $point['y']);
+            // مقایسه روی نقطهٔ *گرد‌شده* انجام می‌شود، نه خام: دو گره که چهار
+            // هزارم از هم فاصله دارند پس از گرد شدن به دو رقم اعشار دقیقاً روی
+            // هم می‌افتند، و همان است که روی الگو دیده می‌شود
+            $rounded = Geometry::point((float) $point['x'], (float) $point['y']);
+            $at = ['x' => (float) $rounded['x'], 'y' => (float) $rounded['y']];
+
+            /*
+             * دو نقطهٔ روی‌هم‌افتاده رد می‌شوند.
+             *
+             * هم‌اندازه‌کردنِ دو درزِ پرنسسی گاهی دو گرهٔ پشتِ‌سرهم را دقیقاً روی
+             * هم می‌نشاند (روی کتِ رسمیِ بلند و بدنِ درشت دیده شد). لبه‌ای که
+             * طولش صفر است نه بریده می‌شود نه دوخته، و در بازرسیِ کاتالوگ هم
+             * «دو نقطه روی هم» گزارش می‌شود. جایش همین‌جاست: پیش از آنکه گره به
+             * لبه تبدیل شود.
+             */
+            if ($last !== null && Geometry::distance($last, $at) < static::SAME_POINT) {
+                continue;
+            }
+
+            $points[] = $rounded;
             $tags[] = $tag;
+            $last = $at;
         }
 
         return [$points, $tags];

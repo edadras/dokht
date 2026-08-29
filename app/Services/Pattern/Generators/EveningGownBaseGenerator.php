@@ -78,10 +78,23 @@ abstract class EveningGownBaseGenerator extends EveningBaseGenerator
                 : $value;
         }
 
+        /*
+         * دامن با کمرِ *بالاتنه* درفت می‌شود، نه با کمرِ بدن.
+         *
+         * وقتی خطِ کمرِ لباس زیرِ سینه است، لبهٔ پایینِ بالاتنه دورِ زیرِ سینه را
+         * دارد نه دورِ کمر را — روی سایز ۳۴ این دو پانزده سانتی‌متر فرق دارند.
+         * اگر دامن با دورِ کمر بریده شود، آن پانزده سانتی‌متر همان‌جا می‌ماند و
+         * دو لبه‌ای که باید به هم دوخته شوند به هم نمی‌رسند. پس آزادیِ کمرِ دامن
+         * را از خودِ عددی می‌گیریم که بالاتنه درآورده است.
+         */
+        $skirtEase = array_merge($ease, [
+            'waist' => max(0.0, $waist - $this->m($measurements, 'waist', 74)),
+        ]);
+
         $skirt = $this->gownSkirt(
             (string) ($w['skirt'] ?? 'skirt_a_line'),
             $measurements,
-            $ease,
+            $skirtEase,
             $overrides,
             $prefix,
         );

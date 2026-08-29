@@ -2,7 +2,6 @@
 
 namespace App\Services\Pattern;
 
-use App\Support\Measurements;
 use Throwable;
 
 /**
@@ -12,13 +11,19 @@ use Throwable;
  * دیگری فهرست می‌شود. پس این‌جا هیچ مدلی ساخته نمی‌شود و هیچ فهرستِ دستی هم
  * نوشته نمی‌شود — چون فهرستِ دستی برای چهارصد مدل، روزِ بعد کهنه است.
  *
- * فصل از خودِ الگو **اندازه گرفته** می‌شود، از سه عدد و دو نشانه:
+ * فصل از خودِ الگو **خوانده** می‌شود، از سه عدد و دو نشانه:
  *
- *   بلندیِ آستین   بلندترین قطعهٔ آستین؛ صفر یعنی بی‌آستین
- *   پوشش           بلندیِ قطعهٔ تنه، یعنی لباس تا کجای بدن می‌آید
- *   لایه            آستر، لایی و لایهٔ نرم — لباسِ چندلایه لباسِ سرماست
+ *   بلندیِ آستین   پارامترِ اعلام‌شدهٔ خودِ مدل؛ صفر یعنی بی‌آستین
+ *   پوشش           قدِ اعلام‌شدهٔ لباس
+ *   لایه            آستر و لایی — لباسِ چندلایه لباسِ سرماست
  *   کشباف/کشی     پارچهٔ اعلام‌شدهٔ خودِ الگو
  *   گروه            جایی که گروه، خودش شناسنامهٔ فصل است (مایو، پالتو)
+ *
+ * این‌ها همه از paramsSchema خوانده می‌شوند، نه از ساختنِ الگو. نخستین نسخه
+ * برای هر مدل یک الگوی کامل می‌ساخت تا بلندیِ آستین را از روی قطعه اندازه
+ * بگیرد؛ با پانصد مدل قابلِ تحمل بود و با دو هزار و پانصد مدل، بازکردنِ صفحهٔ
+ * کارگاه یازده ثانیه طول می‌کشید. عددی که لازم داریم را خودِ مدل *اعلام* کرده
+ * است؛ ساختنِ کلِ الگو برای خواندنِ همان عدد، کارِ اضافه بود.
  *
  * قاعده، به همین ترتیب خوانده می‌شود و اولین سطری که بخورد برنده است:
  *
@@ -172,7 +177,7 @@ final class SeasonClassifier
     }
 
     /**
-     * سه عددی که فصل از آن‌ها درمی‌آید.
+     * سه عددی که فصل از آن‌ها درمی‌آید، از روی *اعلامِ* خودِ مدل.
      *
      * @return array{sleeve: float, cover: float, layers: int}|null
      */
@@ -180,37 +185,45 @@ final class SeasonClassifier
     {
         try {
             $generator = GeneratorRegistry::make($key);
-            $pieces = $generator->generate(
-                Measurements::fromSize(static::REFERENCE),
-                [],
-                $generator->defaultParams(),
-            );
+            $schema = $generator->paramsSchema();
+            $defaults = $generator->defaultParams();
         } catch (Throwable) {
             return null;
         }
 
-        $sleeve = 0.0;
-        $cover = 0.0;
+        $read = function (array $names) use ($schema, $defaults): ?float {
+            foreach ($names as $name) {
+                $value = $defaults[$name] ?? ($schema[$name]['default'] ?? null);
+
+                if (is_numeric($value)) {
+                    return (float) $value;
+                }
+            }
+
+            return null;
+        };
+
+        // «بی‌آستین» را باید از «آستینِ اعلام‌نشده» جدا کرد: مدلی که سبکِ آستینش
+        // none است واقعاً آستین ندارد، ولی مدلی که اصلاً پارامترِ آستین ندارد
+        // (دامن، شلوار) هم بی‌آستین است و هر دو تابستانی شمرده می‌شوند
+        $style = $defaults['sleeve_style'] ?? ($schema['sleeve_style']['default'] ?? null);
+        $sleeve = $style === 'none' ? 0.0 : ($read(['sleeve_length']) ?? 0.0);
+
+        $lining = $defaults['lining'] ?? ($schema['lining']['default'] ?? null);
         $layers = 0;
 
-        foreach ($pieces as $piece) {
-            [, $minY, , $maxY] = Geometry::bounds($piece['outline'] ?? []);
-            $height = $maxY - $minY;
-            $role = (string) ($piece['meta']['girth_role'] ?? '');
-
-            if ($role === 'sleeve') {
-                $sleeve = max($sleeve, $height);
-            }
-
-            if ($role === 'shell') {
-                $cover = max($cover, $height);
-            }
-
-            if ($role === 'lining' || ($piece['meta']['interfacing'] ?? false) === true) {
-                $layers++;
-            }
+        if (is_string($lining) && $lining !== 'none') {
+            $layers++;
         }
 
-        return ['sleeve' => round($sleeve, 1), 'cover' => round($cover, 1), 'layers' => $layers];
+        if ($lining === true) {
+            $layers++;
+        }
+
+        return [
+            'sleeve' => round($sleeve, 1),
+            'cover' => round($read(['length', 'skirt_length', 'body_length']) ?? 0.0, 1),
+            'layers' => $layers,
+        ];
     }
 }

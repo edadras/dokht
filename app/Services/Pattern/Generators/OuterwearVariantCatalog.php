@@ -19,9 +19,13 @@ class OuterwearVariantCatalog extends CatalogVariantBase
     }
 
     /**
-     * فرم‌ها: کلید ⇒ [نام، درفتِ پایه، قدهای پذیرفته].
+     * فرم‌ها: کلید ⇒ [نام، درفتِ پایه، قدهای پذیرفته، فرم‌های پذیرفته].
      *
-     * @var array<string, array{0: string, 1: string, 2: array<int, string>}>
+     * چند مدل فقط فرمِ «معمولی» را می‌گیرند: بارانی و دافل خودشان از پیش گشادند
+     * (روی لباسِ دیگر پوشیده می‌شوند) و فرمِ گشادتر آزادیِ باسنشان را از بازهٔ
+     * کاتالوگ بیرون می‌برد.
+     *
+     * @var array<string, array{0: string, 1: string, 2: array<int, string>, 3?: array<int, string>}>
      */
     protected const SHAPES = [
         'blazer' => ['کت تک', 'blazer', ['crop', 'hip', 'thigh']],
@@ -37,10 +41,10 @@ class OuterwearVariantCatalog extends CatalogVariantBase
         'puffer' => ['پافر', 'jacket_puffer', ['crop', 'hip', 'thigh', 'knee']],
         'overcoat' => ['پالتو', 'coat_overcoat', ['thigh', 'knee', 'calf']],
         'peacoat' => ['پالتو دوردیف کوتاه', 'coat_peacoat', ['hip', 'thigh']],
-        'duffle' => ['دافل', 'coat_duffle', ['thigh', 'knee']],
+        'duffle' => ['دافل', 'coat_duffle', ['thigh', 'knee'], ['regular']],
         'trench' => ['بارانی', 'coat_trench', ['thigh', 'knee', 'calf']],
         'wrapcoat' => ['پالتو کمربندی', 'coat_wrap', ['thigh', 'knee', 'calf']],
-        'raincoat' => ['بارانی سبک', 'raincoat', ['hip', 'thigh', 'knee']],
+        'raincoat' => ['بارانی سبک', 'raincoat', ['thigh', 'knee'], ['regular']],
         'cape' => ['شنل', 'coat_cape', ['hip', 'thigh', 'knee']],
         'vest' => ['جلیقه', 'vest_utility', ['crop', 'hip']],
     ];
@@ -68,11 +72,18 @@ class OuterwearVariantCatalog extends CatalogVariantBase
 
         $rows = [];
 
-        foreach (static::SHAPES as $shape => [$shapeName, $base, $lengths]) {
+        foreach (static::SHAPES as $shape => $row) {
+            [$shapeName, $base, $lengths] = $row;
+            $fits = $row[3] ?? ['regular', 'loose'];
+
             foreach ($lengths as $length) {
                 [$lengthName, $cm] = static::LENGTHS[$length];
 
                 foreach (['regular' => 'معمولی', 'loose' => 'گشاد'] as $fit => $fitName) {
+                    if (! in_array($fit, $fits, true)) {
+                        continue;
+                    }
+
                     $rows['outer_'.$shape.'_'.$length.'_'.$fit] = [
                         'title' => $shapeName.' '.$lengthName.'، فرم '.$fitName,
                         'base' => $base,

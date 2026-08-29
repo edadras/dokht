@@ -77,12 +77,20 @@ abstract class JumpsuitBaseGenerator extends OnePieceBaseGenerator
             ],
         );
 
-        if ((string) ($j['opening'] ?? 'zip') !== 'none') {
-            $schema = array_merge($schema, $this->openingParam(
-                (string) ($j['opening'] ?? 'zip'),
-                (float) ($j['button_stand'] ?? 2.5),
-            ));
-            $schema['buttons']['default'] = (int) ($j['buttons'] ?? 6);
+        if ((string) ($j['opening'] ?? 'zip') !== 'closed') {
+            $schema['closure'] = [
+                'label' => 'بست سرتاسری جلو', 'type' => 'select',
+                'default' => (string) ($j['opening'] ?? 'zip'),
+                'options' => ['zip' => 'زیپ سرتاسری', 'button' => 'دکمه روی پاتلت'],
+            ];
+            $schema['buttons'] = [
+                'label' => 'تعداد دکمه', 'min' => 3, 'max' => 12, 'step' => 1,
+                'default' => (int) ($j['buttons'] ?? 7),
+            ];
+            $schema['button_stand'] = [
+                'label' => 'پهنای پاتلت', 'min' => 1.5, 'max' => 6, 'step' => 0.5,
+                'default' => (float) ($j['button_stand'] ?? 3), 'unit' => 'سانتی‌متر',
+            ];
         }
 
         if ((string) ($j['collar'] ?? 'none') !== 'none') {
@@ -106,8 +114,16 @@ abstract class JumpsuitBaseGenerator extends OnePieceBaseGenerator
         $params = $this->withRise($params);
         $g = $this->blockMetrics($measurements, $ease, $params);
         $grow = $this->fitGrow($params, ['fitted' => 0.0, 'regular' => 1.5, 'loose' => 3.5]);
-        $opening = (string) $this->param($params, 'front_opening', $j['opening'] ?? 'zip');
+        $opening = (string) ($j['opening'] ?? 'zip');
 
+        /*
+         * بستِ سرتاسری روی *پاتلتِ جدا* می‌نشیند، نه روی خودِ تنه.
+         *
+         * نخستین نسخه اضافهٔ جای دکمه را به پنلِ جلو می‌داد و همان‌جا خراب شد:
+         * لبهٔ کمرِ بالاتنه به‌اندازهٔ همان اضافه از لبهٔ کمرِ پاچه بلندتر می‌شد
+         * (پنج سانتی‌متر روی دو نیمه) و دو لبه‌ای که باید به هم دوخته شوند دیگر
+         * هم‌اندازه نبودند. خودِ پایه این تله را در یادداشتش نوشته بود.
+         */
         $pieces = $this->onePieceBody($measurements, $ease, $params, $g, [
             'prefix' => $prefix,
             'grow' => $grow,
@@ -115,12 +131,15 @@ abstract class JumpsuitBaseGenerator extends OnePieceBaseGenerator
             'panel' => [
                 'bust_dart' => (bool) ($j['bust_dart'] ?? true),
             ],
-            'front' => $opening === 'closed'
-                ? []
-                : ['extension' => (float) $this->param($params, 'button_stand', $j['button_stand'] ?? 2.5),
-                    'on_fold' => false, 'cut' => 2, 'mirror' => true],
             'sleeve' => [],
         ]);
+
+        if ($opening !== 'closed') {
+            $pieces = $this->frontClosureSet($pieces, $g, $params, [
+                'prefix' => $prefix,
+                'kind' => (string) $this->param($params, 'closure', $opening),
+            ]);
+        }
 
         $halfNeck = $this->neckOf(array_slice($pieces, 0, 2));
 
