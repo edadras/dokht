@@ -1084,7 +1084,7 @@ const pairArcs = (arcA, arcB, reverse) => {
  * نوکِ ساسون را به مسیر اضافه می‌کنیم. از اینجا به بعد ساسون دقیقاً مثل ساسونِ
  * بریده رفتار می‌کند و همان کد دوختش می‌کند.
  */
-const notchDarts = (piece) => {
+export const notchDarts = (piece, needed = null) => {
     const polygon = piece.polygon.map((point) => [point[0], point[1]]);
     const darts = [];
     const map = polygon.map((point, index) => index);
@@ -1184,6 +1184,24 @@ const notchDarts = (piece) => {
             continue;
         }
 
+        /*
+         * و بریدنِ گوه نباید سرِ یک درز را با خودش ببرد.
+         *
+         * دهانهٔ ساسون چند رأسِ میانی را برمی‌دارد، و اگر یکی از آن‌ها همان
+         * رأسی باشد که یک درز از آن شروع یا تمام می‌شود، آن درز دیگر جایی روی
+         * مرز ندارد: کمانش صفر می‌شود و هر دو سرش روی یک نقطه می‌افتد. روی
+         * پیراهنِ زنانه همین شد — درزِ پهلو *لبهٔ دامن را به سرشانه* می‌دوخت و
+         * قطعهٔ صد‌وپنج سانتی در بی‌وزنی به سی‌وهفت سانت جمع می‌شد. ده سنجهٔ
+         * سلامتِ خودِ همین فایل هم می‌گفتند «کمانی که باید ۴۳٫۸ باشد، صفر است»،
+         * ولی کسی گوش نمی‌داد.
+         *
+         * پس ساسونی که سرِ درزی را می‌بلعد، بریده نمی‌شود. جایش کمی گشاد
+         * می‌ماند — ولی لباس، لباس می‌ماند.
+         */
+        if (needed && eats(needed, from, to)) {
+            continue;
+        }
+
         const apex = freeTip(dart);
         const removed = to - from;
 
@@ -1219,6 +1237,17 @@ const notchDarts = (piece) => {
     }
 
     return { polygon, darts, map };
+};
+
+/* آیا بازهٔ (from, to] رأسی را که درزی به آن نیاز دارد در خود دارد؟ */
+const eats = (needed, from, to) => {
+    for (let i = from + 1; i <= to; i++) {
+        if (needed.has(i)) {
+            return true;
+        }
+    }
+
+    return false;
 };
 
 /* نوکِ ساسون روی کمان: نزدیک‌ترین رأس به نقطه‌ی apex، وگرنه میانه‌ی طول کمان */
@@ -2143,6 +2172,34 @@ export const buildDrape = (payload, body, options = {}) => {
         solver: null,
     };
 
+    /*
+     * رأس‌هایی که درزها به آن‌ها تکیه دارند — پیش از آنکه ساسون‌ها بریده شوند.
+     *
+     * سرِ هر درز یک شمارهٔ رأس روی چندضلعیِ خامِ بسته است. بریدنِ گوهٔ ساسون
+     * رأس‌های میانی را برمی‌دارد، و اگر یکی از آن‌ها سرِ درزی باشد، آن درز
+     * جایش را گم می‌کند. پس همین‌جا فهرستشان را برمی‌داریم و به notchDarts
+     * می‌دهیم.
+     */
+    const seamEnds = new Map();
+
+    for (const seam of payload.seams || []) {
+        for (const side of [seam.a, seam.b]) {
+            if (! side || ! side.piece) {
+                continue;
+            }
+
+            let set = seamEnds.get(side.piece);
+
+            if (! set) {
+                set = new Set();
+                seamEnds.set(side.piece, set);
+            }
+
+            set.add(side.from);
+            set.add(side.to);
+        }
+    }
+
     const wanted = (payload.pieces || []).filter((piece) => {
         const layer = piece.layer || 'outer';
 
@@ -2183,7 +2240,7 @@ export const buildDrape = (payload, body, options = {}) => {
                 continue;
             }
 
-            const notched = notchDarts(piece);
+            const notched = notchDarts(piece, seamEnds.get(piece.id));
 
             try {
                 // چندضلعی و طول یال هر دو سانتی‌متری‌اند؛ تبدیل به متر بعد از

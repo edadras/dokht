@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ClothWorld, Collider } from '../../resources/js/lib/cloth-solver.js';
-import { buildDrape, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
+import { buildDrape, notchDarts, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
 import { bodyColliders, bodicePayload, collarPayload, makeBody, twoSleeves, twoSquares } from './fixtures/payload.js';
 
 const settle = (drape, steps = 260) => {
@@ -1030,4 +1030,54 @@ test('آستین محورِ مایلِ بازو را دنبال می‌کند', 
     }
 
     assert.ok(checked >= 2, 'هیچ مقطعی از آستین سنجیده نشد');
+});
+
+/*
+ * بریدنِ گوهٔ ساسون نباید سرِ یک درز را با خودش ببرد.
+ *
+ * دهانهٔ ساسون چند رأسِ میانیِ مرز را برمی‌دارد. اگر یکی از آن‌ها همان رأسی
+ * باشد که درزی از آن شروع یا تمام می‌شود، آن درز جایش را روی مرز گم می‌کند:
+ * کمانش صفر می‌شود و هر دو سرش روی یک نقطه می‌افتد. روی پیراهنِ زنانه همین
+ * شد — درزِ پهلو لبهٔ دامن را به سرشانه می‌دوخت و قطعهٔ ۱۰۴٫۸ سانتی در
+ * بی‌وزنی به ۳۷ سانت جمع می‌شد.
+ *
+ * سنجهٔ هشت‌مدلی هم همین را تأیید کرد: درزِ ماندگارِ کت از ۶٫۲ به ۳٫۰ و
+ * ترنچ‌کت از ۵٫۲ به ۳٫۶ سانتی‌متر آمد.
+ */
+test('ساسونی که سرِ درزی را می‌بلعد، بریده نمی‌شود', () => {
+    /* مستطیلی با یک ساسونِ پهن روی لبهٔ پایین، و درزی که سرش داخل همان دهانه است */
+    const polygon = [];
+
+    for (let i = 0; i <= 20; i++) {
+        polygon.push([i, 0]);
+    }
+
+    for (let i = 19; i >= 0; i--) {
+        polygon.push([i, 30]);
+    }
+
+    const piece = {
+        id: 'test#0',
+        polygon,
+        darts: [{ legs: [[6, 0], [14, 0]], apex: [10, 12], intake: 8 }],
+    };
+
+    const free = notchDarts(piece);
+
+    assert.equal(free.darts.length, 1, 'بی‌محافظ، ساسون باید بریده شود');
+    assert.ok(free.polygon.length < polygon.length, 'و رأس‌های میانی برداشته شوند');
+
+    /* حالا همان ساسون، وقتی رأسِ ۱۰ سرِ یک درز است */
+    const guarded = notchDarts(piece, new Set([10]));
+
+    assert.equal(guarded.darts.length, 0, 'ساسونی که سرِ درز را می‌خورد نباید بریده شود');
+    assert.equal(guarded.polygon.length, polygon.length, 'و چندضلعی باید دست‌نخورده بماند');
+    assert.deepEqual(
+        Array.from(guarded.map),
+        polygon.map((_, i) => i),
+        'نقشهٔ شماره‌ها هم باید همان بماند',
+    );
+
+    /* رأسی بیرونِ دهانه، جلوی بریدن را نمی‌گیرد */
+    assert.equal(notchDarts(piece, new Set([18])).darts.length, 1);
 });
