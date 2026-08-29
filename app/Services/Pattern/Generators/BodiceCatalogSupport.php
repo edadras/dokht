@@ -33,6 +33,14 @@ trait BodiceCatalogSupport
     protected const MIN_DART = 0.6;
 
     /**
+     * از چند سانتی‌متر به بعد، «کمر از سینه بزرگ‌تر است» را جدی می‌گیریم.
+     *
+     * زیر نیم سانتی‌متر، عوض کردنِ شکلِ پنل ارزشش را ندارد: خطِ کمر منحنی است و
+     * خودِ همان انحنا بیش از این طول می‌آورد.
+     */
+    protected const WAIST_INVERSION = 0.5;
+
+    /**
      * اندازه‌های بلوک، اصلاح‌شده تا دور تمام‌شده دقیقاً «دور بدن + آزادی» باشد.
      *
      * @return array<string, float>
@@ -511,7 +519,10 @@ trait BodiceCatalogSupport
          * بالاتنه به اندازهٔ خواسته‌شدهٔ خودش نمی‌رسد و با پایین‌تنه‌ای که از
          * چارکِ کمر بریده شده جور درنمی‌آید.
          */
-        $waistX = $cf + max((float) ($s['qw'] ?? 0), $s['qb'] - $s['side_intake']);
+        $qwHere = (float) ($s['qw'] ?? 0);
+        $waistX = $cf + ($qwHere > $s['qb'] + static::WAIST_INVERSION
+            ? $qwHere
+            : $s['qb'] - $s['side_intake']);
         $hipX = $cf + max($s['qh'], $s['qb'] - $s['side_intake']);
         $bustY = $s['bust_y'];
         $waistY = $s['waist_y'];

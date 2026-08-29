@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Customer;
 use App\Models\MeasurementSet;
 use App\Models\Pattern;
+use App\Services\Pattern\GarmentFlatService;
 use App\Services\Pattern\GeneratorRegistry;
 use App\Services\Pattern\PatternBuilder;
 use App\Services\Pattern\PatternComposer;
@@ -50,6 +51,7 @@ class PatternComposerController extends Controller
     public function __construct(
         protected PatternComposer $composer,
         protected SvgRenderer $renderer,
+        protected GarmentFlatService $flats = new GarmentFlatService,
     ) {}
 
     public function create(Request $request): View
@@ -159,10 +161,37 @@ class PatternComposerController extends Controller
                 'seam_allowance' => false,
                 'gap' => 5,
             ]),
+            'flats' => $this->garmentFlats($result['pieces'], $result['measurements'] ?? $measurements),
         ]);
     }
 
     /* ------------------------------------------------------------------ */
+
+    /**
+     * چهار نمای لباسِ دوخته‌شده، با تور ایمنی.
+     *
+     * پیش‌نمایشِ کارگاه نباید سرِ این بشکند: اگر ترکیبی قطعه‌بندیِ نامنتظری
+     * داشته باشد، نما نمی‌آید ولی نقشه و بقیهٔ گزارش سر جایشان می‌مانند.
+     *
+     * @param  array<int, array<string, mixed>>  $pieces
+     * @param  array<string, float|int>  $measurements
+     * @return array{views: array<string, string>, measures: array<string, float>, notes: array<int, string>, ok: bool}
+     */
+    protected function garmentFlats(array $pieces, array $measurements): array
+    {
+        try {
+            return $this->flats->flats($pieces, $measurements, ['width' => 200]);
+        } catch (Throwable $error) {
+            report($error);
+
+            return [
+                'views' => [],
+                'measures' => [],
+                'notes' => ['نمای دوختِ این ترکیب ساخته نشد: '.$error->getMessage()],
+                'ok' => false,
+            ];
+        }
+    }
 
     /** @return array<string, mixed> */
     protected function validated(Request $request, bool $forPreview = false): array
@@ -608,6 +637,7 @@ class PatternComposerController extends Controller
         $measurements = Measurements::fromSize((string) request()->input('base_size', '40'));
         $empty = [
             'svg' => '', 'pieces' => [], 'notes' => [], 'metrics' => [], 'name' => '',
+            'flats' => ['views' => [], 'measures' => [], 'notes' => [], 'ok' => false],
             'schemas' => $this->schemasFor($recipe),
             'availability' => $this->composer->styleAvailability([], ['measurements' => $measurements]),
             'error' => null,
@@ -633,6 +663,7 @@ class PatternComposerController extends Controller
                 'notes' => $result['notes'],
                 'metrics' => $result['metrics'],
                 'name' => $result['name'],
+                'flats' => $this->garmentFlats($result['pieces'], $measurements),
                 'error' => null,
                 'schemas' => $this->schemasFor($recipe),
                 'availability' => $this->composer->styleAvailability($result['pieces'], [

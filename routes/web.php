@@ -127,6 +127,9 @@ Route::middleware(['auth', 'workshop'])->group(function () {
     // حمل نکنند؛ پیش از resource می‌آید وگرنه «templates» را شناسهٔ الگو می‌گیرد
     Route::get('patterns/templates/{template}/preview.svg', [PatternController::class, 'templatePreview'])
         ->name('patterns.templates.preview');
+    // چهار نمای لباسِ دوخته‌شده برای همان مدل و همان اندازه، پیش از ساختِ الگو
+    Route::get('patterns/templates/{template}/flats', [PatternController::class, 'templateFlats'])
+        ->name('patterns.templates.flats');
     // پارامترهای همان مدلی که انتخاب شده، نه همهٔ مدل‌ها
     Route::get('patterns/templates/{template}/params', [PatternController::class, 'templateParams'])
         ->name('patterns.templates.params');

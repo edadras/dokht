@@ -426,7 +426,17 @@ trait PantsBlock
          * پس اگر کمرِ خواسته‌شده از باسن بیشتر باشد، درز پهلو رو به بالا باز
          * می‌شود. روی بدن‌های معمول این max هیچ اثری ندارد.
          */
-        $sideWaistX = max($fork + $panel - $side, $fork + $centerLean + $waistEdge);
+        /*
+         * $waistEdge طولِ خودِ لبه است، نه پهنای افقی‌اش: روی پاچهٔ پشت، مرکز
+         * به اندازهٔ back_rise بالاتر می‌ایستد و آن لبه اریب می‌شود. پس پیش از
+         * مقایسه، مؤلفهٔ افقی‌اش را درمی‌آوریم — وگرنه پاچهٔ پشت بی‌جهت پهن‌تر
+         * می‌شود و کمرِ تمام‌شده از هدفِ خودش رد می‌زند.
+         */
+        $waistSpan = $drop > 0.01
+            ? sqrt(max(0.0, ($waistEdge ** 2) - ($drop ** 2)))
+            : $waistEdge;
+
+        $sideWaistX = max($fork + $panel - $side, $centerX + $waistSpan);
         $hipX = $fork + $panel;
         $crotchX = $hipX + $adjust;
         $crease = ($fork + $panel + $adjust) / 2;

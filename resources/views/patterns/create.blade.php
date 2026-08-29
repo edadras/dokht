@@ -15,6 +15,38 @@
             chosen: @js($selectedCard),
             searchUrl: @js($templateSearchUrl),
             previewUrl: @js($templatePreviewUrl),
+            flatsUrl: @js($templateFlatsUrl),
+            viewNames: @js(\App\Services\Pattern\GarmentFlatService::VIEWS),
+            flats: { views: {}, measures: {}, notes: [], ok: false },
+            flatsBusy: false,
+            flatsTicket: 0,
+
+            /* نمای لباسِ دوخته‌شده برای همین مدل و همین اندازه. سبک است و چیزی
+               ذخیره نمی‌کند، ولی هر بار عوض‌شدنِ مدل یا اندازه یک درخواست است،
+               پس با تأخیر و با نشانِ درخواست می‌آید تا پاسخِ عقب‌مانده جایش را
+               نگیرد. */
+            loadFlats() {
+                if (! this.template) { this.flats = { views: {}, measures: {}, notes: [], ok: false }; return; }
+
+                const ticket = ++this.flatsTicket;
+                const form = this.$root;
+                const params = new URLSearchParams();
+                ['customer_id', 'base_size'].forEach(name => {
+                    const field = form.querySelector('[name="' + name + '"]');
+                    if (field && field.value && ! field.disabled) { params.set(name, field.value); }
+                });
+
+                this.flatsBusy = true;
+                fetch(this.flatsUrl.replace('__ID__', this.template) + '?' + params.toString(),
+                    { headers: { 'Accept': 'application/json' } })
+                    .then(response => response.ok ? response.json() : null)
+                    .then(data => {
+                        if (this.flatsTicket !== ticket) { return; }
+                        this.flats = data || { views: {}, measures: {}, notes: [], ok: false };
+                    })
+                    .finally(() => { if (this.flatsTicket === ticket) { this.flatsBusy = false; } });
+            },
+            viewName(key) { return this.viewNames[key] || key; },
             digits(value) { return String(value ?? '').replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); },
             thumb(id) { return this.previewUrl.replace('__ID__', id); },
             rows: [], total: 0, hasMore: false, page: 1, q: '', busy: false, timer: null,
@@ -74,7 +106,8 @@
                     .then(data => { this.params = data || { name: '', description: '', schema: {}, defaults: {} }; })
                     .catch(() => { this.params = { name: '', description: '', schema: {}, defaults: {} }; });
             },
-        }" x-init="boot()" x-effect="template, loadParams()" class="space-y-6">
+        }" x-init="boot()" x-effect="template, loadParams()"
+        @change="loadFlats()" class="space-y-6">
         @csrf
 
         {{-- گام یک: انتخاب مدل از کتابخانه --}}
@@ -193,6 +226,47 @@
                 <x-field label="نام الگو" name="name" hint="اگر خالی بماند نام مدل گذاشته می‌شود.">
                     <x-input name="name" placeholder="مثلاً پیراهن خانم رضایی" />
                 </x-field>
+            </div>
+        </x-card>
+
+        {{-- شکلِ لباس پیش از ساخته‌شدنش، روی همین اندازه‌ها --}}
+        <x-card title="لباس دوخته‌شده چه شکلی می‌شود؟" icon="shirt"
+            subtitle="از چهار طرف، با همین مدل و همین اندازه‌ها. با عوض‌کردن مدل یا اندازه، تصویرها هم عوض می‌شوند.">
+            <x-slot:actions>
+                <span x-show="flatsBusy" x-cloak class="text-xs text-stone-400">در حال کشیدن…</span>
+            </x-slot:actions>
+
+            <div x-init="loadFlats()">
+                <template x-if="flats.ok">
+                    <div>
+                        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                            <template x-for="(svg, key) in flats.views" :key="key">
+                                <figure class="rounded-2xl border border-stone-200 bg-stone-50 p-3">
+                                    <div class="flex h-48 items-center justify-center overflow-hidden [&>svg]:max-h-full [&>svg]:w-auto"
+                                        x-html="svg"></div>
+                                    <figcaption class="mt-2 text-center text-xs font-semibold text-stone-600"
+                                        x-text="viewName(key)"></figcaption>
+                                </figure>
+                            </template>
+                        </div>
+
+                        <dl class="mt-4 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                            <template x-for="(value, label) in flats.measures" :key="label">
+                                <div class="flex items-baseline justify-between gap-2 border-b border-dashed border-stone-200 pb-1">
+                                    <dt class="text-stone-600" x-text="label"></dt>
+                                    <dd class="font-semibold text-stone-900" x-text="digits(value) + ' سانتی‌متر'"></dd>
+                                </div>
+                            </template>
+                        </dl>
+                    </div>
+                </template>
+
+                <template x-if="! flats.ok">
+                    <p class="rounded-xl bg-stone-50 px-4 py-3 text-sm text-stone-500"
+                        x-text="template
+                            ? ((flats.notes && flats.notes[0]) || 'در حال کشیدن نمای دوخت…')
+                            : 'اول یک مدل انتخاب کنید تا شکلش را ببینید.'"></p>
+                </template>
             </div>
         </x-card>
 

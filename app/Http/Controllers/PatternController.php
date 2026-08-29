@@ -79,6 +79,7 @@ class PatternController extends Controller
             'selectedCard' => $this->templateCard($request->integer('template') ?: null),
             'templatePreviewUrl' => route('patterns.templates.preview', ['template' => '__ID__']),
             'templateParamsUrl' => route('patterns.templates.params', ['template' => '__ID__']),
+            'templateFlatsUrl' => route('patterns.templates.flats', ['template' => '__ID__']),
             'templateSearchUrl' => route('patterns.templates.search'),
             'customers' => Customer::query()->with('defaultMeasurementSet')->orderBy('name')->get(),
             'sizes' => Measurements::sizes(),
@@ -612,6 +613,42 @@ class PatternController extends Controller
             'Content-Type' => 'image/svg+xml',
             'Cache-Control' => 'private, max-age=86400',
         ]);
+    }
+
+    /**
+     * چهار نمای لباسِ دوخته‌شده برای یک مدل، روی اندازهٔ خواسته‌شده.
+     *
+     * صفحهٔ «الگوی تازه» پیش از ساختن الگو صدایش می‌زند تا خیاط ببیند این مدل
+     * روی *این* اندازه چه شکلی می‌شود، نه روی سایز جدولی. سبک است چون فقط
+     * قطعه‌ها ساخته می‌شوند و چیزی ذخیره نمی‌شود.
+     */
+    public function templateFlats(PatternTemplate $template, Request $request): JsonResponse
+    {
+        abort_unless(
+            $template->workshop_id === null || $template->workshop_id === auth()->user()->workshop_id,
+            404,
+        );
+
+        [$measurements] = $this->resolveMeasurements([
+            'customer_id' => $request->integer('customer_id') ?: null,
+            'measurement_set_id' => $request->integer('measurement_set_id') ?: null,
+            'base_size' => $request->string('base_size')->toString() ?: null,
+        ]);
+
+        try {
+            $pieces = $this->builder->buildFromTemplate($template, $measurements);
+
+            return response()->json($this->flats->flats($pieces, $measurements, ['width' => 200]));
+        } catch (Throwable $error) {
+            report($error);
+
+            return response()->json([
+                'views' => [],
+                'measures' => [],
+                'notes' => ['نمای دوختِ این مدل ساخته نشد.'],
+                'ok' => false,
+            ]);
+        }
     }
 
     /**

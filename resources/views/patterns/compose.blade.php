@@ -44,6 +44,7 @@
         'styleMeta' => $styleMeta,
         'styleGroups' => $styleGroups,
         'roleTitles' => $roleTitles,
+        'viewNames' => \App\Services\Pattern\GarmentFlatService::VIEWS,
         'picker' => $picker,
         'modelsUrl' => $modelsUrl,
         'thumbUrl' => $thumbUrl,
@@ -109,6 +110,7 @@
             modelsUrl: @js($modelsUrl),
             openGroups: {},
             svg: '', notes: [], pieces: [], metrics: {}, report: [], suggested: '',
+            flats: { views: {}, measures: {}, notes: [], ok: false },
             error: null, busy: false, ready: false, timer: null, startBase: '',
 
             boot() {
@@ -129,6 +131,7 @@
             },
             seed(initial) {
                 this.svg = initial.svg || '';
+                this.flats = initial.flats || { views: {}, measures: {}, notes: [], ok: false };
                 this.notes = initial.notes || [];
                 this.pieces = initial.pieces || [];
                 this.metrics = initial.metrics || {};
@@ -138,6 +141,7 @@
             },
 
             digits(value) { return String(value ?? '').replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]); },
+            viewName(key) { return (this.data.viewNames || {})[key] || key; },
 
             /* --- گام یک: پایه --- */
             setKind(kind) {
@@ -319,9 +323,11 @@
                     if (!response.ok) {
                         this.error = body.message || 'این ترکیب ساخته نمی‌شود.';
                         this.svg = ''; this.notes = []; this.pieces = []; this.report = [];
+                        this.flats = { views: {}, measures: {}, notes: [], ok: false };
                     } else {
                         this.error = null;
                         this.svg = body.svg;
+                        this.flats = body.flats || { views: {}, measures: {}, notes: [], ok: false };
                         this.notes = body.notes || [];
                         this.pieces = body.pieces || [];
                         this.metrics = body.metrics || {};
@@ -464,6 +470,11 @@
 
         {{-- پیش‌نمایش زنده --}}
         <aside class="space-y-4 xl:sticky xl:top-24">
+            <x-card title="لباس دوخته‌شده" icon="shirt" padding="p-4"
+                subtitle="از چهار طرف، با همین اندازه‌ها.">
+                @include('patterns.partials.garment-flats-live')
+            </x-card>
+
             <x-card title="پیش‌نمایش" icon="eye" padding="p-4">
                 <x-slot:actions>
                     <span x-show="busy" x-cloak class="text-xs text-stone-400">در حال ساخت…</span>
