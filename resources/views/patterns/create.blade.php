@@ -48,7 +48,7 @@
                     .then(data => { this.params = data || { name: '', description: '', schema: {}, defaults: {} }; })
                     .catch(() => { this.params = { name: '', description: '', schema: {}, defaults: {} }; });
             },
-        }" x-init="loadParams()" x-effect="template, loadParams()" class="space-y-6">
+        }" x-effect="template, loadParams()" class="space-y-6">
         @csrf
 
         {{-- گام یک: انتخاب مدل از کتابخانه --}}
