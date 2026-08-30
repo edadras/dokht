@@ -268,6 +268,20 @@ class PatchBase {
             }
         }
 
+        /*
+         * مجالِ کششِ موقت — فقط برای لحظهٔ تن کردن.
+         *
+         * وقتی بدن داخلِ لباسِ دوخته‌شده بزرگ می‌شود، پارچه باید کش بیاید. ولی
+         * سقفِ کشسانی سفت است (بلندتر از آن با تمامِ قدرت جمع می‌شود)، پس
+         * ارزان‌ترین راهِ حل‌کننده این بود که پارچه را کنار بزند نه اینکه
+         * بکشدش — و بازو از حلقهٔ آستین بیرون می‌زد و سرشانه لخت می‌ماند.
+         *
+         * در واقعیت لباسِ تنگ هم کش می‌آید و بدن داخلش می‌ماند. پس همان چند
+         * لحظه سقف بالا می‌رود و بعد به جای خودش برمی‌گردد؛ آن وقت پارچه روی
+         * بدنی که حالا داخلش است جمع می‌شود.
+         */
+        this.give = 1;
+
         this.pins = new Uint32Array(pins);
         this.pinRest = new Float32Array(pins.length * 3);
 
@@ -457,7 +471,7 @@ class PatchBase {
                 }
 
                 const target = rest[i];
-                const high = target * maxScale;
+                const high = target * maxScale * this.give;
                 const low = target * minScale;
                 let goal;
                 let stiffness;
@@ -1884,6 +1898,17 @@ export class ClothWorld {
 
     setColliders(colliders) {
         this.colliders = colliders;
+    }
+
+    /**
+     * چقدر پارچه اجازه دارد موقتاً کش بیاید (۱ یعنی همان کشسانیِ خودش).
+     *
+     * برای مرحلهٔ تن کردن است: ببینید `give` در PatchBase.
+     */
+    allowStretch(give) {
+        for (const patch of this.patches) {
+            patch.give = Math.max(1, give);
+        }
     }
 
     get particles() {

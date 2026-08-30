@@ -599,10 +599,16 @@ const bench = (file) => {
         patch.remember();
     }
 
+    /* پارچه همان چند لحظه اجازهٔ کشش می‌گیرد، وگرنه کنار می‌رود به‌جای کشیدن */
+    world.allowStretch(1.2);
+
     for (let step = 1; step <= 12; step++) {
         dress(step / 12);
         world.presettle(14);
     }
+
+    world.allowStretch(1);
+    world.presettle(60);
 
     supportGarment(drape, { band: 0.08, strength: 1 });
     drape.patches.forEach((entry) => entry.patch.applyPins(IDENTITY));

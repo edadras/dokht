@@ -131,6 +131,14 @@ export const bodyEnvelope = (body, y) => {
 
 
 
+/*
+ * اندازهٔ بدن هنگام دوخت: نه صفر که آستین بخوابد، نه کامل که درز بسته نشود.
+ */
+const SEWING_BODY = 0;
+
+/* چقدر پارچه هنگام تن کردن اجازهٔ کشش دارد */
+const DRESS_GIVE = 1.2;
+
 /**
  * جای لباس: میانگینِ همهٔ رأس‌ها، و بالاترین نقطه‌اش.
  *
@@ -192,21 +200,29 @@ const shift = (drape, want, have) => {
 export const bodyColliders = (Collider, body, table, grow = 1) => {
     const out = [];
     const level = table.level;
-    const thin = (sections) => sections.map((row) => {
+    /*
+     * `grow` همهٔ بدن را با هم کوچک می‌کند.
+     *
+     * امتحان کردم بازو و پا را کامل نگه دارم تا آستین سرِ جایش بماند، ولی
+     * درزِ حلقه دیگر بسته نمی‌شد — بازو دقیقاً همان‌جا ایستاده که دو لبهٔ حلقه
+     * باید به هم برسند. دروازهٔ کیفیت از پنج مدل به دو مدل افتاد. پس بدن
+     * یک‌دست آب می‌رود.
+     */
+    const thin = (sections, keep = false) => sections.map((row) => {
         const scaled = row.slice();
 
         // ستونِ صفر ارتفاع است و بقیه شعاع؛ فقط شعاع‌ها کوچک می‌شوند
-        for (let i = 1; i < scaled.length; i++) {
+        for (let i = 1; i < scaled.length && ! keep; i++) {
             scaled[i] *= grow;
         }
 
         return scaled;
     });
 
-    const at = (sections, name, offset = [0, 0, 0], spin = 0) => {
+    const at = (sections, name, offset = [0, 0, 0], spin = 0, keep = false) => {
         const cos = Math.cos(spin);
         const sin = Math.sin(spin);
-        const collider = new Collider({ sections: thin(sections), name });
+        const collider = new Collider({ sections: thin(sections, keep), name });
 
         collider.setTransform(
             new Float32Array([
@@ -949,8 +965,16 @@ export default (initial = {}) => ({
 
             world.law.gravity = 0;
 
-            /* ۱) دوخت، با هیچ چیزی وسط */
-            dress(0);
+            /*
+             * ۱) دوخت، با بدنی که فقط نیم‌قدِ خودش است.
+             *
+             * اول بدن را به‌کل برداشتم و درزها عالی بسته شدند، ولی لباس شکلش را
+             * از دست می‌داد: آستین تخت می‌خوابید و بعد که بازو بزرگ می‌شد، از
+             * کنارِ آستین بیرون می‌زد به‌جای آنکه داخلش برود — همان سرشانهٔ لخت.
+             * بدنِ کوچک هم جلوی بسته شدنِ درز را نمی‌گیرد و هم اندام را داخلِ
+             * لباس نگه می‌دارد.
+             */
+            dress(SEWING_BODY);
 
             const before = middleOf(drape);
 
@@ -966,11 +990,24 @@ export default (initial = {}) => ({
              */
             shift(drape, before, middleOf(drape));
 
-            /* ۳) تن کردن: بدن آرام‌آرام داخلِ لباس بزرگ می‌شود */
+            /*
+             * ۳) تن کردن: بدن آرام‌آرام داخلِ لباس بزرگ می‌شود.
+             *
+             * و پارچه همان چند لحظه اجازهٔ کشش می‌گیرد. بی آن، سقفِ کشسانی سفت
+             * است و ارزان‌ترین راهِ حل‌کننده کنار زدنِ پارچه بود نه کشیدنش —
+             * بازو از حلقهٔ آستین بیرون می‌زد و سرشانه لخت می‌ماند. لباسِ تنگ
+             * هم در واقعیت کش می‌آید و بدن داخلش می‌ماند.
+             */
+            world.allowStretch(DRESS_GIVE);
+
             for (let step = 1; step <= 12; step++) {
-                dress(step / 12);
+                dress(SEWING_BODY + (1 - SEWING_BODY) * (step / 12));
                 world.presettle(14);
             }
+
+            // و سقف به جای خودش برمی‌گردد؛ حالا پارچه روی بدنِ داخلش جمع می‌شود
+            world.allowStretch(1);
+            world.presettle(60);
 
             /* ۳) حالا لباس پوشیده است؛ سرشانه گرفته می‌شود و وزن برمی‌گردد */
             supportGarment(drape, { band: 0.08, strength: 1 });
