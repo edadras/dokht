@@ -7,6 +7,7 @@ use App\Models\PatternPiece;
 use App\Services\Pattern\GeneratorRegistry;
 use App\Services\Pattern\Geometry;
 use App\Services\Pattern\SewingRelationBuilder;
+use App\Services\Simulation\DrapeBody;
 use App\Services\Simulation\DrapeGeometry;
 use App\Services\Simulation\DrapePayloadService;
 use App\Support\Measurements;
@@ -751,7 +752,10 @@ class DrapePayloadTest extends TestCase
                     continue;
                 }
 
-                $arms[$piece['side'].'|'.$piece['placement']['y_top']][] = $piece;
+                // سبد فقط «سمتِ بدن» است، نه ارتفاع: پنل‌های یک آستین از زیربغل
+                // هم‌تراز می‌شوند و چون کپشان هم‌اندازه نیست، سرِ قطعه‌شان روی یک
+                // ارتفاع نمی‌ماند (کت رسمی: ۱۱٫۹ سانتی‌متر اختلاف)
+                $arms[(string) $piece['side']][] = $piece;
             }
 
             foreach ($arms as $panels) {
@@ -785,6 +789,97 @@ class DrapePayloadTest extends TestCase
 
         $this->assertGreaterThan(0, $seen, 'هیچ آستین دوتکه‌ای پیدا نشد؛ آزمون چیزی را نسنجید.');
     }
+
+    /**
+     * و کنارِ هم، *هم‌تراز از زیربغل* — نه از سرِ قطعه.
+     *
+     * دو تکهٔ یک آستین از درزِ پهلو به هم دوخته می‌شوند و آن درز از زیربغل شروع
+     * می‌شود؛ پس زیربغلِ هر دو باید روی یک ارتفاع بنشیند. تا وقتی سرِ قطعه‌ها
+     * هم‌تراز می‌شد، کت رسمی — که سرآستینِ رویش کپِ ۱۱٫۹ سانتی‌متری دارد و
+     * آستین زیرش هیچ — با ۱۱٫۹ سانتی‌متر اختلاف چیده می‌شد و دم آستینِ زیر همان
+     * اندازه بالاتر می‌افتاد، در حالی که درزِ پهلوی هر دو ۴۸٫۲ سانتی‌متر است.
+     * قیدِ درز باید همان را جبران می‌کرد: آستین روی بازو مچاله می‌شد و ساعد لخت
+     * می‌ماند (پوششِ دورِ بازو ۹۰ درجه از ۳۶۰، و ۲۳۶۱ پیکسل پوستِ قرمز در عکس).
+     */
+    public function test_sleeve_panels_are_levelled_at_the_underarm(): void
+    {
+        $seen = 0;
+
+        foreach (['blazer', 'coat_trench', 'suit_jacket'] as $key) {
+            if (! GeneratorRegistry::has($key)) {
+                continue;
+            }
+
+            $pattern = $this->pattern($key);
+            $height = (new DrapeBody(Measurements::complete($pattern->measurements ?? [])))->height;
+            $arms = [];
+
+            foreach ((new DrapePayloadService)->payload($pattern)['pieces'] as $piece) {
+                // فقط پنل‌های خودِ آستین؛ مچ‌بند و تسمهٔ مچ دورِ مچ می‌پیچند و
+                // ربطی به زیربغل ندارند (ترنچ‌کت تسمه دارد)
+                if (($piece['role'] ?? '') !== 'sleeve' || preg_match('/cuff|strap/', (string) $piece['id'])) {
+                    continue;
+                }
+
+                $under = $this->underarmOf($piece);
+
+                if ($under === null) {
+                    continue;
+                }
+
+                // ارتفاعِ زیربغلِ این پنل روی بدن، سانتی‌متر
+                $arms[$piece['side'].'|'.$piece['layer']][$piece['id']] =
+                    ((float) $piece['placement']['y_top'] * $height) - $under;
+            }
+
+            foreach ($arms as $side => $levels) {
+                if (count($levels) < 2) {
+                    continue;
+                }
+
+                $seen++;
+
+                $this->assertLessThan(
+                    0.5,
+                    max($levels) - min($levels),
+                    "«{$key}» بازوی {$side}: زیربغلِ پنل‌های یک آستین روی یک ارتفاع ننشسته؛ "
+                        .'درزِ پهلوشان هم‌طول است و باید از یک نقطه شروع شود.',
+                );
+            }
+        }
+
+        $this->assertGreaterThan(0, $seen, 'هیچ آستین دوتکه‌ای پیدا نشد؛ آزمون چیزی را نسنجید.');
+    }
+
+    /**
+     * فاصلهٔ سرِ یک پنلِ آستین تا سرِ درزِ پهلوی خودش، سانتی‌متر.
+     *
+     * @param  array<string, mixed>  $piece
+     */
+    protected function underarmOf(array $piece): ?float
+    {
+        $polygon = $piece['polygon'] ?? [];
+        $top = null;
+        $seam = null;
+
+        foreach ($polygon as $point) {
+            $top = $top === null ? (float) $point[1] : min($top, (float) $point[1]);
+        }
+
+        foreach ($piece['edges'] ?? [] as $edge) {
+            if (($edge['tag'] ?? '') !== 'side') {
+                continue;
+            }
+
+            foreach ([$edge['start'], $edge['end']] as $at) {
+                $y = (float) ($polygon[$at][1] ?? 0);
+                $seam = $seam === null ? $y : min($seam, $y);
+            }
+        }
+
+        return ($top === null || $seam === null) ? null : $seam - $top;
+    }
+
     /**
      * هیچ کمانی دو بار کامل ادعا نمی‌شود.
      *

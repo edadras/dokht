@@ -102,28 +102,60 @@ class SewingRelationBuilder
                 continue;
             }
 
-            $lengths = array_map(
-                fn (array $target) => max(0.01, static::runLength($target['entry'], $target['edges'])),
-                $targets,
+            /*
+             * ولی سرآستین فقط روی *سرشانه* بریده می‌شود، نه روی هر مرزِ پنلی.
+             *
+             * برش این‌جا شمارهٔ لبه است و نصفِ یک لبه در آن بیان نمی‌شود. سرآستینِ
+             * کت رسمی دقیقاً چهار لبه دارد و چهار پنل هم روبه‌رویش است، پس هر لبه
+             * زورکی به یک پنل می‌رسید — و لبه‌ها آن‌جا نبریده‌اند که پنل‌ها به هم
+             * می‌رسند. اندازه گرفته شد: ۹٫۵ به حلقهٔ ۶٫۹ و ۸٫۲ به ۱۱٫۴ و ۷٫۸ به
+             * ۱۰٫۸ و ۱۰٫۲ به ۷٫۵ — تا ۳٫۲ سانتی‌متر ناهم‌طولی روی هر درز، یعنی
+             * سرآستین زیرِ بغل زیادی می‌آورد و روی سرشانه کم.
+             *
+             * تنها مرزی که *واقعاً* روی مرزِ لبه است، نوکِ سرآستین است: همان‌جا
+             * که به درزِ سرشانه می‌رسد. پس همان یک برش این‌جا زده می‌شود و
+             * تقسیمِ ریزترِ هر نیمه میان پنل‌هایش را بستهٔ سه‌بعدی هندسی می‌بُرد
+             * (ببینید DrapePayloadService::share) — همان‌جایی که برش روی رأس
+             * می‌افتد نه روی لبه. کت اسپرت و ترنچ‌کت که یک پنل در هر سو دارند
+             * چیزی عوض نمی‌شود.
+             */
+            $groups = [];
+
+            foreach ($targets as $target) {
+                // پنل‌های یک برشِ پنلی (چهار پنلِ کت رسمی) کنارِ هم دورِ یک حلقه
+                // می‌نشینند و *یک* کمانِ سرآستین را میان خود می‌برند. پنلی که نقشِ
+                // دیگری دارد ولی همان سو است — مثلِ لَتِ زیرِ قپائو که زیرِ تنه
+                // می‌خوابد — لایهٔ دیگری است، نه همسایه؛ سهمِ جدا می‌گیرد.
+                $groups[$target['side'].'|'.($target['entry']['part'] ?? '')][] = $target;
+            }
+
+            $reach = array_map(
+                fn (array $panels) => max(0.01, array_sum(array_map(
+                    fn (array $target) => static::runLength($target['entry'], $target['edges']),
+                    $panels,
+                ))),
+                $groups,
             );
-            $total = array_sum($lengths);
+            $total = array_sum($reach);
             $slices = static::splitRuns($entry, $capEdges, array_map(
                 fn (float $length) => $length / $total,
-                $lengths,
+                $reach,
             ));
 
-            foreach ($targets as $index => $target) {
+            foreach (array_values($groups) as $index => $panels) {
                 if (($slices[$index] ?? []) === []) {
                     continue;
                 }
 
-                $relations[] = static::run(
-                    $entry,
-                    $slices[$index],
-                    $target['entry'],
-                    $target['edges'],
-                    $target['side'] === 'front' ? 'دوخت آستین به حلقه جلو' : 'دوخت آستین به حلقه پشت',
-                );
+                foreach ($panels as $target) {
+                    $relations[] = static::run(
+                        $entry,
+                        $slices[$index],
+                        $target['entry'],
+                        $target['edges'],
+                        $target['side'] === 'front' ? 'دوخت آستین به حلقه جلو' : 'دوخت آستین به حلقه پشت',
+                    );
+                }
             }
         }
 

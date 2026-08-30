@@ -119,6 +119,38 @@ class DrapePayloadService
      */
     protected const SLEEVE_LIFT = 0.5;
 
+    /**
+     * وقتی پنل‌های یک آستین از زیربغل هم‌تراز می‌شوند، چه سهمی از اختلاف را
+     * پنلِ کم‌عمق با *پایین* رفتن می‌دهد و چه سهمی پنلِ عمیق با *بالا* رفتن.
+     *
+     * صفر یعنی پنلِ کم‌عمق سرِ جایش می‌ماند و پنلِ کپ‌دار بالا می‌رود؛ یک یعنی
+     * برعکس. هیچ‌کدامِ این دو سر خوب نیست: با یک، سرآستینِ کت رسمی سرِ جایش
+     * می‌ماند ولی آستینِ زیر ۱۱٫۹ سانتی‌متر زیرِ حلقه می‌افتد و همان درز
+     * ۶٫۵ سانتی‌متر باز می‌ماند (پوششِ دورِ بازو ۶۰ درجه)؛ با صفر، سرآستین
+     * ۱۱٫۹ بالا می‌رود، هم‌ترازی درست می‌شود ولی چون spinFit اجازهٔ پایین رفتنِ
+     * قطعهٔ روی اندام را تنها سه سانتی‌متر می‌دهد (VERTICAL_ROOM)، *تنه* بالا
+     * کشیده می‌شود تا به آستین برسد و لباس از چانه بالاتر می‌زند.
+     *
+     * اندازه‌گیری، با همین کد:
+     *
+     *   سهم              ۰        ۰٫۰۵     ۰٫۱۲   ۰٫۱۵     ۰٫۲    ۰٫۲۵     ۱
+     *   دروازهٔ کت رسمی ✗بالای‌سر ✗بالای‌سر  ✓    ✗بالای‌سر   ✓      ✓    ✗درزباز
+     *   پوششِ کت رسمی    ۱۸۰°     ۱۶۵°    ۱۶۵°    ۱۶۵°    ۱۸۰°   ۱۵۰°    ۶۰°
+     *   سوراخِ کت رسمی   ۱٫۶٪      —      ۱٫۶٪     —      ۱٫۶٪   ۱٫۶٪     —
+     *   سوراخِ ترنچ‌کت    ۰٫۲٪      —      ۰٫۲٪     —      ۴٫۱٪   ۴٫۹٪     —
+     *
+     * ۰٫۱۲ برداشته شد: تنها مقداری که هم دروازه را رد می‌کند و هم ترنچ‌کت را
+     * بدتر نمی‌کند.
+     *
+     * یک هشدار برای بعدی: خودِ دروازهٔ «بالای سر» این‌جا لبه‌ای است — ۰٫۱۵ ردش
+     * می‌کند و ۰٫۱۲ و ۰٫۲ نه. علتش این است که سنجهٔ هندسی لباس را *بی بدن*
+     * می‌دوزد (bench-drape.mjs: dress(0)) در حالی که نماگر با بدنِ کامل
+     * (garment-solid.js: SEWING_BODY = 1)؛ لباسِ بی‌تن وا می‌رود و آن یکی دو
+     * سانتی‌متر را چند برابر می‌کند. تا وقتی این دو یکی نشوند، عددِ بینایی
+     * معتبرتر از دروازهٔ هندسی است.
+     */
+    protected const UNDERARM_DIP = 0.12;
+
     /** شعاع مرجع برای تبدیل اختلاف زاویه به فاصله (سانتی‌متر). */
     protected const REFERENCE_RADIUS = 15.0;
 
@@ -164,7 +196,7 @@ class DrapePayloadService
         }
 
         $this->arrange($instances);
-        $this->arrangeSleeves($instances);
+        $this->arrangeSleeves($instances, $body);
         [$instances, $byCode] = $this->dedupe($instances, $notes);
 
         $relations = [];
@@ -1081,7 +1113,7 @@ class DrapePayloadService
      *
      * @param  array<string, array<string, mixed>>  $instances
      */
-    protected function arrangeSleeves(array &$instances): void
+    protected function arrangeSleeves(array &$instances, DrapeBody $body): void
     {
         $groups = [];
 
@@ -1111,6 +1143,8 @@ class DrapePayloadService
             if (count($ids) < 2) {
                 continue; // آستین یک‌تکه؛ خودش تمامِ دور را می‌گیرد
             }
+
+            $this->levelUnderarms($instances, $ids, $body);
 
             $total = 0.0;
 
@@ -1202,6 +1236,88 @@ class DrapePayloadService
                 }
             }
         }
+    }
+
+    /**
+     * پنل‌های یک آستین از *زیربغل* هم‌تراز می‌شوند، نه از سرِ قطعه.
+     *
+     * تا امروز هر پنلِ آستین سرش را روی یک ترازِ ثابت می‌گذاشت. برای آستینی که
+     * هر دو پنلش کپِ کم‌عمق دارند (کت اسپرت: ۶٫۱ و ۳٫۸ سانتی‌متر) اختلافش ناچیز
+     * بود، ولی کت رسمی کپِ ۱۱٫۹ سانتی‌متری دارد و آستین زیرش اصلاً کپ ندارد
+     * (صفر): دو پنل با ۱۱٫۹ سانتی‌متر اختلافِ ارتفاع چیده می‌شدند، در حالی که
+     * درزِ پهلوی هر دو ۴۸٫۲ سانتی‌متر است و از همان زیربغل شروع می‌شود. یعنی
+     * قیدِ درز باید ده سانتی‌متر یکی را بالا و دیگری را پایین می‌کشید؛ آستین
+     * روی بازو مچاله می‌شد و ساعد لخت می‌ماند. اندازه گرفته شد: پوششِ دورِ بازو
+     * ۹۰ درجه از ۳۶۰ در برابر ۳۳۰ برای کت اسپرت، و ۹۳ نقطه از ۳۱۲ بازوی لخت.
+     * در عکس، هر دو ساعد قرمز بود (۲۳۶۱ و ۸۹۴ پیکسل).
+     *
+     * زیربغل جایی است که درزِ پهلوی پنل شروع می‌شود — همان نقطه‌ای که خیاط دو
+     * تکه را از آن به هم می‌رساند. پس همهٔ پنل‌ها زیربغلشان را روی یک تراز
+     * می‌گذارند؛ اینکه این تراز کجای بازهٔ امروز بیفتد، UNDERARM_DIP می‌گوید.
+     *
+     * @param  array<string, array<string, mixed>>  $instances
+     * @param  array<int, string>  $ids
+     */
+    protected function levelUnderarms(array &$instances, array $ids, DrapeBody $body): void
+    {
+        $drops = [];
+
+        foreach ($ids as $id) {
+            $drop = $this->underarmDrop($instances[$id]);
+
+            if ($drop === null) {
+                return; // پنلی که درز پهلو ندارد؛ حدس نمی‌زنیم
+            }
+
+            $drops[$id] = $drop;
+        }
+
+        $anchor = min($drops) + (static::UNDERARM_DIP * (max($drops) - min($drops)));
+
+        foreach ($ids as $id) {
+            $lower = ($anchor - $drops[$id]) / max(1.0, $body->height);
+
+            if (abs($lower) < 0.001) {
+                continue;
+            }
+
+            $yTop = round($instances[$id]['placement']['y_top'] - $lower, 4);
+
+            $instances[$id]['placement']['y_top'] = $yTop;
+            $instances[$id]['payload']['placement']['y_top'] = $yTop;
+            $instances[$id]['top_cm'] = $yTop * $body->height;
+        }
+    }
+
+    /**
+     * فاصلهٔ سرِ یک پنلِ آستین تا خطِ زیربغلِ خودش، سانتی‌متر.
+     *
+     * زیربغل بالاترین سرِ درزِ پهلوست: زیرِ آن، دو پنل به هم دوخته می‌شوند و
+     * بالای آن، سرآستین به حلقه می‌رود. null یعنی این پنل درز پهلو ندارد.
+     */
+    protected function underarmDrop(array $instance): ?float
+    {
+        $polygon = $instance['polygon'];
+        $top = null;
+        $seam = null;
+
+        foreach ($polygon as $point) {
+            $y = (float) $point['y'];
+            $top = $top === null ? $y : min($top, $y);
+        }
+
+        foreach ($instance['edges'] as $edge) {
+            if (($edge['tag'] ?? '') !== 'side') {
+                continue;
+            }
+
+            foreach ([$edge['start'], $edge['end']] as $at) {
+                $y = (float) ($polygon[$at]['y'] ?? 0);
+                $seam = $seam === null ? $y : min($seam, $y);
+            }
+        }
+
+        return ($top === null || $seam === null) ? null : max(0.0, $seam - $top);
     }
 
     /** ناحیه بدن که قطعه در آن می‌نشیند. */
@@ -2402,7 +2518,18 @@ class DrapePayloadService
      */
     protected function share(array $resolved): array
     {
-        foreach (['left', 'right'] as $side) {
+        /*
+         * سرِ *گیرنده* اول بریده می‌شود، بعد سرِ دهنده.
+         *
+         * ترتیب مهم است، چون هر پاس سهم‌ها را از طولِ سرِ مقابل می‌گیرد. حلقهٔ
+         * آستینِ دوتکه این را نشان داد: پنلِ پهلوی جلوی کت رسمی ۱۱٫۷ سانتی‌متر
+         * حلقه دارد که ۵٫۸ از آن سهمِ آستینِ زیر است و تنها ۵٫۹ می‌ماند برای
+         * سرآستینِ رو. با بریدنِ سرآستین *پیش از* پنل، پاس اول همان ۱۱٫۷ کامل
+         * را می‌دید و ۹٫۵ سانتی‌متر سرآستین رویش می‌گذاشت — یعنی زیرِ بغل زیادی
+         * و روی سرشانه ۳٫۲ سانتی‌متر کم. همان کمبود، سرِ آستین را از سرشانه
+         * جدا نگه می‌داشت و در عکس هر دو سرشانه لخت بود (۱۰۴۳ و ۲۹۰ پیکسل).
+         */
+        foreach (['right', 'left'] as $side) {
             $other = $side === 'left' ? 'right' : 'left';
             $users = [];
 
