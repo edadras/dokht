@@ -260,7 +260,12 @@ export const bodyColliders = (Collider, body, table, grow = 1) => {
         out.push(collider);
     };
 
-    at(table.profile.filter(([y]) => y >= level.crotch - 1e-6), 'torso');
+    /*
+     * `hull` است نه `profile`: برخوردگر باید همان پوستی باشد که addBody رسم
+     * می‌کند. نیم‌رخِ چیدن از سرشانه تا سینه عقب می‌نشیند و آن نوار هیچ
+     * برخوردگری نداشت — پارچه از تویش رد می‌شد و پوستِ سرشانه دیده می‌شد.
+     */
+    at((table.hull || table.profile).filter(([y]) => y >= level.crotch - 1e-6), 'torso');
 
     const neck = table.radii.neck;
 

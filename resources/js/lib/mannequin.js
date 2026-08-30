@@ -384,13 +384,40 @@ export const drapeBody = (body) => {
      */
     const ribs = armJoint(body).x - body.arm[0].r;
 
+    /*
+     * ولی برخوردگر باید همان پوستی باشد که رسم می‌شود، نه این نیم‌رخِ باریک‌شده.
+     *
+     * فرورفتگیِ بالا برای *چیدن* است: قطعه باید بداند تنه کجا تمام می‌شود تا
+     * آستین کنارش جا بگیرد. برخورد ولی کارِ دیگری دارد، و نوارِ سرشانه تا سینه
+     * هیچ برخوردگری نداشت: سطحِ رسم‌شده تا ۳٫۳ سانتی‌متر بیرونِ برخوردگر می‌ماند و
+     * پارچه از تویش رد می‌شد. لکهٔ سرشانه در عکسِ پیراهن و ترنچ‌کت و راپ — همه
+     * روی x=±۱۷ — دقیقاً همین نوار بود.
+     *
+     * پس نیم‌رخِ دومی ساخته می‌شود که همان پوستِ رسم‌شده است، با یک گودی که
+     * *فقط* دورِ خودِ حلقهٔ آستین است. زیرِ بغل واقعاً گود است و بازو همان‌جا
+     * کنارِ تنه می‌ایستد؛ سرشانه و سینه نه.
+     *
+     * پهنای گودی اندازه گرفته شد (سهم از فاصلهٔ سرشانه تا سینه، سنجهٔ بینایی):
+     *
+     *   بی‌گودی   پیراهن ۶٫۹٪  ترنچ ۱٫۵٪  راپ ۱۶٫۲٪  کت رسمی ۱۴٫۳٪
+     *   ۰٫۳۰      پیراهن ۴٫۵٪  ترنچ ۳٫۳٪  راپ ۱۳٫۵٪  کت رسمی  ۹٫۵٪
+     *   ۰٫۵۵      پیراهن ۴٫۳٪  ترنچ ۳٫۴٪  راپ  ۳٫۷٪  کت رسمی ۱۲٫۴٪
+     *
+     * راپ بی‌گودی وا می‌رود، چون جلوش بست ندارد و با تنهٔ پهن‌تر باز می‌شود.
+     */
+    const hollow = Math.max(0.02, (bustLevel - shoulderLevel) * 0.55);
+    const hull = profile.slice();
+
     for (let i = body.torso.length - 1; i >= 0; i--) {
         const ring = body.torso[i];
         const mean = (ring.front + ring.back) / 2 / 100;
         const underArm = ring.y >= shoulderLevel && ring.y <= bustLevel;
         const rx = (underArm ? Math.min(ring.rx, ribs) : ring.rx) / 100;
+        const near = Math.max(0, 1 - Math.abs(ring.y - armhole) / hollow);
+        const skin = (ring.rx - (ring.rx - Math.min(ring.rx, ribs)) * near) / 100;
 
         profile.push([at(ring.y), rx, mean, ring.front / 100, ring.back / 100]);
+        hull.push([at(ring.y), skin, mean, ring.front / 100, ring.back / 100]);
     }
 
     /* دست: صفر روی مفصل، منفی رو به پایین */
@@ -437,6 +464,11 @@ export const drapeBody = (body) => {
             shoulder: body.shoulderHalf / 100,
         },
         profile,
+        /*
+         * همان نیم‌رخ، ولی با پهنای واقعیِ تنه — گودیِ زیرِ بغل فقط دورِ خودِ
+         * حلقه می‌ماند. برخوردگرها این را می‌خواهند، نه `profile` را.
+         */
+        hull,
         armTable,
         armLength: body.armLength / 100,
         armOffset: armJoint(body).x / 100,

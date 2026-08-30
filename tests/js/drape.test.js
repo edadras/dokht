@@ -596,7 +596,12 @@ test('نگه‌دارنده، نوارِ بالا را روی بدن می‌نش
 
     const reach = (patch, v) => {
         const y = patch.positions[v * 3 + 1];
-        const rows = body.profile.slice().sort((one, two) => one[0] - two[0]);
+        /*
+         * `hull` است نه `profile`: سطحی که لباس رویش می‌ایستد همان پوستی است که
+         * رسم می‌شود. نیم‌رخِ چیدن زیرِ بغل عقب می‌نشیند تا بازو جا بگیرد و در
+         * ترازِ سرشانه ۱۲٫۹ سانتی‌متر است در برابرِ ۱۹٫۵ی که دیده می‌شود.
+         */
+        const rows = (body.hull || body.profile).slice().sort((one, two) => one[0] - two[0]);
         let rx = rows[rows.length - 1][1];
         let rz = rows[rows.length - 1][2];
 
