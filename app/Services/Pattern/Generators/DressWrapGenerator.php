@@ -86,6 +86,7 @@ class DressWrapGenerator extends DressBaseGenerator
 
         // فرم سینه روی درز کمر چین می‌شود، نه ساسون
         $bodice[0] = $this->dartsToGathers($bodice[0], 'waist', 'چین درز راپ');
+        $bodice[0] = $this->crossesCenter($bodice[0], $overlap);
         $waist = $this->edgeGirth($bodice, 'waist');
 
         $skirt = $this->attachedSkirt($g, [
@@ -99,6 +100,8 @@ class DressWrapGenerator extends DressBaseGenerator
             'front_name' => 'دامن راپ جلو (دو تکهٔ قرینه)',
             'back_name' => 'دامن پشت',
         ]);
+
+        $skirt[0] = $this->crossesCenter($skirt[0], $overlap);
 
         [$skirt, $waistNotes] = $this->joinWaist($skirt, $waist);
 
@@ -137,10 +140,31 @@ class DressWrapGenerator extends DressBaseGenerator
         $pieces[] = $this->backNeckFacingPiece($g, ['prefix' => 'wrap-', 'width' => 6]);
 
         // لبهٔ راپ از یقه تا کمر باز است و باید با نوار اریب پوشیده شود
-        $pieces[] = $this->armholeBindingPiece(
+        $band = $this->armholeBindingPiece(
             round(Geometry::height($bodice[0]['outline']) + $g['neck_width'] + 10, 1),
             ['prefix' => 'wrap-edge-', 'name' => 'نوار لبهٔ راپ و یقه', 'height' => 3.0],
         );
+
+        /*
+         * این نوار «حلقهٔ افقی» نیست؛ مورب است.
+         *
+         * چیدنِ سه‌بعدی هر نواری را در یک ارتفاعِ ثابت دور بدن می‌پیچد، و این
+         * یکی ۶۵ سانتی‌متر طول دارد — یعنی دورِ کاملِ سینه. نتیجه‌اش نواری بود
+         * که در ارتفاع سرشانه دورِ تن می‌چرخید و مچاله می‌شد، در حالی که جایش
+         * روی لبهٔ راپ است: از سرِ کمر (۱۵ سانتی‌متر آن‌سوی خط مرکز) مورب بالا
+         * تا نقطهٔ یقه روی سرشانه.
+         *
+         * دو سرِ آن مسیر از خودِ درفت درمی‌آید: چارکِ سینه نیم‌دورِ جلو است، پس
+         * هر سانتی‌متر پهنای الگو یک‌چهارمِ π بر چارکِ سینه زاویه می‌گیرد.
+         */
+        $turn = M_PI_2 / max(5.0, (float) $g['quarter_bust']);
+
+        $band['meta']['drape_run'] = [
+            'from' => ['level' => 'waist', 'u' => round(-$overlap * $turn, 4)],
+            'to' => ['level' => 'shoulder', 'u' => round((float) $g['neck_width'] * $turn, 4)],
+        ];
+
+        $pieces[] = $band;
 
         [$pieces, $closureNotes] = $this->dressClosure($pieces, $g, $params);
         $pieces = $this->dressLining($pieces, $params);
@@ -153,6 +177,34 @@ class DressWrapGenerator extends DressBaseGenerator
         ]);
 
         return $this->finish($this->noted($pieces, $notes));
+    }
+
+    /**
+     * اعلامِ اینکه این پنل از خط مرکز *رد* می‌شود، نه اینکه کنارش می‌ایستد.
+     *
+     * پنل با «اضافهٔ هم‌پوشانی» درفت شده و ۱۵ سانتی‌متر از خط مرکز جلو پهن‌تر
+     * است، ولی خودِ الگو جایی نمی‌گوید این ۱۵ سانتی‌متر قرار است روی آن یکی جلو
+     * بیفتد؛ از دیدِ هندسه فقط یک پنلِ چهل سانتی‌متری است. پس چیدنِ سه‌بعدی هر دو
+     * جلو را مثل هر لباس دیگری نصف‌نصف می‌کرد — یکی از ۰ تا ۹۰ درجه و دیگری از
+     * −۹۰ تا ۰ — و دو لبهٔ راپ به‌جای اینکه روی هم بیفتند، سرِ خط مرکز به هم
+     * می‌رسیدند.
+     *
+     * نتیجه‌اش روی مانکن اندازه گرفته شد: یقهٔ راپ ۲۳٫۴ سانتی‌متر گود است، پس
+     * بالای آن هر پنل تازه از x=۱۵ پارچه دارد — یعنی از ۳۴ درجه به بعد. میان
+     * ۳۴− و ۳۴+ درجه هیچ پارچه‌ای نبود و سینه از یقه تا زیرِ سینه لخت می‌ماند:
+     * لکه‌ای ۲۴۶۹ پیکسلی، ۱۳٪ کلِ پارچهٔ لباس.
+     *
+     * فقط راپ این را اعلام می‌کند. اضافهٔ دو سانتی‌متریِ جای دکمهٔ پیراهن و کت
+     * هم‌پوشانی نیست: زیرِ خودش تا می‌خورد و لبه‌اش روی خط مرکز دوخته می‌شود.
+     *
+     * @param  array<string, mixed>  $piece
+     * @return array<string, mixed>
+     */
+    protected function crossesCenter(array $piece, float $overlap): array
+    {
+        $piece['meta']['crosses_center'] = round(max(0.0, $overlap), 2);
+
+        return $piece;
     }
 
     /**
