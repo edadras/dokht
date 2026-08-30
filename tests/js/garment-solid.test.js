@@ -255,3 +255,111 @@ test('تنه زیرِ بغل برای بازو عقب می‌نشیند', async 
     assert.ok(waist, 'تراز کمر روی نیم‌رخ نیست');
     assert.ok(waist[1] > inner * 0.5, 'کمر نباید بی‌دلیل باریک شده باشد');
 });
+
+/*
+ * تختهٔ آزمایشی: یک شبکهٔ مربعیِ مثلث‌بندی‌شده در صفحهٔ z=۰، با همان شکلی که
+ * relax انتظار دارد — یک قطعه، بی درز، پس همهٔ مرزش لبهٔ آزاد است.
+ */
+const sheet = (side = 9, step = 0.02) => {
+    const count = side * side;
+    const positions = new Float32Array(count * 3);
+    const grain = new Float64Array(count * 2);
+    const indices = [];
+
+    for (let r = 0; r < side; r++) {
+        for (let c = 0; c < side; c++) {
+            const at = (r * side + c) * 3;
+
+            positions[at] = c * step;
+            positions[at + 1] = r * step;
+            grain[(r * side + c) * 2] = c * step;
+            grain[(r * side + c) * 2 + 1] = r * step;
+        }
+    }
+
+    for (let r = 0; r + 1 < side; r++) {
+        for (let c = 0; c + 1 < side; c++) {
+            const a = r * side + c;
+
+            indices.push(a, a + 1, a + side, a + 1, a + side + 1, a + side);
+        }
+    }
+
+    const patch = { positions, count, invMass: new Float32Array(count).fill(1) };
+    const mesh = { indices: Uint32Array.from(indices), grain };
+
+    return { drape: { patches: [{ patch, mesh }], seams: [] }, patch, side, step };
+};
+
+/* رأس‌های لبه‌ی این تخته: هر رأسی که روی یکی از چهار ضلع باشد */
+const onEdge = (side, v) => {
+    const r = Math.floor(v / side);
+    const c = v % side;
+
+    return r === 0 || c === 0 || r === side - 1 || c === side - 1;
+};
+
+/* و چهار گوشه، که لبه‌شان *باید* تیز بماند */
+const onCorner = (side, v) => {
+    const r = Math.floor(v / side);
+    const c = v % side;
+
+    return (r === 0 || r === side - 1) && (c === 0 || c === side - 1);
+};
+
+test('صاف‌کردن، دندانهٔ لبهٔ آزاد را می‌بَرد', async () => {
+    const { relax } = await import('../../resources/js/components/garment-solid.js');
+    const { drape, patch, side } = sheet();
+
+    // دندانه: هر رأسِ لبه یکی در میان، چهار میلی‌متر بیرون از صفحه
+    for (let v = 0; v < patch.count; v++) {
+        if (onEdge(side, v) && ! onCorner(side, v)) {
+            patch.positions[v * 3 + 2] = (v % 2 ? 1 : -1) * 0.004;
+        }
+    }
+
+    relax(drape);
+
+    let worst = 0;
+
+    for (let v = 0; v < patch.count; v++) {
+        if (onEdge(side, v) && ! onCorner(side, v)) {
+            worst = Math.max(worst, Math.abs(patch.positions[v * 3 + 2]));
+        }
+    }
+
+    assert.ok(worst < 0.0005, `دندانهٔ لبه باید پاک شود، ${(worst * 1000).toFixed(2)} میلی‌متر ماند`);
+});
+
+test('صاف‌کردن، لبهٔ آزاد را به درونِ پارچه نمی‌کشد', async () => {
+    const { relax } = await import('../../resources/js/components/garment-solid.js');
+    const { drape, patch, side, step } = sheet();
+    const span = (side - 1) * step;
+
+    relax(drape);
+
+    /*
+     * قانونِ درونِ قطعه — میانگینِ *همهٔ* همسایه‌ها — روی رأسِ لبه غلط است: نصفِ
+     * همسایه‌ها را ندارد، پس میانگین همیشه به داخل می‌افتد و لبه را تو می‌کشد.
+     * با همان قانون، لبهٔ این تخته ۱۲٫۴ میلی‌متر تو می‌رفت و گوشه‌اش ۱۳٫۸، و
+     * چون هر رأس به اندازهٔ مثلث‌هایش کشیده می‌شد، دندانه‌دار هم می‌شد. پارچه‌ای
+     * که تکان نخورده باید دست‌نخورده بماند — گوشه‌های تیزش هم.
+     */
+    let worst = 0;
+
+    for (let v = 0; v < patch.count; v++) {
+        if (! onEdge(side, v)) {
+            continue;
+        }
+
+        const r = Math.floor(v / side);
+        const c = v % side;
+
+        if (c === 0) worst = Math.max(worst, patch.positions[v * 3]);
+        if (c === side - 1) worst = Math.max(worst, span - patch.positions[v * 3]);
+        if (r === 0) worst = Math.max(worst, patch.positions[v * 3 + 1]);
+        if (r === side - 1) worst = Math.max(worst, span - patch.positions[v * 3 + 1]);
+    }
+
+    assert.ok(worst < 1e-4, `لبه ${(worst * 1000).toFixed(2)} میلی‌متر تو کشیده شد`);
+});

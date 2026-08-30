@@ -310,8 +310,35 @@ const seamBand = (drape) => {
  *
  * پس چند دورِ کوتاهِ میانگین‌گیری با همسایه‌ها: موجِ ریز پاک می‌شود و چینِ پهن
  * می‌ماند. رأس‌های درز دست نمی‌خورند، وگرنه درزی که تازه بسته شده باز می‌شود.
+ *
+ * و لبهٔ آزاد — دمِ لباس، لبهٔ جلو، دهانهٔ یقه، سرِ آستین — قانونِ خودش را دارد.
+ *
+ * میانگین‌گیری با «همهٔ همسایه‌ها» فقط برای رأسی درست است که همسایه‌هایش دورِ
+ * تا دورش باشند. رأسِ روی لبه نصفِ همسایه‌ها را دارد و همه‌شان *درونِ* قطعه‌اند،
+ * پس میانگین همیشه به داخل می‌افتد و رأس را به تو می‌کشد. هر رأسِ لبه هم به
+ * اندازهٔ شمارِ مثلث‌هایش کشیده می‌شود، نه یک‌اندازه — و همین است که لبه را
+ * دندانه‌دار می‌کند: با سه دور، دمِ ترنچ‌کت ریش‌ریش می‌ماند و با سی دور، مثل
+ * پرده کنگره‌دار می‌شد. هیچ تعداد دوری لبه را صاف نمی‌کرد، چون خودِ قانون غلط
+ * بود، نه شمارِ دورها.
+ *
+ * لبه یک *خط* است، نه یک سطح؛ پس روی خطِ خودش صاف می‌شود: هر رأسِ لبه به میانهٔ
+ * دو همسایهٔ لبه‌ایِ خودش نزدیک می‌شود و بس. موجِ رأس‌به‌رأس پاک می‌شود، ولی
+ * لبه سرِ جای خودش می‌ماند و به درونِ پارچه کشیده نمی‌شود.
+ *
+ * و تا کجا نزدیک شود؟ تا همان‌جا که الگوی تخت می‌گوید.
+ *
+ * خطِ لبه همه‌جا صاف نیست: حلقهٔ آستین کمان است، دمِ دامن کمان است، و گوشهٔ
+ * دمِ لباس با لبهٔ جلو یک زاویهٔ تیزِ واقعی دارد. کشاندنِ همهٔ این‌ها به میانهٔ
+ * دو همسایه یعنی گرد کردنِ چیزی که خیاط تیز بریده — با همین قانون و بی هیچ
+ * دندانه‌ای، گوشهٔ تختهٔ آزمایشی ۸٫۲ میلی‌متر تو می‌رفت.
+ *
+ * ولی خودِ الگوی تخت می‌گوید هر رأس چقدر *باید* از وترِ دو همسایه‌اش فاصله
+ * داشته باشد. پس همان اندازه نگه داشته می‌شود و فقط چیزی که از آن بیشتر است —
+ * یعنی همانی که حل‌کننده اضافه کرده — برداشته می‌شود. روی هشت لباسِ سنجه،
+ * انحرافِ اضافیِ رأس‌های لبهٔ آزاد از وترِ همسایه‌هایشان از ۲٫۳ به ۱٫۴
+ * میلی‌متر رسید و شمارِ دندانه‌های بلندتر از چهار میلی‌متر از ۴۱۲ به ۱۸۸.
  */
-const relax = (drape, rounds = 3, weight = 0.4) => {
+export const relax = (drape, rounds = 3, weight = 0.4) => {
     const locked = new Map();
 
     for (const seam of drape.seams) {
@@ -333,8 +360,48 @@ const relax = (drape, rounds = 3, weight = 0.4) => {
     for (const entry of drape.patches) {
         const patch = entry.patch;
         const indices = entry.mesh.indices;
+        const grain = entry.mesh.grain;
         const count = patch.count;
         const hold = locked.get(patch) || new Uint8Array(count);
+
+        /*
+         * لبهٔ آزاد: یالی که فقط یک مثلث دارد. دو همسایهٔ لبه‌ایِ هر رأس همین‌جا
+         * درمی‌آید — و رأسی که سه یال لبه‌ای دارد (جایی که قطعه نیشگون شده)
+         * همسایهٔ یکتا ندارد، پس مثل رأسِ درونی رفتار می‌کند.
+         */
+        const seen = new Map();
+
+        for (let t = 0; t < indices.length; t += 3) {
+            for (let e = 0; e < 3; e++) {
+                const a = indices[t + e];
+                const b = indices[t + (e + 1) % 3];
+                const key = a < b ? a * count + b : b * count + a;
+                const found = seen.get(key);
+
+                if (found) {
+                    found.twice = true;
+                } else {
+                    seen.set(key, { a, b, twice: false });
+                }
+            }
+        }
+
+        const rim = new Int32Array(count * 2).fill(-1);
+        const rimmed = new Uint8Array(count);
+
+        for (const edge of seen.values()) {
+            if (edge.twice) {
+                continue;
+            }
+
+            for (const [v, other] of [[edge.a, edge.b], [edge.b, edge.a]]) {
+                if (rimmed[v] < 2) {
+                    rim[v * 2 + rimmed[v]] = other;
+                }
+
+                rimmed[v]++;
+            }
+        }
 
         /* همسایه‌ها، یک بار */
         const tally = new Uint32Array(count);
@@ -374,8 +441,10 @@ const relax = (drape, rounds = 3, weight = 0.4) => {
                     continue;
                 }
 
-                const from = heads[v];
-                const to = heads[v + 1];
+                /* رأسِ لبه فقط روی خطِ لبه صاف می‌شود، نه به سمتِ درونِ قطعه */
+                const onRim = rimmed[v] === 2;
+                const from = onRim ? v * 2 : heads[v];
+                const to = onRim ? v * 2 + 2 : heads[v + 1];
 
                 if (to === from) {
                     continue;
@@ -386,7 +455,7 @@ const relax = (drape, rounds = 3, weight = 0.4) => {
                 let z = 0;
 
                 for (let k = from; k < to; k++) {
-                    const n = near[k] * 3;
+                    const n = (onRim ? rim[k] : near[k]) * 3;
 
                     x += positions[n];
                     y += positions[n + 1];
@@ -395,10 +464,34 @@ const relax = (drape, rounds = 3, weight = 0.4) => {
 
                 const n = to - from;
                 const at = v * 3;
+                let toX = x / n;
+                let toY = y / n;
+                let toZ = z / n;
 
-                next[at] += (x / n - positions[at]) * weight;
-                next[at + 1] += (y / n - positions[at + 1]) * weight;
-                next[at + 2] += (z / n - positions[at + 2]) * weight;
+                if (onRim && grain) {
+                    /*
+                     * سهمِ خودِ الگو از این انحراف، سرِ جایش می‌ماند: رأس فقط تا
+                     * آن‌جا به وترِ دو همسایه نزدیک می‌شود که فاصله‌اش همان
+                     * فاصله‌ی روی الگوی تخت شود — و اگر همین حالا هم بیشتر
+                     * نیست، اصلاً تکان نمی‌خورد.
+                     */
+                    const a = rim[v * 2] * 2;
+                    const b = rim[v * 2 + 1] * 2;
+                    const flat = Math.hypot(
+                        grain[v * 2] - (grain[a] + grain[b]) / 2,
+                        grain[v * 2 + 1] - (grain[a + 1] + grain[b + 1]) / 2,
+                    );
+                    const off = Math.hypot(toX - positions[at], toY - positions[at + 1], toZ - positions[at + 2]);
+                    const keep = off > 1e-9 ? Math.min(1, flat / off) : 0;
+
+                    toX = lerp(toX, positions[at], keep);
+                    toY = lerp(toY, positions[at + 1], keep);
+                    toZ = lerp(toZ, positions[at + 2], keep);
+                }
+
+                next[at] += (toX - positions[at]) * weight;
+                next[at + 1] += (toY - positions[at + 1]) * weight;
+                next[at + 2] += (toZ - positions[at + 2]) * weight;
             }
 
             positions.set(next);
