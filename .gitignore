@@ -30,3 +30,6 @@ storage/app/drape-bench
 # آزمون‌های موقتیِ سنجهٔ سرعت که هنگام کار ساخته و پاک می‌شوند
 /tests/Feature/PageBenchTest.php
 /tests/Feature/BenchTest.php
+
+# درخت‌های کاریِ موقتیِ ابزارِ توسعه؛ کدِ پروژه نیستند و خودشان پاک می‌شوند
+/.claude/worktrees
