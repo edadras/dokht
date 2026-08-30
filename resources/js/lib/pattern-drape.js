@@ -950,18 +950,51 @@ const arcOf = (state, from, to) => {
 
     const arc = new Float64Array(slots.length);
     let total = 0;
+    /*
+     * و همان طول، ولی روی لبه‌ای که سرور کشیده بود — پیش از بریدنِ ساسون.
+     *
+     * `length` عمداً ساسون را نمی‌شمارد: آن دو ساق بسته می‌شوند و در لباسِ
+     * دوخته‌شده وجود ندارند، پس برای دوختن باید کنار بروند. ولی بسته‌ی سرور طولِ
+     * لبه را پیش از بستنِ ساسون می‌دهد. سنجهٔ سلامت این دو را با هم مقایسه
+     * می‌کرد و هر لبه‌ای که ساسون داشت را «نمی‌خواند» می‌خواند: درزِ پهلوی کت
+     * ۱۷٫۷ در برابر ۲۱٫۲ — شانزده درصد اختلاف، و کلِ کت به نمای قدیمی برمی‌گشت.
+     * ساسونِ کمر روی درزِ پهلو خیاطیِ درست است، نه خرابی.
+     *
+     * جمعِ سادهٔ همهٔ پاره‌خط‌ها هم جواب نیست: مسیر از دهانهٔ ساسون تا نوکش
+     * می‌رود و برمی‌گردد، و آن رفت‌وبرگشت هیچ‌وقت بخشی از لبه نبوده — با آن،
+     * همان درزِ کت ۴۶٫۸ درمی‌آمد، دو برابرِ واقعیت. پس روی هر ساسون یک‌راست از
+     * سرِ گوه به تهش می‌پریم: همان دهانه، همان چیزی که سرور اندازه گرفته.
+     */
+    let raw = 0;
+    let mouth = -1;
 
     for (let i = 1; i < slots.length; i++) {
         const previous = slots[i - 1];
+        const a = loop[previous] * 2;
+        const b = loop[slots[i]] * 2;
+        const step = Math.hypot(positions[a] - positions[b], positions[a + 1] - positions[b + 1]);
 
-        if (! state.collapsed[previous]) {
-            const a = loop[previous] * 2;
-            const b = loop[slots[i]] * 2;
+        if (state.collapsed[previous]) {
+            if (mouth < 0) {
+                mouth = a; // گوه از این‌جا شروع می‌شود
+            }
+        } else {
+            if (mouth >= 0) {
+                raw += Math.hypot(positions[mouth] - positions[a], positions[mouth + 1] - positions[a + 1]);
+                mouth = -1;
+            }
 
-            total += Math.hypot(positions[a] - positions[b], positions[a + 1] - positions[b + 1]);
+            raw += step;
+            total += step;
         }
 
         arc[i] = total;
+    }
+
+    if (mouth >= 0) {
+        const last = loop[slots[slots.length - 1]] * 2;
+
+        raw += Math.hypot(positions[mouth] - positions[last], positions[mouth + 1] - positions[last + 1]);
     }
 
     const t = new Float64Array(slots.length);
@@ -975,6 +1008,7 @@ const arcOf = (state, from, to) => {
         slots,
         t,
         length: total,
+        raw,
     };
 };
 
@@ -2523,20 +2557,22 @@ export const buildDrape = (payload, body, options = {}) => {
         }
 
         // بررسی سلامت: طولی که خودمان از چندضلعی گرفتیم باید به طولِ بسته نزدیک
-        // باشد. اختلاف بزرگ یعنی from/to اشتباه است و درز جای دیگری دوخته می‌شود
+        // باشد. اختلاف بزرگ یعنی from/to اشتباه است و درز جای دیگری دوخته می‌شود.
+        // سنجش با طولِ خام است، چون بسته هم پیش از بستنِ ساسون اندازه گرفته.
         for (const [name, arc, side] of [
             ['a', arcA, seam.a],
             ['b', arcB, seam.b],
         ]) {
             if (typeof side.length === 'number' && side.length > 0) {
-                const drift = Math.abs(arc.length - side.length) / side.length;
+                const drift = Math.abs(arc.raw - side.length) / side.length;
 
                 if (drift > 0.15) {
                     stats.checks.push({
                         label: seam.label || '',
                         side: name,
                         expected: side.length,
-                        measured: Number(arc.length.toFixed(2)),
+                        measured: Number(arc.raw.toFixed(2)),
+                        sewn: Number(arc.length.toFixed(2)),
                     });
                 }
             }
@@ -3580,6 +3616,26 @@ export const supportGarment = (drape, options = {}) => {
      */
     const zones = options.zones || ['torso', 'collar', 'skirt', 'sleeve', 'leg'];
 
+    const holdUp = (piece, patch) => {
+        const zone = piece.placement?.zone || '';
+        let top = -Infinity;
+
+        for (let i = 0; i < patch.count; i++) {
+            top = Math.max(top, patch.positions[i * 3 + 1]);
+        }
+
+        for (let i = 0; i < patch.count; i++) {
+            const depth = top - patch.positions[i * 3 + 1];
+
+            patch.follow[i] = depth > band ? 0 : strength * (1 - depth / band);
+        }
+
+        seatOnBody(patch, drape.body, zone);
+        patch.capturePins(inverse);
+    };
+
+    const standing = new Set();
+
     for (const { piece, patch } of drape.patches) {
         const zone = piece.placement?.zone || '';
         /*
@@ -3597,19 +3653,60 @@ export const supportGarment = (drape, options = {}) => {
             continue;
         }
 
-        let top = -Infinity;
+        holdUp(piece, patch);
+        standing.add(patch);
+    }
 
-        for (let i = 0; i < patch.count; i++) {
-            top = Math.max(top, patch.positions[i * 3 + 1]);
+    /*
+     * و هیچ قطعه‌ای نباید در هوا رها بماند.
+     *
+     * قاعده‌های بالا از روی *ناحیه* کار می‌کنند، ولی گاهی چند قطعه فقط به هم
+     * دوخته‌اند و به هیچ‌کدام از آن ناحیه‌ها نمی‌رسند. کمربند و نوارِ حلقهٔ
+     * پیراهنِ راپ همین بودند: هر دو درز داشتند — به یکدیگر — و ناحیه‌شان
+     * «جزئیات» بود، پس هیچ تکیه‌گاهی نگرفتند. اندازه گرفته شد: از ۱۳۷ سانتی‌متر
+     * راه افتادند و در پایانِ شبیه‌سازی ۱۳۹۰ سانتی‌متر *زیرِ کف* بودند — چهارده
+     * متر سقوطِ آزاد. سنجهٔ سلامت هم به همین خاطر کلِ لباس را رد می‌کرد و
+     * پیراهن به نمای قدیمی برمی‌گشت.
+     *
+     * پس خوشه‌های به‌هم‌دوخته را می‌شماریم و هر خوشه‌ای که هیچ عضوِ ایستاده‌ای
+     * ندارد، روی جای خودش می‌ایستد. کمربند سرِ کمر است و نوارِ حلقه سرِ حلقه —
+     * همان‌جا که چیده شده‌اند.
+     */
+    const group = new Map();
+    const find = (patch) => {
+        let root = patch;
+
+        while (group.get(root) !== undefined && group.get(root) !== root) {
+            root = group.get(root);
         }
 
-        for (let i = 0; i < patch.count; i++) {
-            const depth = top - patch.positions[i * 3 + 1];
+        return root;
+    };
 
-            patch.follow[i] = depth > band ? 0 : strength * (1 - depth / band);
+    for (const { patch } of drape.patches) {
+        group.set(patch, patch);
+    }
+
+    for (const seam of drape.seams) {
+        const one = find(seam.a);
+        const two = find(seam.b || seam.a);
+
+        if (one !== two) {
+            group.set(one, two);
+        }
+    }
+
+    const footed = new Set();
+
+    for (const patch of standing) {
+        footed.add(find(patch));
+    }
+
+    for (const { piece, patch } of drape.patches) {
+        if (standing.has(patch) || ! patch.follow || footed.has(find(patch))) {
+            continue;
         }
 
-        seatOnBody(patch, drape.body, zone);
-        patch.capturePins(inverse);
+        holdUp(piece, patch);
     }
 };

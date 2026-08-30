@@ -41,6 +41,14 @@ class DrapePayloadService
     protected const SIDE_PENALTY = 1000.0;
 
     /**
+     * جریمه جفت‌شدن رویه با آستر.
+     *
+     * از جریمهٔ سمت کمتر است: اگر واقعاً هیچ شریکِ هم‌لایه‌ای نبود، آستر بهتر از
+     * بی‌دوخت ماندن است. ولی هر شریکِ هم‌لایه‌ای، هر قدر هم دورتر، بر آن می‌چربد.
+     */
+    protected const LAYER_PENALTY = 500.0;
+
+    /**
      * لبه‌هایی که درزشان میان چند شریک تقسیم می‌شود، پس رأسِ میانی لازم دارند.
      *
      * درز روی رأس بریده می‌شود؛ لبه‌ای که رأسِ میانی ندارد نه قابلِ تقسیم است و
@@ -1506,6 +1514,20 @@ class DrapePayloadService
         }
 
         $out = [];
+        /*
+         * دو نمونهٔ یک قطعه باید به دو نمونهٔ یک قطعه دوخته شوند.
+         *
+         * این پاس کمان‌های جامانده را یکی‌یکی برمی‌دارد و هر کمانی که رفت، رفت.
+         * نمونهٔ اول اول انتخاب می‌کند و آینه‌اش با هرچه مانده می‌سازد — پس دو
+         * سمتِ بدن دو جور دوخته می‌شوند. روی کت‌وشلوار همین شد: آستینِ چپ به
+         * *آسترِ* پشت دوخته شد و آستینِ راست به خودِ پشت. آزمونِ «دو بازو یک‌جور
+         * دوخته شوند» همین را گرفت.
+         *
+         * پس هرچه یک نمونه انتخاب کرد، برای نمونهٔ دیگرِ همان قطعه یادداشت
+         * می‌شود و اول همان جست‌وجو می‌شود. اگر پیدا نشد، دوباره آزادانه
+         * می‌گردیم — بی‌دوخت ماندن بدتر از ناقرینه بودن است.
+         */
+        $twin = [];
 
         foreach ($instances as $id => $instance) {
             if (isset($stitched[$id]) || $free === []) {
@@ -1513,43 +1535,55 @@ class DrapePayloadService
             }
 
             $arcs = $this->sewableArcs($instance);
+            $mate = $twin[$this->codeOf($id)] ?? null;
             $best = null;
 
-            foreach ($arcs as $arc) {
-                foreach ($free as $key => $partner) {
-                    $longer = max($arc['length'], $partner['length']);
+            // اول با قیدِ «همان قطعه‌ای که جفتم گرفت»، و اگر چیزی نبود بی‌قید
+            foreach ($mate === null ? [null] : [$mate, null] as $wanted) {
+                foreach ($arcs as $arc) {
+                    foreach ($free as $key => $partner) {
+                        if ($wanted !== null && $this->codeOf($partner['piece']) !== $wanted) {
+                            continue;
+                        }
 
-                    if ($longer < 4.0 || abs($arc['length'] - $partner['length']) / $longer > 0.25) {
-                        continue;
+                        $longer = max($arc['length'], $partner['length']);
+
+                        if ($longer < 4.0 || abs($arc['length'] - $partner['length']) / $longer > 0.25) {
+                            continue;
+                        }
+
+                        /*
+                         * «همسایه» تنها در یک دستگاه معنی دارد.
+                         *
+                         * distance() برای دو دستگاهِ متفاوت (تنه و بازو) فقط
+                         * اختلافِ ارتفاع را برمی‌گرداند و زاویه را کنار می‌گذارد —
+                         * چون زاویهٔ روی بازو با زاویهٔ روی تنه یکی نیست. نتیجه‌اش
+                         * این بود که جیبِ روی تنه و کمانِ آستین در یک ارتفاع
+                         * «فاصلهٔ صفر» می‌گرفتند: روی ترنچ‌کت، جیب و حلقهٔ کمربند و
+                         * سجافِ گردن هر سه *به آستین* دوخته شدند و آستین را ۱۶
+                         * سانتی‌متر روی بازو پایین کشیدند.
+                         *
+                         * درزِ واقعیِ میان‌دستگاهی — آستین به حلقه — از برچسب
+                         * می‌آید نه از این چارهٔ آخر، پس چیزی از دست نمی‌رود.
+                         */
+                        if ($arc['frame'] !== $partner['frame']) {
+                            continue;
+                        }
+
+                        $cost = $this->cost($arc, $partner);
+
+                        if ($cost > 25.0) {
+                            continue; // بیش از یک وجب دورتر، همسایه نیست
+                        }
+
+                        if ($best === null || $cost < $best['cost']) {
+                            $best = ['cost' => $cost, 'arc' => $arc, 'partner' => $partner, 'key' => $key];
+                        }
                     }
+                }
 
-                    /*
-                     * «همسایه» تنها در یک دستگاه معنی دارد.
-                     *
-                     * distance() برای دو دستگاهِ متفاوت (تنه و بازو) فقط اختلافِ
-                     * ارتفاع را برمی‌گرداند و زاویه را کنار می‌گذارد — چون زاویهٔ
-                     * روی بازو با زاویهٔ روی تنه یکی نیست. نتیجه‌اش این بود که
-                     * جیبِ روی تنه و کمانِ آستین در یک ارتفاع «فاصلهٔ صفر»
-                     * می‌گرفتند: روی ترنچ‌کت، جیب و حلقهٔ کمربند و سجافِ گردن هر
-                     * سه *به آستین* دوخته شدند و آستین را ۱۶ سانتی‌متر روی بازو
-                     * پایین کشیدند.
-                     *
-                     * درزِ واقعیِ میان‌دستگاهی — آستین به حلقه — از برچسب می‌آید
-                     * نه از این چارهٔ آخر، پس چیزی از دست نمی‌رود.
-                     */
-                    if ($arc['frame'] !== $partner['frame']) {
-                        continue;
-                    }
-
-                    $cost = $this->cost($arc, $partner);
-
-                    if ($cost > 25.0) {
-                        continue; // بیش از یک وجب دورتر، همسایه نیست
-                    }
-
-                    if ($best === null || $cost < $best['cost']) {
-                        $best = ['cost' => $cost, 'arc' => $arc, 'partner' => $partner, 'key' => $key];
-                    }
+                if ($best !== null) {
+                    break;
                 }
             }
 
@@ -1559,6 +1593,7 @@ class DrapePayloadService
 
             $out[] = $this->seam($best['arc'], $best['partner'], 'دوخت به قطعه‌ی همسایه', null, []);
             $stitched[$id] = true;
+            $twin[$this->codeOf($id)] = $this->codeOf($best['partner']['piece']);
             unset($free[$best['key']]);
         }
 
@@ -2059,24 +2094,41 @@ class DrapePayloadService
                 usort($indexes, fn (int $a, int $b) => $this->arcAnchor($resolved[$a][$other])
                     <=> $this->arcAnchor($resolved[$b][$other]));
 
-                $shares = array_map(
-                    fn (int $index) => max(0.01, array_sum(array_column($resolved[$index][$other], 'length'))),
-                    $indexes,
-                );
-                $total = array_sum($shares);
-                $ratios = array_map(fn (float $share) => $share / $total, $shares);
-
                 // هر کمانِ این سمت به همان نسبت‌ها بریده می‌شود؛ کمربندِ دوتکه
                 // هم دو کمان دارد و هر دو باید میان همان رابطه‌ها پخش شوند
                 foreach ($band as $position => $arc) {
-                    $pieces = $this->splitArc($arc, $ratios);
+                    /*
+                     * نمونهٔ آینه‌شده کمان را از سرِ دیگر می‌پیماید.
+                     *
+                     * splitArc از `from` راه می‌افتد و تکه‌ها را به ترتیبِ
+                     * راه‌رفتن می‌دهد. آینه‌کردن جهتِ پیمایش را وارون می‌کند، پس
+                     * تکه‌ای که روی بازوی چپ سرِ شانه بود روی بازوی راست
+                     * زیرِ بغل درمی‌آید. کت این را نشان داد: پنلِ بالای آستین
+                     * روی یک بازو به سرشانه دوخته می‌شد و روی آن یکی به زیربغل،
+                     * و آستین ده سانتی‌متر از شانه سُر می‌خورد. اندازه گرفته شد:
+                     * همبستگیِ ارتفاعِ دو سرِ درز روی نمونهٔ اول ‎+۰٫۹۹ بود و روی
+                     * آینه‌اش ‎−۰٫۹۸ — یعنی وارونه دوخته شده بود.
+                     *
+                     * پس ترتیبِ رابطه‌ها برای همین کمان وارون می‌شود، نه ترتیبِ
+                     * فهرست. این حدس نیست: آینه‌کردن *همیشه* جهت را برمی‌گرداند.
+                     */
+                    $order = ($arc['instance']['mirrored'] ?? false) ? array_reverse($indexes) : $indexes;
+                    $shares = array_map(
+                        fn (int $index) => max(0.01, array_sum(array_column($resolved[$index][$other], 'length'))),
+                        $order,
+                    );
+                    $total = array_sum($shares);
+                    $pieces = $this->splitArc($arc, array_map(
+                        fn (float $share) => $share / $total,
+                        $shares,
+                    ));
 
-                    if (count($pieces) !== count($indexes)) {
+                    if (count($pieces) !== count($order)) {
                         continue;
                     }
 
-                    foreach ($indexes as $order => $index) {
-                        $resolved[$index][$side][$position] = $pieces[$order];
+                    foreach ($order as $at => $index) {
+                        $resolved[$index][$side][$position] = $pieces[$at];
                     }
                 }
             }
@@ -2327,15 +2379,50 @@ class DrapePayloadService
         $matched = [];
         $usedLeft = [];
         $usedRight = [];
+        /*
+         * و دو نمونهٔ یک قطعه باید به دو نمونهٔ یک قطعه برسند.
+         *
+         * پشتِ رویه و پهلوی پشت هم‌ارتفاع‌اند و هزینه‌شان برای حلقهٔ آستین
+         * یکسان درمی‌آید؛ آن وقت انتخاب به ترتیبِ فهرست می‌افتد و دو بازو دو
+         * جور دوخته می‌شوند. روی کت‌وشلوار: آستینِ چپ به «پهلوی پشت» و آستینِ
+         * راست دو بار به «پشت» — و آستین ۸٫۵ سانتی‌متر از شانه سُر می‌خورد.
+         *
+         * پس هر جفتی که با انتخابِ نمونهٔ دیگرِ همان قطعه نمی‌خواند، عقب
+         * می‌افتد تا اول جفتِ هم‌خوان امتحان شود. اگر هیچ هم‌خوانی نبود، همان
+         * عقب‌افتاده برمی‌گردد — بی‌دوخت ماندن بدتر است.
+         */
+        $twin = [];
+        $deferred = [];
+
+        $take = function (int $i, int $j) use (&$matched, &$usedLeft, &$usedRight, &$twin, $left, $right): void {
+            $usedLeft[$i] = true;
+            $usedRight[$j] = true;
+            $twin[$this->codeOf($left[$i]['piece'])] = $this->codeOf($right[$j]['piece']);
+            $matched[] = [$left[$i], $right[$j]];
+        };
 
         foreach ($costs as [, $i, $j]) {
             if (isset($usedLeft[$i]) || isset($usedRight[$j])) {
                 continue;
             }
 
-            $usedLeft[$i] = true;
-            $usedRight[$j] = true;
-            $matched[] = [$left[$i], $right[$j]];
+            $wanted = $twin[$this->codeOf($left[$i]['piece'])] ?? null;
+
+            if ($wanted !== null && $this->codeOf($right[$j]['piece']) !== $wanted) {
+                $deferred[] = [$i, $j];
+
+                continue;
+            }
+
+            $take($i, $j);
+        }
+
+        foreach ($deferred as [$i, $j]) {
+            if (isset($usedLeft[$i]) || isset($usedRight[$j])) {
+                continue;
+            }
+
+            $take($i, $j);
         }
 
         return [
@@ -2360,7 +2447,7 @@ class DrapePayloadService
         };
     }
 
-    /** هزینه جفت‌شدن دو کمان: فاصله‌شان روی بدن، به‌اضافه جریمه سمت مخالف. */
+    /** هزینه جفت‌شدن دو کمان: فاصله‌شان روی بدن، به‌اضافه جریمه سمت و لایه مخالف. */
     protected function cost(array $a, array $b): float
     {
         $cost = $this->distance($a['at'], $b['at'], $a['frame'] === $b['frame']);
@@ -2369,7 +2456,34 @@ class DrapePayloadService
             $cost += static::SIDE_PENALTY;
         }
 
+        /*
+         * و رویه به رویه دوخته می‌شود، آستر به آستر.
+         *
+         * آسترِ پشت و پشتِ رویه هم‌شکل و هم‌ارتفاع‌اند، پس هزینه‌شان برای حلقهٔ
+         * آستین دقیقاً یکی درمی‌آمد و انتخاب به ترتیبِ فهرست می‌افتاد. روی
+         * کت‌وشلوار همین شد: آستینِ راست به پشتِ رویه دوخته شد و آستینِ چپ به
+         * *آسترِ* پشت — دو بازو دو جور، و آستین ۸٫۵ سانتی‌متر از شانه سُر خورد.
+         * خیاط این را اشتباه نمی‌کند؛ آستر جدا دوخته می‌شود و بعد داخل می‌رود.
+         */
+        if ($this->layerOf($a) !== $this->layerOf($b)) {
+            $cost += static::LAYER_PENALTY;
+        }
+
         return round($cost, 4);
+    }
+
+    /** کدِ قطعه، بی شمارهٔ نمونه: «blazer-front#1» → «blazer-front». */
+    protected function codeOf(string $id): string
+    {
+        $at = strrpos($id, '#');
+
+        return $at === false ? $id : substr($id, 0, $at);
+    }
+
+    /** لایهٔ یک کمان: رویه، آستر، لایی. */
+    protected function layerOf(array $arc): string
+    {
+        return (string) ($arc['instance']['payload']['layer'] ?? $arc['instance']['layer'] ?? 'outer');
     }
 
     /**
@@ -2413,6 +2527,24 @@ class DrapePayloadService
         // کلیِ دوخت: دو قطعه‌ای که هم‌جهت بریده شده‌اند، درزشان را وارونه‌ی هم
         // می‌پیمایند.
         if (abs($straight - $flipped) < ($same ? 0.5 : 2.0)) {
+            /*
+             * ولی همیشه نویز نیست؛ گاهی آزمون کور است.
+             *
+             * برای درزی که میان دو دستگاه است فقط ارتفاع سنجیده می‌شود، و اگر
+             * دو کمان در ارتفاع هیچ هم‌پوشانی نداشته باشند جمعِ دو فاصله در هر
+             * دو ترتیب *دقیقاً* برابر درمی‌آید. حلقهٔ آستینِ کت این را نشان داد:
+             * Δ صفرِ کامل، برای هر چهار درزِ پنلِ زیرین.
+             *
+             * آن‌جا هنوز چیزی برای گفتن هست: جهت. کمانی که از بالا به پایین
+             * می‌رود باید به کمانی دوخته شود که آن هم از بالا به پایین می‌رود.
+             */
+            $slopeA = $aEnd['y'] - $aStart['y'];
+            $slopeB = $bEnd['y'] - $bStart['y'];
+
+            if (! $same && abs($slopeA) > 0.5 && abs($slopeB) > 0.5) {
+                return ($slopeA > 0) !== ($slopeB > 0);
+            }
+
             return (bool) ($source['reverse'] ?? true);
         }
 

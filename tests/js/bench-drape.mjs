@@ -451,6 +451,49 @@ const mirrorOf = (drape) => {
     return { worst, mean: pairs ? sum / pairs : 0, pairs };
 };
 
+/*
+ * دروازهٔ کیفیت — تنها عددی که کاربر واقعاً می‌بیند.
+ *
+ * نماگر پیش از نشان دادنِ پارچه همین را می‌پرسد و اگر جواب «نه» باشد، به نمای
+ * چرخشیِ قدیمی برمی‌گردد. بقیهٔ سنجه‌ها می‌گویند چقدر خوب است؛ این یکی می‌گوید
+ * اصلاً دیده می‌شود یا نه. همان شرط‌های landedWell در garment-solid.js.
+ */
+const gateOf = (drape, body, seamError) => {
+    if (drape.stats.checks.some((row) => row.measured !== undefined)) {
+        return 'کمانِ درز با الگو نمی‌خواند';
+    }
+
+    if (! (seamError < 0.06)) {
+        return 'درزها بسته نشدند';
+    }
+
+    let lowest = Infinity;
+    let highest = -Infinity;
+
+    for (const { patch } of drape.patches) {
+        for (let v = 0; v < patch.count; v++) {
+            const y = patch.positions[v * 3 + 1];
+
+            if (y < lowest) lowest = y;
+            if (y > highest) highest = y;
+        }
+    }
+
+    if (lowest < -0.03) {
+        return `قطعه‌ای زیر کف افتاد (${(lowest * 100).toFixed(0)})`;
+    }
+
+    if (highest > body.level.chin + 0.08) {
+        return 'قطعه‌ای بالای سر رفت';
+    }
+
+    if (highest < body.level.shoulder - 0.10) {
+        return `از جای خودش پایین‌تر نشست (${((body.level.shoulder - highest) * 100).toFixed(0)})`;
+    }
+
+    return null;
+};
+
 /* فاصلهٔ دو سرِ هر درز، پیش از هر شبیه‌سازی */
 const gapsOf = (drape) => {
     let worst = 0;
@@ -550,9 +593,11 @@ const bench = (file) => {
     const sleeve = sleeveOf(drape, body);
     const cap = armCapOf(drape, body, payload.avatar);
     const name = file.split('/').pop().replace('p-', '').replace('.json', '');
+    const gate = gateOf(drape, body, durable);
 
     console.log(
-        `${name.padEnd(20)} چیدن: بدترین=${(gaps.worst * 100).toFixed(1)} میانگین=${(gaps.mean * 100).toFixed(1)}` +
+        `${name.padEnd(20)} ${gate === null ? '✓ روی مانکن' : '✗ ' + gate}` +
+            ` | چیدن: بدترین=${(gaps.worst * 100).toFixed(1)} میانگین=${(gaps.mean * 100).toFixed(1)}` +
             ` | کشش چیدن: ${placed.worst.toFixed(1)}× خراب=${placed.bad}` +
             ` | خطای درز: دوخت=${(stitched * 100).toFixed(1)} نهایی=${(before * 100).toFixed(1)}` +
             ` جوش=${(snapped * 100).toFixed(1)} ماندگار=${(durable * 100).toFixed(1)}` +

@@ -6,85 +6,38 @@
  * آمده، نه از خروجی واقعی سرور. اگر روزی بسته عوض شد، اول این فایل باید بشکند.
  */
 
-const radius = (girth) => Math.max(0.02, girth / (2 * Math.PI) / 100);
+/*
+ * بدنِ سنجه همان بدنِ مرورگر است، نه رونوشتش.
+ *
+ * این‌جا یک جدولِ دستی بود: کمر ۰٫۶۲۵ برابرِ قد، باسن ۰٫۵۳، و همین‌طور تا آخر —
+ * رونوشتی از مانکنِ قدیمی که همه را با یک نسبت می‌ساخت. مانکن که از روی
+ * اندازه‌های خودِ مشتری بازنویسی شد، این رونوشت جا ماند و هیچ آزمونی هم نگفت،
+ * چون خودش مرجعِ خودش بود. اندازه گرفته شد، برای سایز ۴۰: کمرِ این جدول ۱۰۵
+ * سانتی‌متر و کمرِ مانکن ۱۰۲٫۴، و باسن پنج سانتی‌متر بالاتر از جایش. یعنی سنجه
+ * لباس را روی بدنی می‌سنجید که مرورگر هرگز نشان نمی‌داد.
+ *
+ * چندضلعی‌های نمونه پایین‌تر دست‌نویس می‌مانند — آن‌ها قرارداد را می‌سنجند و باید
+ * از سرور مستقل باشند. ولی بدن قرارداد نیست؛ خودِ mannequin.js است.
+ */
+import { buildBody, drapeBody } from '../../../resources/js/lib/mannequin.js';
 
-/* همان جدول‌هایی که garment-viewer برای مانکن می‌سازد */
-export const makeBody = (avatar = {}) => {
-    const height = (avatar.height || 165) / 100;
-
-    const level = {
-        ankle: height * 0.045,
-        knee: height * 0.28,
-        crotch: height * 0.475,
-        hip: height * 0.53,
-        highHip: height * 0.575,
-        waist: height * 0.625,
-        underBust: height * 0.69,
-        bust: height * 0.725,
-        armhole: height * 0.775,
-        shoulder: height * 0.82,
-        neck: height * 0.855,
-        chin: height * 0.885,
-        top: height,
-    };
-
-    const radii = {
-        hip: radius(avatar.hip || 98),
-        highHip: radius(avatar.high_hip || 90),
-        waist: radius(avatar.waist || 74),
-        underBust: radius(avatar.under_bust || 78),
-        bust: radius(avatar.bust || 92),
-        neck: radius(avatar.neck || 36),
-        armhole: radius(avatar.armhole || 40),
-        bicep: radius(avatar.bicep || 28),
-        wrist: radius(avatar.wrist || 16),
-        thigh: radius(avatar.thigh || 56),
-        knee: radius(avatar.knee || 37),
-        ankle: radius(avatar.ankle || 23),
-        shoulder: (avatar.shoulder_width || 39) / 100 / 2,
-    };
-
-    const legOffset = radii.hip * 0.42;
-    // محورِ بازو مماس بر تنه: شعاع تنه در حلقه + شعاع بازو
-    const armOffset = radii.bust * 1.02 + radii.bicep;
-    const legAnkle = legOffset + radii.ankle * 1.25;
-    const legKnee = legOffset + radii.knee;
-    const armLength = (avatar.arm_length || 58) / 100;
-
-    return {
-        level,
-        radii,
-        armLength,
-        armOffset,
-        /*
-         * بازوی مانکن هشت درجه باز است — armLZ/armRZ در poseAngles، برای همهٔ
-         * حالت‌ها از جمله ایستاده. سنجه بازو را عمودی می‌ساخت و همین یک عدد را
-         * جا می‌انداخت: آستین در مرورگر تا هشت سانتی‌متر از بازو دور می‌افتاد و
-         * سنجه هیچ‌وقت ندیدش.
-         */
-        armTilt: (8 * Math.PI) / 180,
-        armTable: [
-            [-armLength, radii.wrist],
-            [-armLength * 0.55, radii.bicep * 0.72],
-            [-armLength * 0.12, radii.bicep],
-            [0, radii.bicep * 1.02],
-        ],
-        profile: [
-            [level.ankle, legAnkle, legAnkle * 0.82],
-            [level.knee, legKnee, legKnee * 0.82],
-            [level.crotch, radii.hip * 0.95, radii.hip * 0.95 * 0.74],
-            [level.hip, radii.hip, radii.hip * 0.76],
-            [level.highHip, radii.highHip, radii.highHip * 0.76],
-            [level.waist, radii.waist, radii.waist * 0.74],
-            [level.underBust, radii.underBust, radii.underBust * 0.78],
-            [level.bust, radii.bust, radii.bust * 0.84],
-            [level.armhole, radii.bust * 1.02, radii.bust * 0.74],
-            [level.shoulder, radii.shoulder * 0.9, radii.bust * 0.68],
-            [level.shoulder + (level.neck - level.shoulder) * 0.45, radii.neck * 1.38, radii.neck * 1.3],
-            [level.neck, radii.neck * 1.1, radii.neck * 1.04],
-        ],
-    };
-};
+export const makeBody = (avatar = {}) => drapeBody(buildBody({
+    height: 165,
+    hip: 98,
+    high_hip: 90,
+    waist: 74,
+    under_bust: 78,
+    bust: 92,
+    neck: 36,
+    bicep: 28,
+    wrist: 16,
+    thigh: 56,
+    knee: 37,
+    ankle: 23,
+    shoulder_width: 39,
+    arm_length: 58,
+    ...avatar,
+}));
 
 /*
  * یک بالاتنه‌ی ساده: جلو و پشت، با درز پهلوی دوطرفه و یک ساسون سینه روی جلو.
