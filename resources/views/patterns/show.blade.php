@@ -30,6 +30,8 @@
         <div class="space-y-6 lg:col-span-2">
             @include('patterns.partials.garment-flats', ['flats' => $flats])
 
+            @include('patterns.partials.stitch-plan', ['stitchPlan' => $stitchPlan])
+
             <x-card title="نقشه الگو" icon="scissors" subtitle="خط پُر: خط دوخت — خط‌چین بنفش: خط برش با جای دوخت.">
                 @include('patterns.partials.svg', ['svg' => $svg, 'height' => 'h-[32rem]'])
             </x-card>

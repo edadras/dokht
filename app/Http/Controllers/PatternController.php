@@ -18,6 +18,7 @@ use App\Services\Pattern\PatternVersionService;
 use App\Services\Pattern\PieceSplitter;
 use App\Services\Pattern\SeamAllowanceService;
 use App\Services\Pattern\SewingRelationBuilder;
+use App\Services\Pattern\StitchPlanService;
 use App\Services\Pattern\SvgRenderer;
 use App\Services\Simulation\DrapePayloadService;
 use App\Support\Measurements;
@@ -142,6 +143,8 @@ class PatternController extends Controller
     {
         $pattern->load(['pieces', 'garmentType', 'template', 'measurementSet.customer']);
 
+        $plan = $this->stitchPlan($pattern);
+
         return view('patterns.show', [
             'pattern' => $pattern,
             'svg' => $this->renderer->renderPattern($pattern, [
@@ -156,7 +159,8 @@ class PatternController extends Controller
             'sizes' => Measurements::sizes(),
             // شکلِ لباس روی همین اندازه‌ها؛ اگر ساختنش بگیرد، صفحه نباید بشکند
             'flats' => $this->garmentFlats($pattern),
-            'solid' => $this->garmentSolid($pattern),
+            'solid' => $this->garmentSolid($pattern, $plan),
+            'stitchPlan' => $plan,
         ]);
     }
 
@@ -197,7 +201,7 @@ class PatternController extends Controller
      *
      * @return array<string, mixed>
      */
-    protected function garmentSolid(Pattern $pattern): array
+    protected function garmentSolid(Pattern $pattern, array $plan): array
     {
         try {
             $shell = $this->flats->shell(
@@ -227,12 +231,43 @@ class PatternController extends Controller
              */
             $shell['drape'] = $this->drapePackage($pattern);
 
+            /*
+             * و فاصلهٔ کوک، تا نما همان‌قدر کوک بزند که خیاط می‌زند.
+             *
+             * دوختی که دیده نشود، دوخت نیست: لباسِ سه‌بعدی بی کوک، پارچه‌ای است
+             * که کسی به هم وصلش نکرده. عددش هم سلیقه‌ای نیست — از وزنِ همین
+             * پارچه می‌آید، همان که در نقشهٔ دوخت نوشته شده.
+             */
+            $shell['stitch'] = [
+                'length_mm' => $plan['fabric']['length'],
+                'per_inch' => $plan['fabric']['per_inch'],
+            ];
+
             return $shell;
         } catch (Throwable $error) {
             report($error);
 
             return ['ok' => false, 'notes' => ['نمای مانکن ساخته نشد: '.$error->getMessage()]];
         }
+    }
+
+    /**
+     * نقشهٔ دوخت: هر لبه با کدام کوک، چه فاصله‌ای و چه درزی.
+     *
+     * پارچه از پروژه‌ای می‌آید که از این الگو استفاده کرده؛ یک الگو با هر
+     * پارچه‌ای دوخته می‌شود، پس اگر پروژه‌ای نباشد پروفایلِ پیش‌فرضِ پارچهٔ
+     * متوسط به کار می‌رود و کاربر هم می‌بیند که «متوسط» فرض شده.
+     *
+     * @return array<string, mixed>
+     */
+    protected function stitchPlan(Pattern $pattern): array
+    {
+        $fabric = $pattern->projects()
+            ->with('fabric')
+            ->latest('id')
+            ->first()?->fabric?->profile();
+
+        return (new StitchPlanService)->plan($pattern, $fabric);
     }
 
     /**

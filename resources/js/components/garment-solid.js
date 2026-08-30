@@ -74,6 +74,19 @@ const track = (ctx, item) => {
     return item;
 };
 
+/*
+ * رنگِ نخ: همان رنگِ پارچه، تیره‌تر.
+ *
+ * خیاط نخ را هم‌رنگِ پارچه می‌خرد و همان کمی تیره‌تر دیده می‌شود، چون نخ تابیده
+ * است و نور را مثل پارچه پس نمی‌دهد. نخِ سیاه روی پارچهٔ روشن، «کوکِ تزیینی»
+ * است نه درزدوزی.
+ */
+const threadColour = (colour) => {
+    const shade = colour && colour.clone ? colour.clone() : null;
+
+    return shade ? shade.multiplyScalar(0.42) : 0x3a322b;
+};
+
 /** حلقه‌ای دایره‌ای — دست و پا و آستین که جلو و پشتشان فرقی ندارد. */
 const round = (y, r, x = 0) => ({ y, rx: r, front: r, back: r, x });
 
@@ -285,6 +298,198 @@ const seamBand = (drape) => {
     }
 
     return positions.length ? { positions, indices } : null;
+};
+
+/**
+ * صاف کردنِ پارچه، پیش از نمایش.
+ *
+ * حل‌کننده هر رأس را جدا حرکت می‌دهد و در پایان یک موجِ ریزِ رأس‌به‌رأس روی سطح
+ * می‌ماند — نه چینِ پارچه، که نویزِ عددی. روی مانکن همان دیده می‌شد که کاربر
+ * گفت: «لباس جمع شده». چینِ واقعی پهن است و از افتادنِ پارچه می‌آید؛ این یکی
+ * ریز است و به اندازهٔ یک مثلث.
+ *
+ * پس چند دورِ کوتاهِ میانگین‌گیری با همسایه‌ها: موجِ ریز پاک می‌شود و چینِ پهن
+ * می‌ماند. رأس‌های درز دست نمی‌خورند، وگرنه درزی که تازه بسته شده باز می‌شود.
+ */
+const relax = (drape, rounds = 3, weight = 0.4) => {
+    const locked = new Map();
+
+    for (const seam of drape.seams) {
+        for (const patch of [seam.a, seam.b || seam.a]) {
+            if (! locked.has(patch)) {
+                locked.set(patch, new Uint8Array(patch.count));
+            }
+        }
+
+        const one = locked.get(seam.a);
+        const two = locked.get(seam.b || seam.a);
+
+        for (let i = 0; i < seam.count; i++) {
+            one[seam.pairs[i * 2]] = 1;
+            two[seam.pairs[i * 2 + 1]] = 1;
+        }
+    }
+
+    for (const entry of drape.patches) {
+        const patch = entry.patch;
+        const indices = entry.mesh.indices;
+        const count = patch.count;
+        const hold = locked.get(patch) || new Uint8Array(count);
+
+        /* همسایه‌ها، یک بار */
+        const tally = new Uint32Array(count);
+
+        for (let t = 0; t < indices.length; t += 3) {
+            tally[indices[t]] += 2;
+            tally[indices[t + 1]] += 2;
+            tally[indices[t + 2]] += 2;
+        }
+
+        const heads = new Uint32Array(count + 1);
+
+        for (let v = 0; v < count; v++) {
+            heads[v + 1] = heads[v] + tally[v];
+        }
+
+        const near = new Uint32Array(heads[count]);
+        const fill = heads.slice(0, count);
+
+        for (let t = 0; t < indices.length; t += 3) {
+            for (let k = 0; k < 3; k++) {
+                const a = indices[t + k];
+
+                near[fill[a]++] = indices[t + (k + 1) % 3];
+                near[fill[a]++] = indices[t + (k + 2) % 3];
+            }
+        }
+
+        const positions = patch.positions;
+        const next = new Float32Array(positions.length);
+
+        for (let round = 0; round < rounds; round++) {
+            next.set(positions);
+
+            for (let v = 0; v < count; v++) {
+                if (hold[v] || patch.invMass[v] === 0) {
+                    continue;
+                }
+
+                const from = heads[v];
+                const to = heads[v + 1];
+
+                if (to === from) {
+                    continue;
+                }
+
+                let x = 0;
+                let y = 0;
+                let z = 0;
+
+                for (let k = from; k < to; k++) {
+                    const n = near[k] * 3;
+
+                    x += positions[n];
+                    y += positions[n + 1];
+                    z += positions[n + 2];
+                }
+
+                const n = to - from;
+                const at = v * 3;
+
+                next[at] += (x / n - positions[at]) * weight;
+                next[at + 1] += (y / n - positions[at + 1]) * weight;
+                next[at + 2] += (z / n - positions[at + 2]) * weight;
+            }
+
+            positions.set(next);
+        }
+    }
+};
+
+/**
+ * کوک‌ها، روی خطِ درز.
+ *
+ * دوختی که دیده نشود دوخت نیست: لباسی که درزهایش نوارِ صاف باشد، پارچه‌ای است
+ * که کسی به هم وصلش نکرده. خیاط روی هر درز کوک می‌زند و فاصله‌شان هم دلبخواه
+ * نیست — از وزنِ پارچه می‌آید (ببینید Stitches::WEIGHTS در سرور).
+ *
+ * پس روی خطِ میانیِ هر درز، هر «فاصلهٔ کوک» یک بخیه گذاشته می‌شود: پاره‌خطی
+ * به‌درازای نیمی از فاصله، کمی بیرون‌تر از سطح تا زیرِ پارچه پنهان نشود.
+ */
+const stitchLines = (drape, millimetres) => {
+    const step = Math.max(0.0012, millimetres / 1000);
+    const dash = step * 0.55;
+    const lift = 0.0012;
+    const points = [];
+
+    for (const seam of drape.seams) {
+        if (seam.kind === 'crease' || seam.count < 2) {
+            continue;
+        }
+
+        const pa = seam.a.positions;
+        const pb = (seam.b || seam.a).positions;
+
+        /* خطِ میانیِ درز: همان‌جا که سوزن می‌رود */
+        const line = [];
+
+        for (let i = 0; i < seam.count; i++) {
+            const a = seam.pairs[i * 2] * 3;
+            const b = seam.pairs[i * 2 + 1] * 3;
+
+            line.push([
+                (pa[a] + pb[b]) / 2,
+                (pa[a + 1] + pb[b + 1]) / 2,
+                (pa[a + 2] + pb[b + 2]) / 2,
+            ]);
+        }
+
+        /*
+         * راه رفتن روی خط و کوک زدن با فاصلهٔ ثابت — نه یک کوک به ازای هر
+         * رأسِ مش. مشِ درشت کوکِ درشت می‌داد و مشِ ریز کوکِ ریز، در حالی که
+         * فاصلهٔ کوک به پارچه ربط دارد نه به مثلث‌بندی.
+         */
+        let carry = 0;
+
+        for (let i = 1; i < line.length; i++) {
+            const one = line[i - 1];
+            const two = line[i];
+            const dx = two[0] - one[0];
+            const dy = two[1] - one[1];
+            const dz = two[2] - one[2];
+            const span = Math.hypot(dx, dy, dz);
+
+            if (span < 1e-6) {
+                continue;
+            }
+
+            for (let at = step - carry; at < span; at += step) {
+                const t = at / span;
+                const end = Math.min(1, (at + dash) / span);
+                const nudge = (x, z) => {
+                    const out = Math.hypot(x, z) || 1;
+
+                    return [(x / out) * lift, (z / out) * lift];
+                };
+
+                const px = one[0] + dx * t;
+                const pz = one[2] + dz * t;
+                const qx = one[0] + dx * end;
+                const qz = one[2] + dz * end;
+                const [ox, oz] = nudge(px, pz);
+                const [rx, rz] = nudge(qx, qz);
+
+                points.push(
+                    px + ox, one[1] + dy * t, pz + oz,
+                    qx + rx, one[1] + dy * end, qz + rz,
+                );
+            }
+
+            carry = (carry + span) % step;
+        }
+    }
+
+    return points.length ? points : null;
 };
 
 /**
@@ -597,6 +802,7 @@ export default (initial = {}) => ({
              */
             world.presettle(150);
             weldSeams(drape);
+            relax(drape);
 
             const wrong = landedWell(
                 drape,
@@ -760,6 +966,23 @@ export default (initial = {}) => ({
 
             seam.castShadow = true;
             cloth.add(seam);
+        }
+
+        /* و کوک‌ها، با همان فاصله‌ای که در نقشهٔ دوخت نوشته شده */
+        const spacing = (this.payload.stitch && this.payload.stitch.length_mm) || 2.5;
+        const seams = stitchLines(drape, spacing);
+
+        if (seams) {
+            const geometry = track(ctx, new THREE.BufferGeometry());
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(seams, 3));
+
+            const thread = track(ctx, new THREE.LineBasicMaterial({
+                color: threadColour(ctx.fabric.color),
+            }));
+
+            ctx.thread = thread;
+            cloth.add(new THREE.LineSegments(geometry, thread));
         }
 
         ctx.group.add(cloth);
@@ -1142,6 +1365,11 @@ export default (initial = {}) => ({
         ctx.fabric.transparent = (swatch.transparency ?? 0) > 0.05;
         ctx.fabric.opacity = 1 - Math.min(0.55, swatch.transparency ?? 0);
         ctx.fabric.needsUpdate = true;
+
+        if (ctx.thread) {
+            ctx.thread.color = threadColour(ctx.fabric.color);
+            ctx.thread.needsUpdate = true;
+        }
     },
 
     toggleSpin() {
