@@ -260,7 +260,12 @@ export const bodyColliders = (Collider, body, table, grow = 1) => {
         out.push(collider);
     };
 
-    at(table.profile.filter(([y]) => y >= level.crotch - 1e-6), 'torso');
+    /*
+     * `hull` است نه `profile`: برخوردگر باید همان پوستی باشد که addBody رسم
+     * می‌کند. نیم‌رخِ چیدن از سرشانه تا سینه عقب می‌نشیند و آن نوار هیچ
+     * برخوردگری نداشت — پارچه از تویش رد می‌شد و پوستِ سرشانه دیده می‌شد.
+     */
+    at((table.hull || table.profile).filter(([y]) => y >= level.crotch - 1e-6), 'torso');
 
     const neck = table.radii.neck;
 
@@ -1017,16 +1022,29 @@ export default (initial = {}) => ({
              * بازو از حلقهٔ آستین بیرون می‌زد و سرشانه لخت می‌ماند. لباسِ تنگ
              * هم در واقعیت کش می‌آید و بدن داخلش می‌ماند.
              */
-            world.allowStretch(DRESS_GIVE);
+            /*
+             * و اگر بدن قرار نیست بزرگ شود، این مرحله اصلاً برگزار نمی‌شود.
+             *
+             * با SEWING_BODY = ۱ هر دوازده گام همان بدنِ کامل را می‌چید و
+             * DRESS_GIVE = ۱ هم سقفِ کشسانی را دست نمی‌زد؛ یعنی دویست‌و‌بیست‌و‌هشت
+             * گامِ بی‌وزنی که هیچ کاری نمی‌کردند جز اینکه پارچه باد کند. اندازه
+             * گرفته شد روی پیراهن: تنهٔ جلو از ۱۴۳٫۵ به ۱۴۹٫۱ می‌رفت و آستین از
+             * ۱۳۳ به ۱۴۵٫۴ — و میخ همان بلندی را قفل می‌کرد. سه لباس از پنج‌تا
+             * هم به همین خاطر دروازه را رد نمی‌کردند («قطعه‌ای بالای سر رفت») و
+             * کاربر نمای چرخشیِ قدیمی را می‌دید نه دوخت را.
+             */
+            if (SEWING_BODY < 1) {
+                world.allowStretch(DRESS_GIVE);
 
-            for (let step = 1; step <= 12; step++) {
-                dress(SEWING_BODY + (1 - SEWING_BODY) * (step / 12));
-                world.presettle(14);
+                for (let step = 1; step <= 12; step++) {
+                    dress(SEWING_BODY + (1 - SEWING_BODY) * (step / 12));
+                    world.presettle(14);
+                }
+
+                // و سقف به جای خودش برمی‌گردد؛ حالا پارچه روی بدنِ داخلش جمع می‌شود
+                world.allowStretch(1);
+                world.presettle(60);
             }
-
-            // و سقف به جای خودش برمی‌گردد؛ حالا پارچه روی بدنِ داخلش جمع می‌شود
-            world.allowStretch(1);
-            world.presettle(60);
 
             /* ۳) حالا لباس پوشیده است؛ سرشانه گرفته می‌شود و وزن برمی‌گردد */
             supportGarment(drape, { band: 0.08, strength: 1 });

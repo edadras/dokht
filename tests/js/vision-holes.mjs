@@ -48,24 +48,46 @@ const rows = [];
 for (const [id, name] of WANT) {
     await page.goto(`${BASE}/patterns/${id}`, { waitUntil: 'networkidle' });
 
+    /*
+     * تا *پایانِ دوخت* صبر می‌کنیم، نه تا `ready`.
+     *
+     * `ready` همان نمای چرخشیِ سریع است و دوخت چند ثانیه بعد جایش را می‌گیرد.
+     * سنجه تا امروز همان‌جا عکس می‌گرفت و گاهی نمای قدیمی را می‌سنجید: لولهٔ
+     * صافِ پارامتری سوراخ ندارد، پس ترنچ‌کت «۰٫۱٪» می‌داد در حالی که اصلاً
+     * دوخته نشده بود. عددی که گاهی از یک لباس است و گاهی از لباسِ دیگر،
+     * مقایسه‌شدنی نیست.
+     *
+     * و اگر دوخت رد شود (`sewn` نه)، همان هم گزارش می‌شود — نه اینکه پنهان
+     * بماند.
+     */
     let state = 'زمان تمام شد';
+    let sewn = false;
+    let note = '';
 
-    for (let i = 0; i < 90; i++) {
-        state = await page.evaluate(() => {
+    for (let i = 0; i < 180; i++) {
+        const now = await page.evaluate(() => {
             const el = document.querySelector('[x-data^="garmentSolid"]');
             const d = el && window.Alpine ? window.Alpine.$data(el) : null;
 
-            if (! d) return 'بی‌آلپاین';
+            if (! d) return { state: 'بی‌آلپاین', done: true, sewn: false };
 
-            return d.failed ? 'شکست' : (d.ready ? 'آماده' : 'نشستن');
+            if (d.failed) return { state: 'شکست', done: true, sewn: false };
+
+            if (! d.ready) return { state: 'نشستن', done: false, sewn: false };
+
+            return { state: d.sewn ? 'دوخته' : 'بی‌دوخت', done: ! d.sewing, sewn: !! d.sewn, note: d.sewnNote || '' };
         });
 
-        if (state === 'آماده' || state === 'شکست') break;
+        state = now.state;
+        sewn = now.sewn;
+        note = now.note || '';
+
+        if (now.done && state !== 'نشستن') break;
 
         await page.waitForTimeout(1000);
     }
 
-    if (state !== 'آماده') {
+    if (state !== 'دوخته' && state !== 'بی‌دوخت') {
         rows.push({ name, state, holes: null });
         continue;
     }
@@ -268,7 +290,7 @@ for (const [id, name] of WANT) {
     await mkdir(OUT, { recursive: true });
     await writeFile(`${OUT}/${name}.png`, Buffer.from(found.marked.split(',')[1], 'base64'));
 
-    rows.push({ name, state, holes: found.holes, area: found.area, cloth: found.cloth, skin: found.skin, biggest: found.biggest });
+    rows.push({ name, state, sewn, note, holes: found.holes, area: found.area, cloth: found.cloth, skin: found.skin, biggest: found.biggest });
 }
 
 console.log('\nسوراخِ دیده‌شده در تصویر (لکهٔ پوست که پارچه دورش را گرفته):\n');
@@ -283,7 +305,7 @@ for (const row of rows) {
     const share = row.cloth ? (row.area / row.cloth * 100).toFixed(1) : '0.0';
 
     console.log(
-        `  ${row.name.padEnd(14)} سوراخ=${String(row.holes).padStart(3)}  مساحت=${String(row.area).padStart(6)} پیکسل (${share}٪ پارچه)  [پارچه=${row.cloth} پوست=${row.skin}]` +
+        `  ${row.name.padEnd(14)}${row.sewn ? '' : ' ⚠بی‌دوخت(' + (row.note || '؟') + ')'} سوراخ=${String(row.holes).padStart(3)}  مساحت=${String(row.area).padStart(6)} پیکسل (${share}٪ پارچه)  [پارچه=${row.cloth} پوست=${row.skin}]` +
         (row.biggest.length ? `  بزرگ‌ترین‌ها: ${row.biggest.map((b) => `${b.area}@${b.x},${b.y}`).join(' ')}` : ''),
     );
 }
