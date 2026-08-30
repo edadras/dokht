@@ -1013,6 +1013,12 @@ class DrapePayloadTest extends TestCase
      *
      * سنجه‌اش ساده است: هر درزی که روی یک بازو هست، باید جفتِ هم‌اندازه‌ای روی
      * بازوی دیگر داشته باشد.
+     *
+     * کت رسمی هم این‌جاست. ناقرینگیِ آن از جای دیگری می‌آمد: حلقه‌اش روی چهار
+     * پنل پخش است و suggest() فقط مرکز جلو و مرکز پشت را می‌شناخت، پس نیمی از
+     * سرآستین بی‌شریک می‌ماند و splice() سرِخود پُرش می‌کرد — روی یک بازو با
+     * «پهلوی پشت» و روی آن یکی با «مرکز پشت». حالا هر پنلی که حلقه دارد سهم
+     * خودش را از سرآستین می‌گیرد و چیزی برای حدس زدن نمی‌ماند.
      */
     public function test_both_sleeves_are_stitched_the_same_way(): void
     {
@@ -1022,7 +1028,7 @@ class DrapePayloadTest extends TestCase
             return $at === false ? [$id, 0] : [substr($id, 0, $at), (int) substr($id, $at + 1)];
         };
 
-        foreach (['blazer', 'coat_trench'] as $key) {
+        foreach (['blazer', 'coat_trench', 'suit_jacket'] as $key) {
             $arms = [0 => [], 1 => []];
 
             foreach ($this->payload($key)['seams'] as $seam) {
@@ -1063,20 +1069,63 @@ class DrapePayloadTest extends TestCase
     }
 
     /**
-     * و همان سنجه روی کت‌وشلوار، که هنوز رد نمی‌شود.
+     * سرآستین باید به *همهٔ* پنل‌هایی برسد که حلقه رویشان است.
      *
-     * این‌جا ناقرینگی از جای دیگری می‌آید: سرِ آستینِ کت‌وشلوار روی *سه* رابطهٔ
-     * جدا برچسب خورده (حلقهٔ جلو، حلقهٔ پشت، و پهلوی پشت) و هر رابطه جداگانه
-     * جفت می‌شود. کمانِ ۱۷٫۸ سانتی‌متری روی یک بازو به «جلو» می‌رسد و روی بازوی
-     * دیگر به «پشت». درست کردنش یعنی رابطه‌ها را با هم دیدن، نه یکی‌یکی.
+     * ریشهٔ ناقرینگیِ کت رسمی همین بود. حلقه‌اش میان چهار پنل پخش است — مرکز
+     * جلو ۱۱٫۲، پهلوی جلو ۱۱٫۳، پهلوی پشت ۱۰٫۶ و مرکز پشت ۱۰٫۷ سانتی‌متر — ولی
+     * سازندهٔ رابطه‌ها فقط یکی از هر سو را می‌شناخت. آن وقت سرآستینِ ۴۶
+     * سانتی‌متری روی ۲۱٫۹ سانتی‌متر چپانده می‌شد و باقی‌اش را splice() سرِخود
+     * به هر کمانِ آزادی که می‌یافت می‌دوخت؛ روی هر بازو به یک قطعهٔ متفاوت.
      *
-     * آزمون این‌جا می‌ماند تا وقتی درست شد، خودش بگوید.
+     * پس این‌جا شمرده می‌شود، نه فقط قرینگی: هر پنلِ رویه‌ای که لبهٔ «armhole»
+     * دارد باید روی *هر دو* نمونه‌اش درزِ آستین بگیرد.
      */
-    public function test_the_suit_jacket_sleeves_are_still_not_symmetric(): void
+    public function test_every_armhole_panel_of_the_suit_jacket_gets_the_sleeve(): void
     {
-        $this->markTestIncomplete(
-            'سرِ آستینِ کت‌وشلوار روی سه رابطهٔ جدا برچسب خورده و هر کدام مستقل جفت می‌شود؛ '
-            .'کمانِ بلندِ حلقه روی دو بازو به دو قطعهٔ متفاوت می‌رسد.',
-        );
+        $payload = $this->payload('suit_jacket');
+        $panels = [];
+
+        foreach ($payload['pieces'] as $piece) {
+            $code = (string) ($piece['id'] ?? '');
+
+            if (($piece['layer'] ?? 'outer') !== 'outer' || ($piece['role'] ?? '') === 'sleeve') {
+                continue;
+            }
+
+            foreach ($piece['edges'] ?? [] as $edge) {
+                if (($edge['tag'] ?? '') === 'armhole') {
+                    $panels[$code] = 0;
+
+                    break;
+                }
+            }
+        }
+
+        $this->assertNotEmpty($panels, 'هیچ پنلی با لبهٔ حلقه پیدا نشد؛ آزمون چیزی را نسنجید.');
+
+        foreach ($payload['seams'] as $seam) {
+            $sleeve = str_contains((string) $seam['a']['piece'], 'sleeve')
+                || str_contains((string) $seam['b']['piece'], 'sleeve');
+
+            if (! $sleeve) {
+                continue;
+            }
+
+            foreach (['a', 'b'] as $end) {
+                $code = (string) $seam[$end]['piece'];
+
+                if (array_key_exists($code, $panels)) {
+                    $panels[$code]++;
+                }
+            }
+        }
+
+        foreach ($panels as $code => $seams) {
+            $this->assertGreaterThan(
+                0,
+                $seams,
+                "حلقهٔ «{$code}» به آستین دوخته نشد؛ سرآستین جای دیگری چپانده می‌شود.",
+            );
+        }
     }
 }
