@@ -189,6 +189,105 @@ export const bodyColliders = (Collider, body, table) => {
 };
 
 /**
+ * نوارِ خودِ درز.
+ *
+ * حل‌کننده دو لبهٔ یک درز را به هم نزدیک می‌کند ولی هیچ‌وقت کاملاً روی هم
+ * نمی‌نشاند: قیدِ درز نرم است و پارچه هم نمی‌تواند بی‌حد کشیده شود. باقی‌مانده‌اش
+ * چند سانتی‌متر است و روی مانکن دقیقاً مثل یک درزِ *باز* دیده می‌شود — زیر بغل
+ * و روی پهلو، پوست از میان لباس پیدا بود. اندازه گرفته شد: بدترین شکافِ
+ * پیراهن شش سانتی‌متر.
+ *
+ * ولی آن شکاف، شکاف نیست. دو لبه به هم دوخته‌اند؛ چیزی که کم است پارچهٔ خودِ
+ * درز است — همان نواری که در لباسِ واقعی جای بخیه و اضافهٔ درز است. پس همان‌جا
+ * ساخته می‌شود: میان هر دو سوزنِ پشتِ سرِ هم، دو مثلث. جایی که درز بسته است،
+ * نوار پهنای صفر دارد و دیده نمی‌شود؛ جایی که باز مانده، پارچه است نه سوراخ.
+ */
+const seamBand = (drape) => {
+    const positions = [];
+    const indices = [];
+    const ends = [];
+    let base = 0;
+
+    for (const seam of drape.seams) {
+        /* تای یقه درز نیست؛ دو سوی آن *باید* روی هم بیفتند، نه اینکه پر شوند */
+        if (seam.kind === 'crease' || seam.count < 2) {
+            continue;
+        }
+
+        const pa = seam.a.positions;
+        const pb = (seam.b || seam.a).positions;
+        const start = base;
+
+        for (let i = 0; i < seam.count; i++) {
+            const a = seam.pairs[i * 2] * 3;
+            const b = seam.pairs[i * 2 + 1] * 3;
+
+            positions.push(pa[a], pa[a + 1], pa[a + 2], pb[b], pb[b + 1], pb[b + 2]);
+        }
+
+        base += seam.count * 2;
+
+        for (let i = 0; i + 1 < seam.count; i++) {
+            const one = start + i * 2;
+
+            indices.push(one, one + 1, one + 2, one + 1, one + 3, one + 2);
+        }
+
+        /* دو سرِ همین درز، برای بستنِ گوشه‌ها */
+        ends.push({ at: start, seam }, { at: start + (seam.count - 1) * 2, seam });
+    }
+
+    /*
+     * و گوشه‌ها.
+     *
+     * حلقهٔ آستین یک درز نیست، سه تاست: جلو، پشت، و یوک. هر کدام نوارِ خودش را
+     * دارد ولی *میانشان* چیزی نیست، و همان‌جا یک گوهٔ باز می‌ماند. روی مانکن
+     * دیده می‌شد: بالای حلقهٔ آستین یک مثلثِ باز که از آن بدن پیدا بود.
+     *
+     * پس هر دو سرِ درزی که کنارِ هم افتاده‌اند به هم وصل می‌شوند. «کنارِ هم»
+     * یعنی هر دو سرِ یکی به هر دو سرِ دیگری نزدیک باشد؛ دو درزِ بی‌ربط از دو سرِ
+     * لباس این شرط را ندارند.
+     */
+    const near = (one, two) => {
+        const dx = positions[one] - positions[two];
+        const dy = positions[one + 1] - positions[two + 1];
+        const dz = positions[one + 2] - positions[two + 2];
+
+        return dx * dx + dy * dy + dz * dz;
+    };
+
+    const REACH = 0.07 * 0.07;
+
+    for (let i = 0; i < ends.length; i++) {
+        for (let j = i + 1; j < ends.length; j++) {
+            if (ends[i].seam === ends[j].seam) {
+                continue;
+            }
+
+            const a = ends[i].at * 3;
+            const b = ends[j].at * 3;
+            const straight = Math.max(near(a, b), near(a + 3, b + 3));
+            const crossed = Math.max(near(a, b + 3), near(a + 3, b));
+
+            if (Math.min(straight, crossed) > REACH) {
+                continue;
+            }
+
+            const one = ends[i].at;
+            const two = ends[j].at;
+
+            if (straight <= crossed) {
+                indices.push(one, one + 1, two, one + 1, two + 1, two);
+            } else {
+                indices.push(one, one + 1, two + 1, one + 1, two, two + 1);
+            }
+        }
+    }
+
+    return positions.length ? { positions, indices } : null;
+};
+
+/**
  * آیا لباسِ دوخته‌شده واقعاً روی تن نشسته؟
  *
  * حل‌کننده همیشه جواب می‌دهد، ولی جوابش همیشه لباس نیست: قطعه‌ای که تکیه‌گاهش را
@@ -486,8 +585,18 @@ export default (initial = {}) => ({
             world.iterations = drape.stats.solver.iterations;
             world.seamPasses = drape.stats.solver.seamPasses ?? world.seamPasses;
             world.presettle(300);
-            weldSeams(drape);
+
+            /*
+             * جوش، آخر از همه.
+             *
+             * سنجهٔ کیفیتِ حل‌کننده عمداً پس از جوش باز هم شبیه‌سازی می‌کند، چون
+             * می‌خواهد بداند درز *ماندگار* چقدر باز است. ولی این‌جا تصویری
+             * ثابت است و پس از نمایش هیچ گامی برداشته نمی‌شود؛ آن صد‌و‌پنجاه
+             * گامِ آخر فقط چیزی را که جوش بسته بود دوباره باز می‌کرد. اندازه
+             * گرفته شد: بدترین شکافِ پیراهن ۱۰٫۳ سانتی‌متر بود و شد ۶٫۰.
+             */
             world.presettle(150);
+            weldSeams(drape);
 
             const wrong = landedWell(
                 drape,
@@ -635,6 +744,22 @@ export default (initial = {}) => ({
             piece.castShadow = true;
             piece.receiveShadow = true;
             cloth.add(piece);
+        }
+
+        /* و خودِ درزها، تا میانِ دو قطعه سوراخ نماند */
+        const band = seamBand(drape);
+
+        if (band) {
+            const geometry = track(ctx, new THREE.BufferGeometry());
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(band.positions, 3));
+            geometry.setIndex(band.indices);
+            geometry.computeVertexNormals();
+
+            const seam = new THREE.Mesh(geometry, ctx.fabric);
+
+            seam.castShadow = true;
+            cloth.add(seam);
         }
 
         ctx.group.add(cloth);

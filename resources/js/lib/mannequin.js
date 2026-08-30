@@ -348,6 +348,10 @@ export const drapeBody = (body) => {
 
     const at = (y) => upright(body, y);
 
+    /* بازهٔ زیرِ بغل: از خط سرشانه تا خط سینه */
+    const shoulderLevel = level.shoulder;
+    const bustLevel = level.bust;
+
     /* از پایین به بالا، همان ترتیبی که برخوردگر می‌خواهد */
     const ankleR = body.leg[body.leg.length - 1].r / 100;
     const kneeR = body.leg[2].r / 100;
@@ -364,12 +368,29 @@ export const drapeBody = (body) => {
         [at(knee), body.leg[2].x / 100 + kneeR, kneeR * 1.6, kneeR * 1.6, kneeR * 1.6],
     ];
 
-    // تنه از فاق به بالا، از خودِ حلقه‌های مانکن
+    /*
+     * تنه از فاق به بالا — ولی زیرِ بغل، تنه جا برای بازو باز می‌کند.
+     *
+     * «عرض سرشانه» تا نوکِ شانه است و نوکِ شانه همان جایی است که بازو از آن
+     * آویزان می‌شود؛ یعنی آن عدد، بازو را هم در خودش دارد. اگر تنه را تا همان
+     * پهنا ادامه بدهیم، بازو تویِ تنه دفن می‌شود و زیرِ بغل هیچ فرورفتگی‌ای
+     * نمی‌ماند. آن‌وقت آستین جایی برای نشستن ندارد و پارچه از هر دو طرف بیرون
+     * رانده می‌شود: اندازه گرفته شد، مرکزِ آستین‌ها روی ۲۱٫۹ و ۲۴٫۱ می‌افتاد
+     * در حالی که محورِ بازو ۱۷٫۸ بود — و حلقهٔ آستین همان‌قدر باز می‌ماند و بدن
+     * از میانش پیدا بود.
+     *
+     * قفسهٔ سینه زیرِ بغل باریک‌تر از سرشانه است. پس همان‌جا تنه تا لبهٔ داخلیِ
+     * بازو عقب می‌نشیند: بازو مماس بر تنه می‌شود، نه داخلش.
+     */
+    const ribs = armJoint(body).x - body.arm[0].r;
+
     for (let i = body.torso.length - 1; i >= 0; i--) {
         const ring = body.torso[i];
         const mean = (ring.front + ring.back) / 2 / 100;
+        const underArm = ring.y >= shoulderLevel && ring.y <= bustLevel;
+        const rx = (underArm ? Math.min(ring.rx, ribs) : ring.rx) / 100;
 
-        profile.push([at(ring.y), ring.rx / 100, mean, ring.front / 100, ring.back / 100]);
+        profile.push([at(ring.y), rx, mean, ring.front / 100, ring.back / 100]);
     }
 
     /* دست: صفر روی مفصل، منفی رو به پایین */
