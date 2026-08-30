@@ -559,7 +559,17 @@ const bench = (file) => {
 
     world.law.gravity = 0;
 
-    /* اول دوخت، با هیچ چیزی وسط؛ بعد تن کردن — همان ترتیبِ نماگر */
+    /*
+     * همان ترتیبِ نماگر: دوخت، برداشتن‌و‌سرِ‌جا‌گذاشتن، تن کردن.
+     *
+     * دو عددِ SEWING_BODY و DRESS_GIVE در garment-solid.js هستند و این‌جا باید
+     * مو‌به‌مو همان‌ها باشند. یک بار نبودند — سنجه بی بدن می‌دوخت و نماگر با
+     * بدنِ کامل — و آن وقت دروازهٔ «بالای سر» این‌جا لبه‌ای می‌شد و عددی را رد
+     * می‌کرد که در مرورگر سالم بود.
+     */
+    const SEWING_BODY = 1;
+    const DRESS_GIVE = 1;
+
     const middleOf = () => {
         let x = 0;
         let z = 0;
@@ -578,7 +588,7 @@ const bench = (file) => {
         return count ? { x: x / count, y: top, z: z / count } : { x: 0, y: 0, z: 0 };
     };
 
-    dress(0);
+    dress(SEWING_BODY);
 
     const placedAt = middleOf();
 
@@ -600,10 +610,10 @@ const bench = (file) => {
     }
 
     /* پارچه همان چند لحظه اجازهٔ کشش می‌گیرد، وگرنه کنار می‌رود به‌جای کشیدن */
-    world.allowStretch(1.2);
+    world.allowStretch(DRESS_GIVE);
 
     for (let step = 1; step <= 12; step++) {
-        dress(step / 12);
+        dress(SEWING_BODY + (1 - SEWING_BODY) * (step / 12));
         world.presettle(14);
     }
 
