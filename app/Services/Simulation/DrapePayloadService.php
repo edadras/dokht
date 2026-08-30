@@ -535,9 +535,12 @@ class DrapePayloadService
              */
             'wraps' => $this->wrapsAround($role, $model),
             'darts' => $darts['darts'],
-            'placement' => array_intersect_key($placement, array_flip([
-                'zone', 'u0', 'u1', 'y_top', 'radius_hint', 'radius', 'flip',
-            ])),
+            'placement' => array_filter(
+                array_intersect_key($placement, array_flip([
+                    'zone', 'u0', 'u1', 'y_top', 'y_end', 'radius_hint', 'radius', 'flip', 'laps',
+                ])),
+                fn ($value) => $value !== null,
+            ),
         ];
 
         return $instance;
@@ -833,8 +836,16 @@ class DrapePayloadService
         }
         $center = $side === 'back' ? M_PI : 0.0;
         $symmetric = $instance['unfolded'] || ! $model->mirror;
+        $lap = $symmetric ? null : $this->overlapArc($instance, $model, $center);
+        $run = $this->slantRun($instance, $model, $body);
 
-        if ($role === 'sleeve') {
+        if ($run !== null) {
+            [$u0, $u1] = [$run['u0'], $run['u1']];
+            $yTop = $run['y_top'];
+            $ownRadius = null;
+        } elseif ($lap !== null) {
+            [$u0, $u1] = $lap;
+        } elseif ($role === 'sleeve') {
             $span = min($span, 2 * M_PI);
             $u0 = -$span / 2;
             $u1 = $span / 2;
@@ -893,6 +904,8 @@ class DrapePayloadService
             'wrap' => $wrap,
             'radius_body' => $radius,
             'symmetric' => $symmetric,
+            'laps' => $lap !== null,
+            'y_end' => $run === null ? null : round($run['y_end'], 4),
             'to_right' => $symmetric ? true : $this->centerAtLeft($instance),
             'central' => $symmetric || $this->edgeTagsOf($instance, 'side') === [],
         ];
@@ -995,6 +1008,13 @@ class DrapePayloadService
 
             foreach ($ids as $id) {
                 $place = $instances[$id]['placement'];
+
+                // قطعه‌ای که هم‌پوشانی اعلام کرده *باید* روی قطعهٔ دیگر بیفتد؛
+                // این‌جا کارِ ما جدا کردنِ قطعه‌هاست، پس کنارش می‌گذاریم
+                if ($place['laps']) {
+                    continue;
+                }
+
                 $half = $place['symmetric'] ? $place['span'] / 2 : $place['span'];
 
                 if ($place['central']) {
@@ -1016,6 +1036,11 @@ class DrapePayloadService
 
             foreach ($ids as $id) {
                 $place = $instances[$id]['placement'];
+
+                if ($place['laps']) {
+                    continue;
+                }
+
                 $room = $place['central'] ? $central : $outer;
                 $start = $place['central'] ? 0.0 : $central;
                 $half = min($place['symmetric'] ? $place['span'] / 2 : $place['span'], $room);
@@ -1276,6 +1301,110 @@ class DrapePayloadService
             'panty' => $body->level('hip'),
             default => null,
         };
+    }
+
+    /**
+     * بازهٔ زاویه‌ایِ پنلی که هم‌پوشانی اعلام کرده — جلوی راپ.
+     *
+     * هر پنلِ دیگری «نیمهٔ بدن» است: لبهٔ مرکزی‌اش روی خط مرکز می‌نشیند و لبهٔ
+     * دیگرش روی درز پهلو، و کلِ پهنای کادر روی همان نیم‌دور پخش می‌شود. جلوی راپ
+     * ولی ۱۵ سانتی‌متر از خط مرکز پهن‌تر بریده شده و همان اضافه باید *روی* جلوی
+     * دیگر بیفتد. با قاعدهٔ عمومی، آن ۱۵ سانتی‌متر هم درونِ همان نیم‌دور فشرده
+     * می‌شد و خط مرکز جلو به‌جای صفر روی ۳۴ درجه می‌افتاد — یعنی از ۳۴− تا ۳۴+
+     * درجه هیچ پارچه‌ای نبود و سینه از یقه تا زیرِ سینه لخت می‌ماند.
+     *
+     * پس این‌جا دو نقطه لنگر می‌شوند و مقیاس از خودشان درمی‌آید:
+     *
+     *   خط مرکز جلو (یعنی «هم‌پوشانی» سانتی‌متر آن‌طرف‌تر از لبهٔ پنل) ⇦ صفر
+     *   درز پهلو (باریک‌ترین جای لبهٔ پهلو، یعنی سرِ خط کمر)          ⇦ ۹۰ درجه
+     *
+     * باقیِ پهنا — کلوشِ دامن — به همان مقیاس بیرون می‌زند، پس دو سرِ درز پهلوی
+     * دامن هم‌راستا می‌مانند. اندازه‌گیری روی راپِ سایز ۴۰: ۲۳٫۵ سانتی‌متر از خط
+     * مرکز تا درز پهلو، پس هر سانتی‌متر ۳٫۸ درجه و هم‌پوشانیِ ۱۵ سانتی‌متری ۵۷
+     * درجه از خط مرکز رد می‌شود.
+     *
+     * @return array{0: float, 1: float}|null  null یعنی این قطعه هم‌پوشانی ندارد
+     */
+    protected function overlapArc(array $instance, PatternPiece $model, float $center): ?array
+    {
+        $overlap = (float) ($model->meta['crosses_center'] ?? 0);
+
+        if ($overlap < 0.5) {
+            return null;
+        }
+
+        [$minX, , $maxX] = $instance['bounds'];
+        $toRight = $this->centerAtLeft($instance);
+        // نمونهٔ آینه‌شده قرینه شده، پس مرکز سمت راستش است و پهلو سمت چپ
+        $middle = $toRight ? $minX + $overlap : $maxX - $overlap;
+        $side = $this->sideSeamX($instance, $toRight) ?? ($toRight ? $maxX : $minX);
+        $reach = max(3.0, abs($side - $middle));
+        $scale = M_PI_2 / $reach;
+
+        return [
+            round($center - (($middle - $minX) * $scale), 4),
+            round($center + (($maxX - $middle) * $scale), 4),
+        ];
+    }
+
+    /**
+     * نوارِ مورب: قطعه‌ای که ارتفاعش در طولِ خودش عوض می‌شود.
+     *
+     * مدلِ چیدن جز «حلقهٔ افقی دورِ محورِ بدن در یک ارتفاعِ ثابت» چیزی بلد نبود،
+     * و برای نوارِ لبهٔ راپ — که باید از سرِ کمر مورب تا نقطهٔ یقه برود — همان
+     * حلقه را می‌ساخت: نواری ۶۵ سانتی‌متری که در ارتفاع سرشانه دورِ سینه
+     * می‌چرخید و مچاله می‌شد، و لبهٔ راپ بی‌پوشش می‌ماند.
+     *
+     * دو سرِ مسیر را خودِ ژنراتور می‌گوید (meta.drape_run)، چون تنها اوست که
+     * می‌داند نوار کدام لبه را می‌پوشاند. این‌جا فقط نام ترازها به ارتفاع تبدیل
+     * می‌شود و برای نمونهٔ دوم — نوارِ آن یکی جلو — زاویه‌ها قرینه می‌شوند.
+     *
+     * @return array{u0: float, u1: float, y_top: float, y_end: float}|null
+     */
+    protected function slantRun(array $instance, PatternPiece $model, DrapeBody $body): ?array
+    {
+        $run = $model->meta['drape_run'] ?? null;
+
+        if (! is_array($run) || ! isset($run['from'], $run['to'])) {
+            return null;
+        }
+
+        // نوار دو بار بریده می‌شود، یکی برای هر جلو؛ دومی قرینهٔ اولی می‌نشیند
+        $flip = ((int) ($instance['instance'] ?? 0)) % 2 === 1 ? -1.0 : 1.0;
+
+        $level = fn (array $end) => $this->levelOf((string) ($end['level'] ?? ''), $body)
+            ?? $body->level('shoulder');
+
+        return [
+            'u0' => round($flip * (float) ($run['from']['u'] ?? 0), 4),
+            'u1' => round($flip * (float) ($run['to']['u'] ?? 0), 4),
+            'y_top' => $level($run['from']),
+            'y_end' => $level($run['to']),
+        ];
+    }
+
+    /**
+     * ایکسِ درز پهلو روی خودِ قطعه: باریک‌ترین جای لبهٔ پهلو.
+     *
+     * لبهٔ پهلوی دامنِ کلوش از کمر تا دم باز می‌شود؛ آنچه باید روی ۹۰ درجه بنشیند
+     * سرِ کمرِ همان لبه است، نه دمش. برای بالاتنه هر دو تقریباً یکی‌اند.
+     */
+    protected function sideSeamX(array $instance, bool $toRight): ?float
+    {
+        $best = null;
+
+        foreach ($instance['edges'] as $data) {
+            if ($data['tag'] !== 'side') {
+                continue;
+            }
+
+            foreach ([$data['start'], $data['end']] as $at) {
+                $x = (float) ($instance['polygon'][$at]['x'] ?? 0);
+                $best = $best === null ? $x : ($toRight ? min($best, $x) : max($best, $x));
+            }
+        }
+
+        return $best;
     }
 
     /** آیا این قطعه دور چیزی می‌پیچد (یقه، کمربند، نوار، مچ‌بند)؟ */
