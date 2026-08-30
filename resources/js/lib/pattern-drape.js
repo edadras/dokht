@@ -848,6 +848,36 @@ const placePiece = (piece, flat, body, options) => {
      * از ۳۶۰ به ۱۹۵ افتاد (بازوی لختش از ۱۰ به ۳۷ از ۳۱۲). پارچه‌ی اضافه‌ی
      * آستین باید چین بخورد، و چین را حل‌کننده می‌سازد نه چیدن.
      */
+    /*
+     * یک شعاع برای کلِ قطعه، و میانهٔ کمان — پایهٔ پیچیدنِ هم‌سنگ.
+     *
+     * شعاع از همان جایی می‌آید که قبلاً هر رأس جدا می‌گرفت، ولی یک بار و در
+     * *میانهٔ* ارتفاعِ قطعه؛ آن وقت استوانه واقعاً استوانه است و پیچیدن هیچ
+     * نخی را دراز نمی‌کند. زاویهٔ میانه هم همان `(u0+u1)/2` می‌ماند تا قطعه
+     * سرِ همان‌جای بدن بنشیند که سرور گفته.
+     */
+    const midY = (top + (top - (maxY - minY) * scale)) / 2;
+    const uMid = (u0 + u1) / 2;
+    const xMid = ((minX + maxX) / 2) * scale;
+
+    let hold;
+
+    if (zone === 'sleeve') {
+        const shoulder = body.level.shoulder - 0.035;
+        const tilt = body.armTilt ?? 0;
+        const reach = (shoulder - midY) / Math.max(0.2, Math.cos(tilt));
+
+        hold = sampleTable(body.armTable, -Math.max(0, reach))[0] + gap;
+    } else if (legs) {
+        hold = sampleTable(legs, midY)[0] + gap;
+    } else {
+        const row = sampleTable(body.profile, midY);
+
+        hold = Math.max((row[0] + row[1]) / 2, hint || 0) + gap;
+    }
+
+    hold = Math.max(hold, 0.02);
+
     for (let i = 0; i < count; i++) {
         const x = flat.positions[i * 2];
         const y = flat.positions[i * 2 + 1];
@@ -861,8 +891,6 @@ const placePiece = (piece, flat, body, options) => {
         const world = lerp(top, tail, along) - (y - minY) * scale;
         const u = lerp(u0, u1, along);
 
-        let rx;
-        let rz;
         let center = 0;
 
         if (zone === 'sleeve') {
@@ -881,24 +909,11 @@ const placePiece = (piece, flat, body, options) => {
             const shoulder = body.level.shoulder - 0.035;
             const tilt = body.armTilt ?? 0;
             const along = (shoulder - world) / Math.max(0.2, Math.cos(tilt));
-            const radius = sampleTable(body.armTable, -Math.max(0, along))[0];
-
-            rx = radius + gap;
-            rz = radius + gap;
             // محورِ بازو مماس بر تنه است؛ ببینید armOffset در نماگر
             center = side * ((body.armOffset ?? (body.radii.shoulder * 0.87))
                 + (Math.max(0, along) * Math.sin(tilt)));
         } else if (legs) {
-            const row = sampleTable(legs, world);
-
-            rx = row[0] + gap;
-            rz = row[0] + gap;
-            center = side * row[1];
-        } else {
-            const row = sampleTable(body.profile, world);
-
-            rx = Math.max(row[0], hint || 0) + gap;
-            rz = Math.max(row[1], (hint || 0) * 0.8) + gap;
+            center = side * sampleTable(legs, world)[1];
         }
 
         /*
@@ -910,9 +925,29 @@ const placePiece = (piece, flat, body, options) => {
          */
         const nudge = 1 + (hash(i) - 0.5) * options.jitter;
 
-        positions[i * 3] = center + rx * nudge * Math.sin(u);
+        /*
+         * پیچیدن باید هم‌سنگ باشد: پارچه خم می‌شود، کش نمی‌آید.
+         *
+         * قطعهٔ الگو یک ورقهٔ تخت است. پیچیدنش دورِ استوانه هیچ کششی ندارد —
+         * ورق را می‌شود دورِ لوله پیچید بی آنکه یک نخش دراز شود. ولی این‌جا دو
+         * کار می‌شد که هر دو کشش می‌سازند: زاویه خطی از پهنای *کادر* گرفته
+         * می‌شد (نه از طولِ کمان)، و شعاع با ارتفاع عوض می‌شد — یعنی پیچیدن
+         * دورِ یک *مخروط*، که ریاضی‌اش کش‌آمدن است.
+         *
+         * اندازه گرفته شد: پیش از آنکه یک قدمِ شبیه‌سازی برداشته شود، خودِ
+         * چیدن مثلث‌ها را تا ۵٫۴ برابر کش می‌آورد (ترنچ‌کت؛ کت ۴٫۱، کت رسمی
+         * ۴٫۶، پیراهن ۳٫۸). حل‌کننده از پارچه‌ای شروع می‌کرد که همان اول پاره
+         * بود، و هیچ درزی هم نمی‌توانست جمعش کند.
+         *
+         * پس یک شعاعِ ثابت برای کلِ قطعه، و زاویه از طولِ کمان: u = x / R.
+         * شکلِ واقعیِ بدن — بیضی بودن و باریک و پهن شدنش — کارِ برخوردگر است،
+         * نه کارِ چیدن.
+         */
+        const spin = uMid + (x * scale - xMid) / hold;
+
+        positions[i * 3] = center + hold * nudge * Math.sin(spin);
         positions[i * 3 + 1] = world;
-        positions[i * 3 + 2] = rz * nudge * Math.cos(u);
+        positions[i * 3 + 2] = hold * nudge * Math.cos(spin);
         axis += center / count;
     }
 
