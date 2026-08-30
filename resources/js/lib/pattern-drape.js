@@ -829,6 +829,15 @@ const placePiece = (piece, flat, body, options) => {
      */
     const hint = placement.radius ? placement.radius * scale : body.radii?.[placement.radius_hint];
 
+    /*
+     * آستین دقیقاً به اندازه‌ی بازو پیچیده می‌شود، نه به اندازه‌ی خودش.
+     *
+     * وسوسه‌انگیز است که مثل تنه `Math.max(row[0], hint)` بنویسیم — آستین
+     * ترنچ‌کت ۴۴٫۵ سانتی‌متر دور دارد و بازو ۲۹٫۶ — ولی اندازه گرفته شد و بدتر
+     * بود: با استوانه‌ی بزرگ‌تر پوشش ترنچ‌کت از ۲۲۵ به ۲۷۰ درجه رفت و کت رسمی
+     * از ۳۶۰ به ۱۹۵ افتاد (بازوی لختش از ۱۰ به ۳۷ از ۳۱۲). پارچه‌ی اضافه‌ی
+     * آستین باید چین بخورد، و چین را حل‌کننده می‌سازد نه چیدن.
+     */
     for (let i = 0; i < count; i++) {
         const x = flat.positions[i * 2];
         const y = flat.positions[i * 2 + 1];
