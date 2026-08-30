@@ -788,6 +788,12 @@ abstract class DressBaseGenerator extends BodiceGarmentBase
      *
      * بلندی بند عمداً بلندتر بریده می‌شود؛ بند چیزی است که در پرو کوتاه می‌شود.
      *
+     * `part` را می‌شود عوض کرد، چون هر بندی سرشانه‌ای نیست: بندِ کمرِ پیراهن راپ
+     * هم از همین‌جا می‌آید و جایش دورِ کمر است. نماگر ارتفاعِ قطعه را از همین
+     * `part` برمی‌دارد (partLevel) و «strap» را سرشانه می‌خواند؛ پس بندِ کمر
+     * صد‌و‌سی‌و‌هفت سانتی‌متری، یعنی سرِ شانه، چیده می‌شد و همان‌جا هم میخکوب —
+     * دو نوارِ آویزان دورِ گردن، درست همان چیزی که کاربر در عکس می‌دید.
+     *
      * @return array<string, mixed>
      */
     protected function dressStrapPiece(string $code, string $name, float $length, float $width, array $o = []): array
@@ -795,7 +801,7 @@ abstract class DressBaseGenerator extends BodiceGarmentBase
         $piece = $this->bandPiece($code, $name, max(8.0, $length), max(1.0, $width * 2), [
             'cut' => (int) ($o['cut'] ?? 2),
             'fold_line' => true,
-            'part' => 'strap',
+            'part' => (string) ($o['part'] ?? 'strap'),
             'meta' => array_merge([
                 'strap' => true,
                 'finished_width' => round($width, 2),

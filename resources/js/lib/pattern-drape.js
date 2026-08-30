@@ -2415,6 +2415,9 @@ export const buildDrape = (payload, body, options = {}) => {
             patch,
             mesh,
             axis: placed.axis,
+            // بلندیِ لبهٔ بالای قطعه سرِ چیدن؛ نگه‌دارنده با همین می‌فهمد قطعه
+            // در دوختِ بی‌وزنی سُر خورده یا نه (ببینید holdUp)
+            top: placed.top,
             // قطعهٔ روی اندام روی آن سُر نمی‌خورد؛ تنه و دامن جا دارند
             room: Math.abs(placed.axis) > 1e-6 ? VERTICAL_ROOM : Infinity,
         });
@@ -3635,12 +3638,44 @@ export const supportGarment = (drape, options = {}) => {
      */
     const zones = options.zones || ['torso', 'collar', 'skirt', 'sleeve', 'leg'];
 
-    const holdUp = (piece, patch) => {
+    const holdUp = (piece, patch, placedTop) => {
         const zone = piece.placement?.zone || '';
         let top = -Infinity;
 
         for (let i = 0; i < patch.count; i++) {
             top = Math.max(top, patch.positions[i * 3 + 1]);
+        }
+
+        /*
+         * قطعه‌ای که سُر خورده پایین، اول برمی‌گردد سرِ جایش و بعد میخ می‌خورد.
+         *
+         * میخ جای *امروزِ* پارچه را ثبت می‌کند، و نوار را هم از روی بلندترین
+         * رأسِ همین امروز می‌چیند. پس اگر بالاتنه در دوختِ بی‌وزنی افتاده باشد،
+         * نواری که میخ می‌شود دیگر سرشانه نیست — چند سانتی‌متر پایین‌تر است — و
+         * لباس تا ابد همان‌جا آویزان می‌ماند. اندازه‌گیری روی پیراهن راپ:
+         * بالاتنه از ۱۳۹ سانتی‌متر به ۱۳۲ رسیده بود و همان‌جا میخ می‌خورد، پس
+         * خطِ یقه تا زیرِ سینه باز می‌ماند (پوستِ لخت ۸۵ از ۲۴۰).
+         *
+         * پس تا جایی که چیدنِ اولیه گفته بود بالا کشیده می‌شود — همهٔ قطعه با
+         * هم، تا خودش کش نیاید — و فقط به بالا: قطعه‌ای که خودش بالاتر نشسته
+         * جای درستِ خودش را پیدا کرده و کسی پایینش نمی‌آورد.
+         *
+         * سقفِ این بالا کشیدن پهنای همان نوار است. قطعه‌ها به یک اندازه سُر
+         * نمی‌خورند و اگر هر کدام تمامِ راه را برگردد، درزِ میانشان به اندازهٔ
+         * اختلاف باز می‌شود؛ با این سقف، اختلاف از پهنای نوار بیشتر نمی‌شود و
+         * سیصد‌و‌چهل گامِ بعدی می‌بندندش.
+         */
+        const lift = placedTop === undefined
+            ? 0
+            : Math.min(band, Math.max(0, placedTop - top));
+
+        if (lift > 0) {
+            for (let i = 0; i < patch.count; i++) {
+                patch.positions[i * 3 + 1] += lift;
+            }
+
+            patch.remember();
+            top += lift;
         }
 
         for (let i = 0; i < patch.count; i++) {
@@ -3655,7 +3690,7 @@ export const supportGarment = (drape, options = {}) => {
 
     const standing = new Set();
 
-    for (const { piece, patch } of drape.patches) {
+    for (const { piece, patch, top } of drape.patches) {
         const zone = piece.placement?.zone || '';
         /*
          * و هر چیزی که دورِ بدن می‌پیچد — کمربند، نوارِ یقه، مچ‌بند.
@@ -3672,7 +3707,7 @@ export const supportGarment = (drape, options = {}) => {
             continue;
         }
 
-        holdUp(piece, patch);
+        holdUp(piece, patch, top);
         standing.add(patch);
     }
 
@@ -3721,11 +3756,11 @@ export const supportGarment = (drape, options = {}) => {
         footed.add(find(patch));
     }
 
-    for (const { piece, patch } of drape.patches) {
+    for (const { piece, patch, top } of drape.patches) {
         if (standing.has(patch) || ! patch.follow || footed.has(find(patch))) {
             continue;
         }
 
-        holdUp(piece, patch);
+        holdUp(piece, patch, top);
     }
 };

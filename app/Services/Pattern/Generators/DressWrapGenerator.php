@@ -110,12 +110,12 @@ class DressWrapGenerator extends DressBaseGenerator
         // بند بلند از سوراخ درز پهلو بیرون می‌آید، دور کمر می‌چرخد و جلو گره
         // می‌خورد؛ بند کوتاه از همان پهلو مستقیم به گره می‌رسد.
         $pieces[] = $this->dressStrapPiece('wrap-belt-long', 'بند کمر بلند', ($bodyWaist * 0.75) + 45, $beltWidth, [
-            'cut' => 1,
+            'cut' => 1, 'part' => 'belt',
             'meta' => ['notes' => ['از سوراخ درز پهلوی راست بیرون می‌آید و از پشت دور کمر می‌چرخد.']],
         ]);
 
         $pieces[] = $this->dressStrapPiece('wrap-belt-short', 'بند کمر کوتاه', ($bodyWaist * 0.35) + 45, $beltWidth, [
-            'cut' => 1,
+            'cut' => 1, 'part' => 'belt',
             'meta' => ['notes' => ['روی جلوی زیرین دوخته می‌شود و مستقیم به گره می‌رسد.']],
         ]);
 
