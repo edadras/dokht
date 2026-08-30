@@ -484,10 +484,6 @@ const gateOf = (drape, body, seamError) => {
         return `قطعه‌ای زیر کف افتاد (${(lowest * 100).toFixed(0)})`;
     }
 
-    if (process.env.WHY) {
-        console.log(`      بالاترین=${(highest * 100).toFixed(1)} چانه=${(body.level.chin * 100).toFixed(1)} پایین‌ترین=${(lowest * 100).toFixed(1)} خطای‌درز=${(seamError * 100).toFixed(1)}`);
-    }
-
     if (highest > body.level.chin + 0.08) {
         return 'قطعه‌ای بالای سر رفت';
     }
@@ -601,29 +597,37 @@ const bench = (file) => {
 
     const stitched = world.seamError();
 
-    /* لباسِ دوخته‌شده را برمی‌داریم و سرِ جایش می‌گذاریم */
-    const sewnAt = middleOf();
+    /* لباسِ دوخته‌شده را برمی‌داریم و سرِ جایش می‌گذاریم — فقط اگر بی‌بدن دوخته باشیم */
+    if (SEWING_BODY < 1) {
+        const sewnAt = middleOf();
 
-    for (const { patch } of drape.patches) {
-        for (let v = 0; v < patch.count; v++) {
-            patch.positions[v * 3] += placedAt.x - sewnAt.x;
-            patch.positions[v * 3 + 1] += placedAt.y - sewnAt.y;
-            patch.positions[v * 3 + 2] += placedAt.z - sewnAt.z;
+        for (const { patch } of drape.patches) {
+            for (let v = 0; v < patch.count; v++) {
+                patch.positions[v * 3] += placedAt.x - sewnAt.x;
+                patch.positions[v * 3 + 1] += placedAt.y - sewnAt.y;
+                patch.positions[v * 3 + 2] += placedAt.z - sewnAt.z;
+            }
+
+            patch.remember();
+        }
+    }
+
+    /*
+     * پارچه همان چند لحظه اجازهٔ کشش می‌گیرد، وگرنه کنار می‌رود به‌جای کشیدن.
+     * و اگر بدن از اول کامل باشد، این مرحله فقط گامِ بی‌وزنیِ اضافه است و
+     * پارچه در آن باد می‌کند — ببینید همین‌جا در garment-solid.js.
+     */
+    if (SEWING_BODY < 1) {
+        world.allowStretch(DRESS_GIVE);
+
+        for (let step = 1; step <= 12; step++) {
+            dress(SEWING_BODY + (1 - SEWING_BODY) * (step / 12));
+            world.presettle(14);
         }
 
-        patch.remember();
+        world.allowStretch(1);
+        world.presettle(60);
     }
-
-    /* پارچه همان چند لحظه اجازهٔ کشش می‌گیرد، وگرنه کنار می‌رود به‌جای کشیدن */
-    world.allowStretch(DRESS_GIVE);
-
-    for (let step = 1; step <= 12; step++) {
-        dress(SEWING_BODY + (1 - SEWING_BODY) * (step / 12));
-        world.presettle(14);
-    }
-
-    world.allowStretch(1);
-    world.presettle(60);
 
     supportGarment(drape, { band: 0.08, strength: 1 });
     drape.patches.forEach((entry) => entry.patch.applyPins(IDENTITY));
