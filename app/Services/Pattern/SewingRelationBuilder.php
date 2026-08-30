@@ -78,21 +78,52 @@ class SewingRelationBuilder
              * پشت بین آن دو تقسیم می‌شود — همان کاری که با نشانهٔ سرشانه
              * می‌کنند.
              */
-            $frontArmhole = $front ? static::edgesWithTag($front, 'armhole') : [];
-            $backArmhole = $back ? static::edgesWithTag($back, 'armhole') : [];
+            /*
+             * و حلقه همیشه روی *یک* قطعهٔ جلو و *یک* قطعهٔ پشت نیست.
+             *
+             * کت رسمی چهار پنل دارد و حلقه‌اش میان هر چهار پخش است: مرکز جلو
+             * ۱۱٫۲، پهلوی جلو ۱۱٫۳، پهلوی پشت ۱۰٫۶ و مرکز پشت ۱۰٫۷ — روی هم
+             * ۴۳٫۸ سانتی‌متر. pick() فقط یکی از هر سو را برمی‌گرداند، پس سرآستینِ
+             * ۴۶ سانتی‌متری روی ۲۱٫۹ سانتی‌متر چپانده می‌شد و باقی‌اش را
+             * splice() سرِخود به هر کمانِ آزادی که پیدا می‌کرد می‌دوخت — روی یک
+             * بازو به «پهلوی پشت» و روی آن یکی به «مرکز پشت». آستین از بازو کنده
+             * می‌شد: پوشش ۱۲۰ درجه از ۳۶۰ و ۱۳۴ نقطه از ۳۳۶ بازو لخت.
+             *
+             * پس هر پنلی که حلقه دارد سهم خودش را می‌گیرد، به ترتیبی که دور حلقه
+             * می‌نشیند: از زیربغلِ جلو، روی سرشانه، تا زیربغلِ پشت.
+             */
+            $under = ($entry['piece']->meta['two_piece'] ?? null) === 'under';
+            $targets = array_merge(
+                static::armholePanels($tagged, $front, 'front', $under),
+                array_reverse(static::armholePanels($tagged, $back, 'back', $under)),
+            );
 
-            $frontLength = static::runLength($front, $frontArmhole);
-            $backLength = static::runLength($back, $backArmhole);
-            $share = ($frontLength + $backLength) > 0.01 ? $frontLength / ($frontLength + $backLength) : 0.5;
-
-            [$capFront, $capBack] = static::splitRun($entry, $capEdges, $share);
-
-            if ($frontArmhole !== [] && $capFront !== []) {
-                $relations[] = static::run($entry, $capFront, $front, $frontArmhole, 'دوخت آستین به حلقه جلو');
+            if ($targets === []) {
+                continue;
             }
 
-            if ($backArmhole !== [] && $capBack !== []) {
-                $relations[] = static::run($entry, $capBack, $back, $backArmhole, 'دوخت آستین به حلقه پشت');
+            $lengths = array_map(
+                fn (array $target) => max(0.01, static::runLength($target['entry'], $target['edges'])),
+                $targets,
+            );
+            $total = array_sum($lengths);
+            $slices = static::splitRuns($entry, $capEdges, array_map(
+                fn (float $length) => $length / $total,
+                $lengths,
+            ));
+
+            foreach ($targets as $index => $target) {
+                if (($slices[$index] ?? []) === []) {
+                    continue;
+                }
+
+                $relations[] = static::run(
+                    $entry,
+                    $slices[$index],
+                    $target['entry'],
+                    $target['edges'],
+                    $target['side'] === 'front' ? 'دوخت آستین به حلقه جلو' : 'دوخت آستین به حلقه پشت',
+                );
             }
         }
 
@@ -161,6 +192,42 @@ class SewingRelationBuilder
                     $back,
                     $backTop[0],
                     'یوک به تنه پشت',
+                );
+            }
+        }
+
+        /*
+         * دو تکهٔ آستینِ خیاطی، لولهٔ یک بازو — و ضربدری دوخته می‌شوند.
+         *
+         * لبهٔ راستِ آستین رو به لبهٔ *چپِ* آستین زیر می‌رسد و برعکس؛ همان کاری
+         * که با لوله کردن دو ورق می‌کنیم. تا امروز این جفت را complete() از روی
+         * طول حدس می‌زد و هر چهار حالت تقریباً هم‌امتیاز درمی‌آمدند: روی کت رسمی
+         * ۰٫۰۰۰۲ در برابر ۰٫۰۰۰۲ و روی کت اسپرت ۰٫۰۶۱۸ در برابر ۰٫۰۶۲۳. یعنی
+         * انتخاب سکه‌انداختن بود، و نیمی از مدل‌ها راست‌به‌راست دوخته می‌شدند:
+         * آن وقت آستین زیر روی آستین رو تا می‌خورد به‌جای اینکه لوله را ببندد،
+         * و لوله می‌خوابید. اندازه گرفته شد — پوششِ دورِ بازو در ۳۵ سانتی‌متر
+         * پایینِ شانه از ۱۶ جهت از ۱۶ به ۶ می‌افتاد و بازو لخت می‌ماند.
+         *
+         * پس این‌جا نوشته می‌شود، نه حدس زده.
+         */
+        $upperSleeve = static::pickTwoPiece($tagged, 'upper');
+        $underSleeve = static::pickTwoPiece($tagged, 'under');
+
+        if ($upperSleeve && $underSleeve) {
+            $upperSides = static::sideEdgesOf($upperSleeve);
+            $underSides = static::sideEdgesOf($underSleeve);
+
+            foreach ([['left', 'right'], ['right', 'left']] as [$here, $there]) {
+                if ($upperSides[$here] === null || $underSides[$there] === null) {
+                    continue;
+                }
+
+                $relations[] = static::relation(
+                    $upperSleeve,
+                    $upperSides[$here],
+                    $underSleeve,
+                    $underSides[$there],
+                    'درز آستین دوتکه',
                 );
             }
         }
@@ -929,10 +996,37 @@ class SewingRelationBuilder
      */
     protected static function splitRun(array $entry, array $edges, float $share): array
     {
-        $edges = array_values($edges);
+        $share = min(0.95, max(0.05, $share));
 
-        if (count($edges) < 2) {
-            return [$edges, $edges];
+        return static::splitRuns($entry, $edges, [$share, 1 - $share]);
+    }
+
+    /**
+     * همان، ولی به چند تکه: سرآستینی که به چند پنلِ حلقه می‌رسد.
+     *
+     * @param  array<int, int>  $edges
+     * @param  array<int, float>  $shares  سهمِ هر تکه از طولِ کمان، به ترتیب
+     * @return array<int, array<int, int>>
+     */
+    protected static function splitRuns(array $entry, array $edges, array $shares): array
+    {
+        $edges = array_values($edges);
+        $shares = array_values($shares);
+        $parts = count($shares);
+
+        if ($parts < 2) {
+            return [$edges];
+        }
+
+        /*
+         * کمانی که به تعدادِ سهم‌ها لبه ندارد، کامل به همهٔ سهم‌ها می‌رسد.
+         *
+         * سرآستینِ آستین زیر یک لبهٔ تنهاست و باید میان دو پنلِ زیربغل پخش شود؛
+         * این‌جا نمی‌شود بریدش، ولی بستهٔ دوختِ سه‌بعدی همان کمان را هندسی
+         * می‌بُرد (ببینید DrapePayloadService::share). قرارداد قدیمی هم همین بود.
+         */
+        if (count($edges) < $parts) {
+            return array_fill(0, $parts, $edges);
         }
 
         $points = $entry['piece']->points();
@@ -940,27 +1034,98 @@ class SewingRelationBuilder
         $total = array_sum($lengths);
 
         if ($total < 0.01) {
-            return [$edges, $edges];
+            return array_fill(0, $parts, $edges);
         }
 
-        $target = $total * min(0.95, max(0.05, $share));
+        $cuts = [0];
         $walked = 0.0;
-        $cut = 1;
+        $target = 0.0;
+        $at = 0;
 
-        foreach ($lengths as $index => $length) {
-            if ($walked + ($length / 2) > $target) {
-                $cut = max(1, $index);
+        for ($part = 0; $part < $parts - 1; $part++) {
+            $target += $total * $shares[$part];
 
-                break;
+            while ($at < count($edges) && $walked + ($lengths[$at] / 2) <= $target) {
+                $walked += $lengths[$at];
+                $at++;
             }
 
-            $walked += $length;
-            $cut = $index + 1;
+            // هر تکه دست‌کم یک لبه، و برای تکه‌های بعدی هم دست‌کم یکی می‌ماند
+            $at = max($cuts[$part] + 1, min($at, count($edges) - ($parts - 1 - $part)));
+            $cuts[] = $at;
         }
 
-        $cut = min(count($edges) - 1, $cut);
+        $cuts[] = count($edges);
 
-        return [array_slice($edges, 0, $cut), array_slice($edges, $cut)];
+        $out = [];
+
+        for ($part = 0; $part < $parts; $part++) {
+            $out[] = array_slice($edges, $cuts[$part], $cuts[$part + 1] - $cuts[$part]);
+        }
+
+        return $out;
+    }
+
+    /**
+     * پنل‌هایی که حلقهٔ آستینِ یک سو رویشان است، به ترتیبِ دورِ حلقه.
+     *
+     * ترتیب از زیربغل به سرشانه است، چون سرآستین هم از زیربغلِ جلو راه می‌افتد،
+     * از روی سرشانه می‌گذرد و به زیربغلِ پشت می‌رسد. پنلی که درز سرشانه ندارد
+     * پنلِ زیربغل است، پس اول می‌آید.
+     *
+     * آستین زیرِ آستینِ دوتکه فقط به پنلِ زیربغل می‌رسد: کمانِ گودش ته حلقه است،
+     * نه روی سرشانه. اگر آن سو تنها یک پنل داشته باشد (پیراهن، کت اسپرت،
+     * ترنچ‌کت) همان یکی همه‌کاره است و چیزی عوض نمی‌شود.
+     *
+     * @param  array<string, mixed>|null  $anchor  قطعه‌ای که pick() برگردانده
+     * @return array<int, array{entry: array<string, mixed>, edges: array<int, int>, side: string, shoulder: bool}>
+     */
+    protected static function armholePanels(Collection $tagged, ?array $anchor, string $side, bool $underarmOnly): array
+    {
+        if ($anchor === null) {
+            return [];
+        }
+
+        $layer = (string) ($anchor['piece']->layer ?? 'outer');
+        $panels = [];
+
+        foreach ($tagged as $entry) {
+            $isAnchor = (string) $entry['piece']->code === (string) $anchor['piece']->code;
+
+            // جز خودِ لنگرِ pick()، تنها هم‌سو و هم‌لایه و هم‌نقش پذیرفته می‌شود:
+            // آستر و سجاف و یقه حلقه دارند ولی آستین به آن‌ها دوخته نمی‌شود
+            if (! $isAnchor && (
+                ($entry['side'] ?? null) !== $side
+                || ($entry['part'] ?? null) === 'sleeve'
+                || (string) ($entry['piece']->layer ?? 'outer') !== $layer
+                || in_array($entry['part'] ?? null, ['facing', 'collar', 'binding', 'interfacing', 'lining'], true)
+            )) {
+                continue;
+            }
+
+            $edges = static::edgesWithTag($entry, 'armhole');
+
+            if ($edges === []) {
+                continue;
+            }
+
+            $panels[] = [
+                'entry' => $entry,
+                'edges' => $edges,
+                'side' => $side,
+                'shoulder' => static::edgesWithTag($entry, 'shoulder') !== [],
+            ];
+        }
+
+        usort($panels, fn (array $a, array $b) => ($a['shoulder'] ? 1 : 0) <=> ($b['shoulder'] ? 1 : 0));
+
+        if (! $underarmOnly) {
+            return $panels;
+        }
+
+        $lower = array_values(array_filter($panels, fn (array $panel) => ! $panel['shoulder']));
+
+        return $lower === [] ? $panels : $lower;
     }
 
     /** @return array<int, int> */
@@ -975,6 +1140,53 @@ class SewingRelationBuilder
         }
 
         return $indexes;
+    }
+
+    /** تکهٔ «رو» یا «زیر»ِ آستین دوتکه، اگر در الگو باشد. */
+    protected static function pickTwoPiece(Collection $tagged, string $role): ?array
+    {
+        foreach ($tagged as $entry) {
+            if (($entry['part'] ?? null) === 'sleeve' && ($entry['piece']->meta['two_piece'] ?? null) === $role) {
+                return $entry;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * لبهٔ پهلوی چپ و راستِ یک قطعه — بر پایهٔ جای خودِ لبه روی قطعه، نه شماره‌اش.
+     *
+     * ملاک، وسطِ لبه نسبت به وسطِ کادرِ قطعه است. شماره‌ی لبه به کار نمی‌آید:
+     * آستین رو لبه‌های ۴ و ۶ را دارد و آستین زیر ۱ و ۳، و ترتیبشان روی مسیر
+     * یکی نیست.
+     *
+     * @return array{left: int|null, right: int|null}
+     */
+    protected static function sideEdgesOf(array $entry): array
+    {
+        $points = $entry['piece']->points();
+        $count = count($points);
+        $bounds = $entry['piece']->bounds();
+        $middle = ($bounds[0] + $bounds[2]) / 2;
+        $best = ['left' => null, 'right' => null];
+        $reach = ['left' => INF, 'right' => -INF];
+
+        foreach (static::edgesWithTag($entry, 'side') as $edge) {
+            $at = (($points[$edge]['x'] ?? 0) + ($points[($edge + 1) % $count]['x'] ?? 0)) / 2;
+
+            if ($at <= $middle && $at < $reach['left']) {
+                $best['left'] = $edge;
+                $reach['left'] = $at;
+            }
+
+            if ($at > $middle && $at > $reach['right']) {
+                $best['right'] = $edge;
+                $reach['right'] = $at;
+            }
+        }
+
+        return $best;
     }
 
     /** اولین قطعه‌ای که نقش یا سمت آن با خواسته ما بخواند. */

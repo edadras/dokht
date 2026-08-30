@@ -68,11 +68,26 @@ trait BodiceGarmentSupport
             ],
         ]);
 
+        /*
+         * مبدأ آستین زیر روی خط زیربغلِ *آستین رو* است (y = 0)، نه روی کپِ خودش.
+         *
+         * پیش‌تر آستین زیر از کپِ خودش شروع می‌شد و تا همان $length می‌رفت، پس
+         * درزهایش به اندازهٔ اختلافِ دو کپ بلندتر درمی‌آمد: روی ترنچ‌کت ۵۶٫۲ در
+         * برابر ۴۷٫۲ سانتی‌متر — ۱۶٪. دروازهٔ ۱۲٪ِ جفت‌کردنِ خودکار ردش می‌کرد و
+         * دو پنلِ آستین اصلاً به هم دوخته نمی‌شدند: آستین دو ورقهٔ آویزان می‌شد و
+         * بازو لخت می‌ماند (پوششِ دورِ بازو ۱۲۰ درجه از ۳۶۰، و ۱۲۶ نقطه از ۳۳۶
+         * لخت). آستین کت‌وشلوار همین را جدا حل کرده بود؛ این‌جا جا مانده بود.
+         *
+         * پس درزها هم‌بلندا می‌شوند و کمانِ زیربغل به *داخلِ* قطعه گود می‌شود —
+         * همان گودی سهمِ آستین زیر از حلقه را می‌سازد، پس طولِ سرآستین عوض نمی‌شود.
+         */
+        $drop = $length - $upperCap;
+
         $underOutline = [
-            Geometry::curve(0, $underCap, ($underWidth - $underHem) * 0.2, $underCap + (($length - $underCap) * 0.5)),
-            Geometry::curve($underWidth, $underCap, $underWidth * 0.5, -$underCap * 0.9),
-            Geometry::curve($underWidth - 1, $length, $underWidth + 1, $underCap + (($length - $underCap) * 0.55)),
-            Geometry::point($underWidth - 1 - $underHem, $length),
+            Geometry::curve(0, 0, ($underWidth - $underHem) * 0.2, $drop * 0.5),
+            Geometry::curve($underWidth, 0, $underWidth * 0.5, $underCap * 1.9),
+            Geometry::curve($underWidth - 1, $drop, $underWidth + 1, $drop * 0.55),
+            Geometry::point($underWidth - 1 - $underHem, $drop),
         ];
 
         $under = $this->piece([
@@ -81,9 +96,9 @@ trait BodiceGarmentSupport
             'cut_quantity' => 2,
             'mirror' => true,
             'outline' => $underOutline,
-            'grainline' => $this->grainline($underWidth * 0.5, $underCap + 2, $length - 4),
+            'grainline' => $this->grainline($underWidth * 0.5, 2.0, $drop - 2),
             'notches' => [
-                $this->notch(0, $underCap, 3, 'نشانه آستین رو', 'under_sleeve'),
+                $this->notch(0, 0, 3, 'نشانه آستین رو', 'under_sleeve'),
             ],
             'meta' => [
                 'part' => 'sleeve',
