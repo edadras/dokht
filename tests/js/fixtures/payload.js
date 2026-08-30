@@ -384,14 +384,24 @@ export const collarPayload = (height = 7.5, stand = 3) => {
  *
  * ماتریسِ هر برخوردگر ثابت است (ژستِ ایستاده)، پس همین‌جا دستی ساخته می‌شود.
  */
-export const bodyColliders = (Collider, body, avatar = {}) => {
+export const bodyColliders = (Collider, body, avatar = {}, grow = 1) => {
     const level = body.level;
     const r = body.radii;
     const height = level.top;
     const armLength = (avatar.arm_length || 58) / 100;
     const out = [];
+    // `grow` بدن را نازک می‌کند؛ ببینید ترتیبِ «اول بدوز، بعد تن کن» در سنجه
+    const thin = (sections) => sections.map((row) => {
+        const scaled = row.slice();
+
+        for (let i = 1; i < scaled.length; i++) {
+            scaled[i] *= grow;
+        }
+
+        return scaled;
+    });
     const at = (sections, name, offset = [0, 0, 0], caps = {}, spin = 0) => {
-        const collider = new Collider({ sections, name, ...caps });
+        const collider = new Collider({ sections: thin(sections), name, ...caps });
         // چرخش حول z، همان کاری که گروهِ بازو در نماگر می‌کند
         const cos = Math.cos(spin);
         const sin = Math.sin(spin);

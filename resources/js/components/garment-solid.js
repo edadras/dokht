@@ -132,6 +132,51 @@ export const bodyEnvelope = (body, y) => {
 
 
 /**
+ * جای لباس: میانگینِ همهٔ رأس‌ها، و بالاترین نقطه‌اش.
+ *
+ * برای برگرداندنِ لباسِ دوخته‌شده به جای خودش لازم است. میانگین تنهایی کافی
+ * نیست: پارچه که جمع می‌شود میانگین بالا می‌آید در حالی که سرشانه پایین رفته.
+ */
+const middleOf = (drape) => {
+    let x = 0;
+    let z = 0;
+    let count = 0;
+    let top = -Infinity;
+
+    for (const { patch } of drape.patches) {
+        for (let v = 0; v < patch.count; v++) {
+            x += patch.positions[v * 3];
+            z += patch.positions[v * 3 + 2];
+            top = Math.max(top, patch.positions[v * 3 + 1]);
+            count++;
+        }
+    }
+
+    return count ? { x: x / count, y: top, z: z / count } : { x: 0, y: 0, z: 0 };
+};
+
+/** جابه‌جاییِ صُلبِ کلِ لباس؛ هیچ درزی باز نمی‌شود. */
+const shift = (drape, want, have) => {
+    const dx = want.x - have.x;
+    const dy = want.y - have.y;
+    const dz = want.z - have.z;
+
+    if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) < 1e-6) {
+        return;
+    }
+
+    for (const { patch } of drape.patches) {
+        for (let v = 0; v < patch.count; v++) {
+            patch.positions[v * 3] += dx;
+            patch.positions[v * 3 + 1] += dy;
+            patch.positions[v * 3 + 2] += dz;
+        }
+
+        patch.remember();
+    }
+};
+
+/**
  * برخوردگرهای بدن، برای حل‌کنندهٔ پارچه.
  *
  * پارچه باید به چیزی بخورد، وگرنه از روی بدن رد می‌شود. همان مانکن، این بار
@@ -140,15 +185,28 @@ export const bodyEnvelope = (body, y) => {
  *
  * دستگاهِ حل‌کننده متر است و y رو به بالا با صفرِ روی زمین، پس همه‌جا از
  * drapeBody خوانده می‌شود نه از سانتی‌مترِ مانکن.
+ *
+ * `grow` بدن را نازک‌تر می‌کند: یک یعنی خودِ بدن، صفر یعنی هیچ. برای «تن کردنِ»
+ * لباسِ دوخته‌شده لازم است — ببینید ترتیبِ دوخت در boot().
  */
-export const bodyColliders = (Collider, body, table) => {
+export const bodyColliders = (Collider, body, table, grow = 1) => {
     const out = [];
     const level = table.level;
+    const thin = (sections) => sections.map((row) => {
+        const scaled = row.slice();
+
+        // ستونِ صفر ارتفاع است و بقیه شعاع؛ فقط شعاع‌ها کوچک می‌شوند
+        for (let i = 1; i < scaled.length; i++) {
+            scaled[i] *= grow;
+        }
+
+        return scaled;
+    });
 
     const at = (sections, name, offset = [0, 0, 0], spin = 0) => {
         const cos = Math.cos(spin);
         const sin = Math.sin(spin);
-        const collider = new Collider({ sections, name });
+        const collider = new Collider({ sections: thin(sections), name });
 
         collider.setTransform(
             new Float32Array([
@@ -860,21 +918,61 @@ export default (initial = {}) => ({
 
             drape.patches.forEach((entry) => world.addPatch(entry.patch));
             drape.seams.forEach((seam) => world.addSeam(seam));
-            world.setColliders(bodyColliders(Collider, body, table));
 
             world.substeps = drape.stats.solver.substeps;
             world.iterations = Math.max(6, drape.stats.solver.iterations);
 
             /*
-             * ترتیبش مهم است: اول در بی‌وزنی دوخته می‌شود، بعد سرشانه گرفته
-             * می‌شود و وزن برمی‌گردد. برعکسش، قطعه‌ها پیش از بسته شدنِ درزها از
-             * روی بدن سُر می‌خورند.
+             * ترتیبش مهم است، و همان ترتیبِ خیاطیِ واقعی است: اول لباس دوخته
+             * می‌شود، بعد تنِ مانکن.
+             *
+             * پیش از این، قطعه‌ها روی بدن چیده می‌شدند و همان‌جا دوخته — یعنی
+             * وقتی دو لبه می‌خواستند به هم برسند، بدن وسطِ راهشان بود. هر درزی
+             * که آن‌جا بسته نمی‌شد، روی مانکن یک سوراخ می‌ماند: همان شکافِ
+             * سرشانه و گودیِ گردن که در عکس‌ها دیده می‌شد.
+             *
+             * اندازه گرفته شد. بدترین شکافِ درز، وقتی بدن وسط نباشد:
+             *
+             *     پیراهن ۹٫۰ → ۱٫۸   کت ۸٫۵ → ۱٫۷   کت رسمی ۱۳٫۱ → ۱٫۶
+             *     ترنچ‌کت ۱۱٫۱ → ۲٫۷   چیپائو ۳۵٫۴ → ۲٫۱
+             *
+             * پس الگو و دوخت سالم بودند؛ ایراد از این بود که در حالِ پوشیده
+             * بودن می‌دوختیم.
+             *
+             * ولی لباسِ دوخته‌شدهٔ بی‌تن وا می‌رود — قدِ لباس عروس ۱۵۵ به ۱۱۵
+             * سانتی‌متر می‌رسید — چون چیزی داخلش نیست. پس مثل خیاط که لباس را
+             * روی مانکن می‌کشد، بدن از هیچ تا اندازهٔ خودش بزرگ می‌شود و پارچه
+             * را از داخل باز می‌کند.
              */
             const gravity = world.law.gravity;
+            const dress = (grow) => world.setColliders(bodyColliders(Collider, body, table, grow));
 
             world.law.gravity = 0;
-            world.presettle(drape.stats.presettle);
 
+            /* ۱) دوخت، با هیچ چیزی وسط */
+            dress(0);
+
+            const before = middleOf(drape);
+
+            world.presettle(Math.max(240, drape.stats.presettle));
+
+            /*
+             * ۲) لباسِ دوخته‌شده را برمی‌داریم و سرِ جایش می‌گذاریم.
+             *
+             * پارچه‌ی بی‌تن جمع می‌شود و مرکزش جابه‌جا: پیراهنِ راپ در همین یک
+             * مرحله ده سانتی‌متر پایین می‌رفت و بعد بدن که بزرگ می‌شد، لباس از
+             * سینه افتاده می‌ماند. جابه‌جاییِ صُلبِ کلِ لباس هیچ درزی را باز
+             * نمی‌کند — همان برداشتنِ لباس از میز و انداختنش روی مانکن است.
+             */
+            shift(drape, before, middleOf(drape));
+
+            /* ۳) تن کردن: بدن آرام‌آرام داخلِ لباس بزرگ می‌شود */
+            for (let step = 1; step <= 12; step++) {
+                dress(step / 12);
+                world.presettle(14);
+            }
+
+            /* ۳) حالا لباس پوشیده است؛ سرشانه گرفته می‌شود و وزن برمی‌گردد */
             supportGarment(drape, { band: 0.08, strength: 1 });
             drape.patches.forEach((entry) => entry.patch.applyPins(IDENTITY));
 

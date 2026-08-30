@@ -536,8 +536,11 @@ const bench = (file) => {
 
     drape.patches.forEach((entry) => world.addPatch(entry.patch));
     drape.seams.forEach((seam) => world.addSeam(seam));
+
     // بدن، با بازو و پا — بی این‌ها آستین چیزی برای نشستن ندارد
-    world.setColliders(bodyColliders(Collider, body, payload.avatar));
+    const dress = (grow) => world.setColliders(bodyColliders(Collider, body, payload.avatar, grow));
+
+    dress(1);
 
     /*
      * همان تنظیمی که نماگر به کار می‌برد.
@@ -555,9 +558,51 @@ const bench = (file) => {
     const gravity = world.law.gravity;
 
     world.law.gravity = 0;
-    world.presettle(drape.stats.presettle);
+
+    /* اول دوخت، با هیچ چیزی وسط؛ بعد تن کردن — همان ترتیبِ نماگر */
+    const middleOf = () => {
+        let x = 0;
+        let z = 0;
+        let count = 0;
+        let top = -Infinity;
+
+        for (const { patch } of drape.patches) {
+            for (let v = 0; v < patch.count; v++) {
+                x += patch.positions[v * 3];
+                z += patch.positions[v * 3 + 2];
+                top = Math.max(top, patch.positions[v * 3 + 1]);
+                count++;
+            }
+        }
+
+        return count ? { x: x / count, y: top, z: z / count } : { x: 0, y: 0, z: 0 };
+    };
+
+    dress(0);
+
+    const placedAt = middleOf();
+
+    world.presettle(Math.max(240, drape.stats.presettle));
 
     const stitched = world.seamError();
+
+    /* لباسِ دوخته‌شده را برمی‌داریم و سرِ جایش می‌گذاریم */
+    const sewnAt = middleOf();
+
+    for (const { patch } of drape.patches) {
+        for (let v = 0; v < patch.count; v++) {
+            patch.positions[v * 3] += placedAt.x - sewnAt.x;
+            patch.positions[v * 3 + 1] += placedAt.y - sewnAt.y;
+            patch.positions[v * 3 + 2] += placedAt.z - sewnAt.z;
+        }
+
+        patch.remember();
+    }
+
+    for (let step = 1; step <= 12; step++) {
+        dress(step / 12);
+        world.presettle(14);
+    }
 
     supportGarment(drape, { band: 0.08, strength: 1 });
     drape.patches.forEach((entry) => entry.patch.applyPins(IDENTITY));
