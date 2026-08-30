@@ -860,9 +860,10 @@ const placePiece = (piece, flat, body, options) => {
     const uMid = (u0 + u1) / 2;
     const xMid = ((minX + maxX) / 2) * scale;
 
+    const arm = zone === 'sleeve';
     let hold;
 
-    if (zone === 'sleeve') {
+    if (arm) {
         const shoulder = body.level.shoulder - 0.035;
         const tilt = body.armTilt ?? 0;
         const reach = (shoulder - midY) / Math.max(0.2, Math.cos(tilt));
@@ -945,9 +946,28 @@ const placePiece = (piece, flat, body, options) => {
          */
         const spin = uMid + (x * scale - xMid) / hold;
 
-        positions[i * 3] = center + hold * nudge * Math.sin(spin);
+        /*
+         * و بعد قطعه به بدن نزدیک می‌شود — ولی فقط تا آن‌جا که کش نیاید.
+         *
+         * استوانهٔ هم‌سنگ کششِ چیدن را از پنج برابر به دو رساند، ولی چون
+         * شعاعش ثابت است در بعضی ارتفاع‌ها از بدن فاصله می‌گیرد و درز باید راهِ
+         * درازتری برود. `HUG` همان بده‌بستان است: صفر یعنی استوانهٔ خالص
+         * (بی‌کشش ولی دور)، یک یعنی چسبیدن به پوست (نزدیک ولی کشیده).
+         *
+         * جاروب شد، روی مجموعِ سوراخِ پنج مدل: ۰ ⇒ ۸۷۴۴، ۰٫۵ ⇒ ۸۳۸۸،
+         * ۱ ⇒ ۸۳۷۴ پیکسل. چسبیدن به پوست بهترین بود — ولی این همان رفتارِ
+         * قدیمی نیست: زاویه همچنان از طولِ کمان می‌آید، پس کششِ افقی که
+         * ریشهٔ همه‌چیز بود سرِ جایش رفع مانده و فقط شعاع بدن را دنبال می‌کند.
+         * ترنچ‌کت ۲٫۳٪ → ۱٫۳٪ و پیراهن ۳٫۹٪ → ۳٫۸٪.
+         */
+        const skin = arm || legs
+            ? hold
+            : Math.max(sampleRow(body.profile, world), hint || 0) + gap;
+        const reach = lerp(hold, skin, HUG);
+
+        positions[i * 3] = center + reach * nudge * Math.sin(spin);
         positions[i * 3 + 1] = world;
-        positions[i * 3 + 2] = hold * nudge * Math.cos(spin);
+        positions[i * 3 + 2] = reach * nudge * Math.cos(spin);
         axis += center / count;
     }
 
@@ -1479,6 +1499,21 @@ const LIMB_ROOM = 0;
  * از ۱۳۴ به ۱۱۹٫۴، پیش از آنکه یک قدمِ شبیه‌سازی برداشته شود.
  */
 const VERTICAL_ROOM = 0.03;
+
+/*
+ * چقدر قطعه هنگام چیدن به پوستِ بدن نزدیک شود.
+ *
+ * صفر یعنی استوانهٔ هم‌سنگِ خالص — بی‌کشش ولی دور از بدن؛ یک یعنی چسبیدن به
+ * پوست — نزدیک ولی کشیده. ببینید جای مصرفش در placePiece.
+ */
+const HUG = 1;
+
+/* میانگینِ نیم‌پهنا و نیم‌عمقِ بدن در یک ارتفاع */
+const sampleRow = (profile, y) => {
+    const row = sampleTable(profile, y);
+
+    return (row[0] + row[1]) / 2;
+};
 
 /**
  * ساخت پارچه‌ی دوخته‌شده از بستهٔ سرور.
