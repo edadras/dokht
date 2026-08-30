@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Pattern;
 use App\Models\PatternPiece;
+use App\Models\PatternTemplate;
 use App\Services\Pattern\GeneratorRegistry;
 use App\Services\Simulation\DrapePayloadService;
 use App\Support\Measurements;
@@ -83,7 +84,17 @@ class DrapeBenchCommand extends Command
     protected function pattern(string $key, array $body): Pattern
     {
         $generator = GeneratorRegistry::make($key);
-        $pieces = $generator->generate($body, [], $generator->defaultParams());
+        /*
+         * با همان آزادیِ نوعِ لباس، نه آزادیِ خالی.
+         *
+         * این‌جا `[]` می‌رفت و سنجه لباسی می‌سنجید که هیچ‌کس نمی‌دوزد: صفحهٔ
+         * الگو آزادیِ نوعِ لباس را می‌دهد. نتیجه‌اش این بود که سنجه برای کت و
+         * ترنچ‌کت «✓ روی مانکن» می‌داد و همان‌ها در مرورگر با «قطعه‌ای از لباس
+         * بالای سر رفت» رد می‌شدند و به نمای چرخشیِ قدیمی برمی‌گشتند — سه مدل
+         * از پنج مدل، و هیچ عددی نگفت.
+         */
+        $ease = PatternTemplate::where('generator', $key)->first()?->garmentType?->ease() ?? [];
+        $pieces = $generator->generate($body, $ease, $generator->defaultParams());
 
         $models = collect($pieces)->map(function (array $piece, int $index) {
             $model = new PatternPiece;

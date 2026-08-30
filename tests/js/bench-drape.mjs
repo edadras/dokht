@@ -20,7 +20,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { buildDrape, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
 import { ClothWorld, Collider } from '../../resources/js/lib/cloth-solver.js';
-import { bodyColliders, makeBody } from './fixtures/payload.js';
+import { relax } from '../../resources/js/components/garment-solid.js';
+import { bodyColliders, makeBody, rawBody } from './fixtures/payload.js';
 
 const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
@@ -483,6 +484,10 @@ const gateOf = (drape, body, seamError) => {
         return `قطعه‌ای زیر کف افتاد (${(lowest * 100).toFixed(0)})`;
     }
 
+    if (process.env.WHY) {
+        console.log(`      بالاترین=${(highest * 100).toFixed(1)} چانه=${(body.level.chin * 100).toFixed(1)} پایین‌ترین=${(lowest * 100).toFixed(1)} خطای‌درز=${(seamError * 100).toFixed(1)}`);
+    }
+
     if (highest > body.level.chin + 0.08) {
         return 'قطعه‌ای بالای سر رفت';
     }
@@ -538,7 +543,7 @@ const bench = (file) => {
     drape.seams.forEach((seam) => world.addSeam(seam));
 
     // بدن، با بازو و پا — بی این‌ها آستین چیزی برای نشستن ندارد
-    const dress = (grow) => world.setColliders(bodyColliders(Collider, body, payload.avatar, grow));
+    const dress = (grow) => world.setColliders(bodyColliders(Collider, rawBody(payload.avatar), body, grow));
 
     dress(1);
 
@@ -631,8 +636,16 @@ const bench = (file) => {
     const settled = stretchOf(drape);
     const before = world.seamError();
 
-    // همان کاری که نماگر پیش از نمایش می‌کند؛ اگر خراب کند، همین‌جا دیده شود
+    /*
+     * ترتیبِ پایان، مو‌به‌مو مثلِ نماگر: نشستن، بعد جوش، بعد صاف کردن.
+     *
+     * یک بار این‌جا اول جوش می‌زد و بعد می‌نشست، و همان جابه‌جایی باعث شد سنجه
+     * برای کت و ترنچ‌کت «✓ روی مانکن» بدهد در حالی که مرورگر همان‌ها را با
+     * «قطعه‌ای از لباس بالای سر رفت» رد می‌کرد و به نمای قدیمی برمی‌گشت.
+     */
+    world.presettle(150);
     weldSeams(drape);
+    relax(drape);
 
     const snapped = world.seamError();
 
@@ -645,8 +658,6 @@ const bench = (file) => {
      * برمی‌گشت، یعنی همان «یقه آزاد است»ی که روی مانکن دیده می‌شد. عددی که به
      * کار می‌آید، عددِ *ماندگار* است نه عددِ لحظهٔ جوش.
      */
-    world.presettle(150);
-
     const durable = world.seamError();
     const welded = stretchOf(drape);
     const hinge = hingeOf(drape);

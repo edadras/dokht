@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 
 import { ClothWorld, Collider } from '../../resources/js/lib/cloth-solver.js';
 import { buildDrape, notchDarts, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
-import { bodyColliders, bodicePayload, collarPayload, makeBody, twoSleeves, twoSquares } from './fixtures/payload.js';
+import { bodyColliders, bodicePayload, collarPayload, makeBody, rawBody, twoSleeves, twoSquares } from './fixtures/payload.js';
 
 const settle = (drape, steps = 260) => {
     const world = new ClothWorld({ fabric: {} });
@@ -729,7 +729,7 @@ test('یقه روی خط خواب تا می‌شود و جوش تا را باز 
 
     drape.patches.forEach((one) => world.addPatch(one.patch));
     drape.seams.forEach((seam) => world.addSeam(seam));
-    world.setColliders(bodyColliders(Collider, body));
+    world.setColliders(bodyColliders(Collider, rawBody(), body));
 
     const cut = size();
     const seeded = fold();
