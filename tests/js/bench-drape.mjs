@@ -490,8 +490,34 @@ const gateOf = (drape, body, seamError) => {
         return 'قطعه‌ای بالای سر رفت';
     }
 
-    if (highest < body.level.shoulder - 0.10) {
-        return `از جای خودش پایین‌تر نشست (${((body.level.shoulder - highest) * 100).toFixed(0)})`;
+    /*
+     * لنگرِ «پایین‌تر نشست» جای *چیدنِ خودِ لباس* است، نه سرشانهٔ بدن.
+     *
+     * تا امروز این شرط سرشانه را می‌گرفت و برای بالاتنه درست بود؛ ولی دامن و
+     * شلوار و شورت و پیش‌بند اصلاً به سرشانه نمی‌رسند. در نمونهٔ پهنِ کاتالوگ،
+     * هر هفده مدلی که این پیام را می‌گرفتند پایین‌تنه بودند: لگینگ، جین،
+     * دامنِ ترک، شورت، پیش‌بندِ آشپزی، ساق‌پوش. سنجه خرابی گزارش می‌کرد که
+     * وجود نداشت — و همان یک شرطِ غلط، دامنِ کلوش را ماه‌ها «رد» نگه داشته بود.
+     *
+     * بالاترین ترازی که سرور برای قطعه‌ها گفته، همان جایی است که لباس باید
+     * بماند؛ چه سرشانه باشد چه خط کمر.
+     */
+    let anchor = -Infinity;
+
+    for (const { piece } of drape.patches) {
+        const top = piece?.placement?.y_top;
+
+        if (typeof top === 'number') {
+            anchor = Math.max(anchor, top * body.level.top);
+        }
+    }
+
+    if (anchor === -Infinity) {
+        anchor = body.level.shoulder;
+    }
+
+    if (highest < anchor - 0.10) {
+        return `از جای خودش پایین‌تر نشست (${((anchor - highest) * 100).toFixed(0)})`;
     }
 
     return null;
