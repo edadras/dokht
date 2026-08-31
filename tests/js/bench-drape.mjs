@@ -25,6 +25,8 @@ import { bodyColliders, makeBody, rawBody } from './fixtures/payload.js';
 
 const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
+const SETTLE_PASSES = Number(process.env.SETTLE || 12);
+
 /* کششِ هر مثلث نسبت به همان مثلث روی الگوی تخت */
 const stretchOf = (drape) => {
     let worst = 1;
@@ -641,7 +643,7 @@ const bench = (file) => {
     drape.patches.forEach((entry) => entry.patch.applyPins(IDENTITY));
     world.law.gravity = gravity;
     world.presettle(40);
-    world.iterations = drape.stats.solver.iterations;
+    world.iterations = Math.max(SETTLE_PASSES, drape.stats.solver.iterations);
     world.seamPasses = drape.stats.solver.seamPasses ?? world.seamPasses;
     world.presettle(300);
 
