@@ -20,7 +20,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { buildDrape, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
 import { ClothWorld, Collider } from '../../resources/js/lib/cloth-solver.js';
-import { relax } from '../../resources/js/components/garment-solid.js';
+import { heightsOf, relax, sagOf, shift } from '../../resources/js/components/garment-solid.js';
 import { bodyColliders, makeBody, rawBody } from './fixtures/payload.js';
 
 const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -592,8 +592,16 @@ const bench = (file) => {
     dress(SEWING_BODY);
 
     const placedAt = middleOf();
+    const placedYs = heightsOf(drape);
 
     world.presettle(Math.max(240, drape.stats.presettle));
+
+    /* لباسِ دوخته‌شده دوباره روی شانه؛ ببینید sagOf در garment-solid.js */
+    const sag = sagOf(drape, placedYs, body.level.armhole);
+
+    if (sag < 0) {
+        shift(drape, { x: 0, y: 0, z: 0 }, { x: 0, y: sag, z: 0 });
+    }
 
     const stitched = world.seamError();
 
