@@ -535,7 +535,7 @@ const bench = (file) => {
     const mirror = mirrorOf(drape);
     const gaps = gapsOf(drape);
     const placed = stretchOf(drape);
-    const world = new ClothWorld({ fabric: payload.fabric, skin: 0.006 });
+    const world = new ClothWorld({ fabric: payload.fabric, skin: 0.006, floor: 0 });
 
     drape.patches.forEach((entry) => world.addPatch(entry.patch));
     drape.seams.forEach((seam) => world.addSeam(seam));

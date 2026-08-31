@@ -1108,7 +1108,7 @@ export default (initial = {}) => ({
                 throw new Error('قطعه‌ای برای دوخت نماند');
             }
 
-            const world = new ClothWorld({ fabric });
+            const world = new ClothWorld({ fabric, floor: 0 });
 
             drape.patches.forEach((entry) => world.addPatch(entry.patch));
             drape.seams.forEach((seam) => world.addSeam(seam));

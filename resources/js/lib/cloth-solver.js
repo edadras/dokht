@@ -714,6 +714,43 @@ class PatchBase {
         }
     }
 
+    /**
+     * کفِ صحنه — پارچه از زمین رد نمی‌شود.
+     *
+     * تا امروز هیچ کفی نبود و لباسِ بلند مستقیم از زمین می‌گذشت: در نمونهٔ
+     * پهنِ کاتالوگ، ۲۷ مدل «قطعه‌ای زیر کف افتاد» می‌گرفتند و بیست‌وشش‌تایشان
+     * *پیش از* شبیه‌سازی هم زیر کف چیده شده بودند. عبا، دشداشه، جلابیه، لباس
+     * شب با دنباله — همه‌شان قدشان به کف می‌رسد یا از آن می‌گذرد، و پارچه‌ای
+     * که به زمین می‌رسد باید رویش پهن شود، نه از تویش رد.
+     *
+     * قیدش همان قیدِ برخورد است، ساده‌ترین حالتش: رأسی که پایین‌تر از کف است
+     * روی کف می‌نشیند، سرعتِ عمودی‌اش صفر می‌شود و افقی‌اش اصطکاک می‌خورد.
+     *
+     * @param {number} level ارتفاع کف (متر)
+     * @param {number} friction ۰ یعنی لیز، ۱ یعنی چسبنده
+     */
+    land(level, friction) {
+        const { positions, previous, invMass, count } = this;
+        const slide = 1 - friction;
+
+        for (let i = 0; i < count; i++) {
+            if (invMass[i] === 0) {
+                continue;
+            }
+
+            const at = i * 3;
+
+            if (positions[at + 1] >= level) {
+                continue;
+            }
+
+            positions[at + 1] = level;
+            previous[at] = positions[at] - (positions[at] - previous[at]) * slide;
+            previous[at + 1] = positions[at + 1];
+            previous[at + 2] = positions[at + 2] - (positions[at + 2] - previous[at + 2]) * slide;
+        }
+    }
+
     /* گام ۴ — بازسازی سرعت و اندازه‌گیری بی‌قراری پارچه */
     finish(dt) {
         const { positions, previous, velocity, invMass, count } = this;
@@ -1828,10 +1865,18 @@ export const fabricLaw = (fabric = {}) => {
 const FIXED_STEP = 1 / 60;
 
 export class ClothWorld {
-    constructor({ fabric = {}, skin = 0.006, budget = 8 } = {}) {
+    constructor({ fabric = {}, skin = 0.006, budget = 8, floor = null } = {}) {
         this.law = fabricLaw(fabric);
         this.skin = skin + this.law.thickness;
         this.budget = budget;
+        /*
+         * ارتفاع کفِ صحنه؛ null یعنی کفی در کار نیست.
+         *
+         * پیش‌فرض null است چون کف مالِ *صحنه* است نه مالِ حل‌کننده: آزمون‌های
+         * خودِ پارچه ورقه را دور محورِ صفر می‌آویزند و کف آن‌جا فقط مزاحم است.
+         * صفحهٔ لباس که مانکن روی زمین می‌ایستد، خودش `floor: 0` می‌دهد.
+         */
+        this.floor = floor;
 
         this.patches = [];
         this.colliders = [];
@@ -1988,6 +2033,10 @@ export class ClothWorld {
 
         for (let p = 0; p < this.patches.length; p++) {
             this.patches[p].collide(this.colliders, this.skin, 1, true);
+
+            if (this.floor !== null) {
+                this.patches[p].land(this.floor + this.skin, 1);
+            }
         }
 
         this.patches.forEach((patch) => patch.remember());
@@ -2054,6 +2103,12 @@ export class ClothWorld {
 
                 for (let p = 0; p < patches.length; p++) {
                     patches[p].collide(colliders, skin, grip);
+                }
+            }
+
+            if (this.floor !== null) {
+                for (let p = 0; p < patches.length; p++) {
+                    patches[p].land(this.floor + skin, law.friction);
                 }
             }
 
