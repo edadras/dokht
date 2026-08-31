@@ -26,6 +26,7 @@ class DrapeBenchCommand extends Command
 {
     protected $signature = 'drape:bench
         {--model=* : کلید مدل‌ها؛ خالی یعنی فهرست پیش‌فرض}
+        {--sample= : به‌جای فهرست، این تعداد مدل از سرتاسر کاتالوگ}
         {--size=40 : سایز بدن}
         {--out=storage/app/drape-bench : پوشهٔ خروجی}';
 
@@ -42,9 +43,47 @@ class DrapeBenchCommand extends Command
         'bridal_sheath', 'dress_wrap', 'trad_qipao', 'skirt_circle_full',
     ];
 
+    /**
+     * نمونهٔ پهن از کلِ کاتالوگ، لایه‌بندی‌شده روی خانواده‌ها.
+     *
+     * هشت مدلِ پیش‌فرض برای *ردیابی* خوب‌اند — سریع‌اند و هر کدام یک سختیِ
+     * شناخته‌شده دارند — ولی کاتالوگ ۱۷۵۶۷ کلید دارد و تنظیمی که روی هشت‌تا
+     * بهتر شود می‌تواند روی بقیه بدتر شده باشد و کسی نفهمد. این نمونه همان
+     * را می‌سنجد: از هر خانواده به نسبتِ اندازه‌اش، و با گام‌های یکنواخت روی
+     * فهرستِ مرتب، تا هر بار همان مدل‌ها انتخاب شوند و عددها قابل‌مقایسه بمانند.
+     *
+     * @return array<int, string>
+     */
+    protected function sample(int $want): array
+    {
+        $families = collect(GeneratorRegistry::keys())
+            ->sort()
+            ->values()
+            ->groupBy(fn (string $key) => explode('_', $key)[0]);
+
+        $total = $families->sum(fn ($keys) => $keys->count());
+        $out = [];
+
+        foreach ($families as $keys) {
+            // دست‌کم یکی از هر خانواده، بقیه به نسبتِ اندازه
+            $take = max(1, (int) round(($keys->count() / $total) * $want));
+            $step = $keys->count() / $take;
+
+            for ($i = 0; $i < $take; $i++) {
+                $out[] = $keys[(int) floor($i * $step)];
+            }
+        }
+
+        sort($out);
+
+        return array_values(array_unique($out));
+    }
+
     public function handle(DrapePayloadService $service): int
     {
-        $models = $this->option('model') ?: static::DEFAULT_MODELS;
+        $models = $this->option('sample')
+            ? $this->sample((int) $this->option('sample'))
+            : ($this->option('model') ?: static::DEFAULT_MODELS);
         $body = Measurements::complete(Measurements::fromSize((string) $this->option('size')));
         $out = base_path((string) $this->option('out'));
 
