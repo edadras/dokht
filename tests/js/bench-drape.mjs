@@ -650,6 +650,7 @@ const bench = (file) => {
     world.presettle(150);
     weldSeams(drape);
     relax(drape);
+    world.pushOutside();
 
     const snapped = world.seamError();
 

@@ -1115,6 +1115,8 @@ export default (initial = {}) => ({
             world.presettle(150);
             weldSeams(drape);
             relax(drape);
+            // و بعد بدن حرفِ آخر را می‌زند؛ ببینید pushOutside
+            world.pushOutside();
 
             const wrong = landedWell(
                 drape,

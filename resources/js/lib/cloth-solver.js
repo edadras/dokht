@@ -575,12 +575,12 @@ class PatchBase {
      * اصطکاک هم روی مؤلفه‌ی مماسی می‌نشیند تا پارچه روی پوست سُر نخورد؛ پارچه‌ی
      * زبر بیشتر ترمز می‌گیرد.
      */
-    collide(colliders, skin, friction) {
+    collide(colliders, skin, friction, pinned = false) {
         const { positions, previous, invMass, count } = this;
         const slide = 1 - friction;
 
         for (let i = 0; i < count; i++) {
-            if (invMass[i] === 0) {
+            if (invMass[i] === 0 && ! pinned) {
                 continue;
             }
 
@@ -1967,6 +1967,30 @@ export class ClothWorld {
 
         this.patches.forEach((patch) => patch.remember());
         this.window = 0;
+    }
+
+    /**
+     * حرفِ آخر با بدن — پس از هر دستکاریِ مستقیمِ مش.
+     *
+     * جوشِ درز و صاف‌کردنِ لبه رأس‌ها را *بی* شبیه‌سازی جابه‌جا می‌کنند، و
+     * هیچ‌کدام نمی‌داند بدن کجاست. اندازه گرفته شد، پس از جوش: ۳۵۳ رأس از
+     * ۳۰۰۹ کت رسمی درونِ پوست افتاده بود (۱۰۸ تای عمیق‌تر از پنج درصد) و
+     * پیراهن ۱۸۰ از ۴۰۸۹. روی مانکن این یعنی بدن از میانِ پارچه بیرون می‌زند
+     * — همان لکه‌های پوست که هیچ درزی بازش نکرده بود.
+     *
+     * یک پاسِ برخورد بس است و اصطکاکش کامل، چون این‌جا حرکتی در کار نیست: فقط
+     * هر رأسِ فرورفته روی نزدیک‌ترین نقطهٔ سطح می‌نشیند.
+     */
+    pushOutside() {
+        if (this.colliders.length === 0) {
+            return;
+        }
+
+        for (let p = 0; p < this.patches.length; p++) {
+            this.patches[p].collide(this.colliders, this.skin, 1, true);
+        }
+
+        this.patches.forEach((patch) => patch.remember());
     }
 
     /*
