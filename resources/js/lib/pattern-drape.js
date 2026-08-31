@@ -934,7 +934,24 @@ const placePiece = (piece, flat, body, options) => {
      * سرِ شانه هم همان‌جاست. پهنای ردیف دست‌نخورده می‌ماند (زاویه هنوز از طولِ
      * کمان می‌آید) و فقط ردیف می‌چرخد؛ پس هیچ نخی دراز نمی‌شود.
      */
-    const torso = zone === 'torso_front' || zone === 'torso_back';
+    const armhole = body.level.armhole;
+    const shoulder = body.level.shoulder;
+    /*
+     * و فقط قطعه‌ای که از حلقهٔ آستین رد می‌شود.
+     *
+     * چرخاندنِ ردیف‌ها برای پنلی است که از سرشانه تا پایین‌ترِ حلقه می‌آید و
+     * بالایش باید از روی شانه رد شود. یوکِ پشتِ پیراهن این‌طور نیست: خودش
+     * *همان* نوارِ سرشانه است، از ۱۳۳ تا ۱۴۳ سانتی‌متر، و بازهٔ زاویه‌ایِ سرور
+     * از قبل کلِ پهنای پشت را می‌گیرد. چرخاندنش فقط مش را می‌کَند: کششِ چیدنِ
+     * پیراهن با چرخاندنِ یوک ۱۴۵٫۶ برابر بود (۸۵ مثلثِ خراب)، با وسط‌چینِ
+     * پیوسته ۱۴٫۸، و بی چرخاندنِ یوک ۲٫۷.
+     *
+     * سنجهٔ بینایی برای هر سه تقریباً یکی است (۲۳۱۲ و ۲۴۷۶ و ۲۴۹۳ پیکسل) و
+     * جالب این‌که پاره‌ترین نسخه کمترین سوراخ را می‌داد — مثلثِ کش‌آمده پوستِ
+     * بیشتری را می‌پوشاند. همان چیزی که نباید به آن تکیه کرد.
+     */
+    const foot = top - (maxY - minY) * scale;
+    const torso = (zone === 'torso_front' || zone === 'torso_back') && foot < armhole;
     /*
      * کدام سرِ قطعه «بیرونی» است؟ آن‌که از خطِ مرکزِ بدن دورتر می‌افتد.
      *
@@ -943,17 +960,17 @@ const placePiece = (piece, flat, body, options) => {
      * maxX درزِ پهلوست و برای دیگری خطِ مرکز. اگر این را نبینیم، نیمهٔ چپ از
      * خطِ مرکز آویزان می‌شود و سرشانه‌اش بدتر از قبل باز می‌ماند.
      *
-     * و تنهٔ یک‌تکه — که از خطِ مرکز رد می‌شود — دو لبهٔ بیرونی دارد، نه یکی.
-     * هر رأس از لبهٔ سمتِ خودش آویزان می‌شود. بی این تفکیک، کلِ سرشانه به یک
-     * سمت می‌چرخید: درزِ سرشانهٔ چپ ۹٫۳ و راست ۱۶٫۲ سانتی‌متر.
+     * و تنهٔ یک‌تکه — که از خطِ مرکز رد می‌شود — لبهٔ بیرونی *ندارد*؛ دو تا
+     * دارد. برای آن، ردیف از میانهٔ خودش آویزان می‌شود، نه از یک لبه. اولین
+     * نسخه هر رأس را از لبهٔ سمتِ خودش می‌آویخت و همان یک شرط، درست وسطِ قطعه
+     * یک پرش می‌ساخت: مثلث‌هایی که از خط میانی رد می‌شدند پاره می‌شدند و کششِ
+     * چیدنِ یوکِ پشتِ پیراهن از ۳٫۵ برابر به ۱۴۵٫۶ می‌رفت.
      */
     const centre = zone === 'torso_back' ? Math.PI : 0;
     const across = (u0 - centre) * (u1 - centre) < 0;
-    const outward = across || Math.abs(u1 - centre) >= Math.abs(u0 - centre);
+    const outward = Math.abs(u1 - centre) >= Math.abs(u0 - centre);
     const rim = torso ? edgeTable(flat.positions, count, minY, maxY, outward) : null;
-    const rimLow = torso && across ? edgeTable(flat.positions, count, minY, maxY, false) : null;
-    const armhole = body.level.armhole;
-    const shoulder = body.level.shoulder;
+    const rimBack = torso && across ? edgeTable(flat.positions, count, minY, maxY, ! outward) : null;
 
     const arm = zone === 'sleeve';
     let hold;
@@ -1044,11 +1061,13 @@ const placePiece = (piece, flat, body, options) => {
         if (rim && world > armhole) {
             const over = Math.min(1, (world - armhole) / Math.max(0.02, shoulder - armhole));
             const at = (y - minY) / Math.max(1e-6, maxY - minY);
-            const left = rimLow && x * scale < xMid;
-            const edge = sampleRim(left ? rimLow : rim, at) * scale;
-            const hung = outward && ! left
-                ? u1 - (edge - x * scale) / hold
-                : u0 + (x * scale - edge) / hold;
+            const edge = sampleRim(rim, at) * scale;
+            const hung = rimBack
+                // قطعهٔ یک‌تکه: ردیف روی میانهٔ خودش وسط‌چین می‌شود
+                ? uMid + (x * scale - (edge + sampleRim(rimBack, at) * scale) / 2) / hold
+                : outward
+                    ? u1 - (edge - x * scale) / hold
+                    : u0 + (x * scale - edge) / hold;
 
             spin = lerp(spin, hung, over);
         }
