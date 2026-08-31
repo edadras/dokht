@@ -1808,6 +1808,65 @@ export class SeamSet {
     }
 }
 
+/**
+ * فاصلهٔ یک نقطه تا نزدیک‌ترین پوستِ بدن — «آزادیِ» لباس در همان نقطه.
+ *
+ * برای *نمایش* است نه برای حل: خیاط می‌خواهد بداند لباس کجا به تن چسبیده و
+ * کجا گشاد است، و همان چیزی است که در نرم‌افزارهای دوختِ مجازی «نقشهٔ فیت»
+ * خوانده می‌شود.
+ *
+ * عددِ برگشتی متر است: مثبت یعنی بیرونِ پوست، منفی یعنی داخلش. تقریبش همان
+ * تقریبی است که خودِ قیدِ برخورد به کار می‌برد — نسبتِ فاصله روی بیضیِ مقطع،
+ * ضرب در شعاعِ میانگین — و برای رنگ کردن بیش از کافی است.
+ *
+ * @param {Array<object>} colliders
+ * @param {number} x
+ * @param {number} y
+ * @param {number} z
+ * @returns {number} متر
+ */
+export const clearanceAt = (colliders, x, y, z) => {
+    let best = Infinity;
+
+    for (let c = 0; c < colliders.length; c++) {
+        const collider = colliders[c];
+
+        if (! collider.active) {
+            continue;
+        }
+
+        applyMatrix(collider.inverse, x, y, z, local);
+
+        const side = collider.sectionAt(local[1], section);
+
+        if ((side < 0 && ! collider.capMin) || (side > 0 && ! collider.capMax)) {
+            continue;
+        }
+
+        const rx = section[0];
+        const rz = local[2] >= 0 ? section[1] : section[2];
+        let dy = 0;
+        let ry = 0;
+
+        if (side < 0) {
+            ry = collider.capLow;
+            dy = local[1] - collider.ys[0];
+        } else if (side > 0) {
+            ry = collider.capHigh;
+            dy = local[1] - collider.ys[collider.ys.length - 1];
+        }
+
+        const ux = local[0] / rx;
+        const uz = local[2] / rz;
+        const uy = ry > 0 ? dy / ry : 0;
+        const reach = Math.sqrt((ux * ux) + (uy * uy) + (uz * uz));
+
+        best = Math.min(best, (reach - 1) * ((rx + rz) / 2));
+    }
+
+    return best === Infinity ? 0 : best;
+};
+
 /* ---------------------------------------------------------------------------
  * ترجمه‌ی شناسنامه‌ی پارچه به قانون رفتاری قیدها
  * ---------------------------------------------------------------------------

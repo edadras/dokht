@@ -60,6 +60,51 @@ const SIDES = 96;
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
+/*
+ * صحنه دو چراغِ روشن دارد و جنسِ لامبرت رنگ را در نور ضرب می‌کند، پس رنگِ خامِ
+ * رامپ سفید‌شسته درمی‌آید. این ضریب همان را جبران می‌کند تا رنگی که چشم
+ * می‌بیند همان رنگی باشد که راهنما نشان می‌دهد.
+ */
+const dim = (r, g, b) => [r * 0.45, g * 0.45, b * 0.45];
+
+/*
+ * رنگِ نقشهٔ کشش: آبی چین‌خورده، خاکستری درست، قرمز کشیده.
+ *
+ * مرز ±۱۰٪ است، چون پارچهٔ بافته تا همان حد بی‌درد کش می‌آید و چین می‌خورد؛
+ * بیرون از آن است که خیاط باید نگاه کند.
+ */
+const strainColour = (value) => {
+    const off = clamp((value - 1) / 0.1, -1, 1);
+
+    return off >= 0
+        ? dim(0.55 + off * 0.42, 0.55 - off * 0.36, 0.53 - off * 0.4)
+        : dim(0.55 + off * 0.35, 0.55 + off * 0.1, 0.53 - off * 0.42);
+};
+
+/*
+ * رنگِ نقشهٔ آزادی: قرمز چسبیده، سبز اندازه، آبی گشاد.
+ *
+ * زیر یک سانتی‌متر یعنی روی تن نشسته، دو تا شش سانتی‌متر آزادیِ معمولِ لباس،
+ * و بالای ده سانتی‌متر گشاد. همان مقیاسی که با انگشت سنجیده می‌شود.
+ */
+const easeColour = (metres) => {
+    const cm = clamp(metres * 100, 0, 12);
+
+    if (cm <= 2) {
+        return dim(0.92, 0.35 + (cm / 2) * 0.3, 0.3);
+    }
+
+    if (cm <= 6) {
+        const t = (cm - 2) / 4;
+
+        return dim(0.92 - t * 0.6, 0.65 + t * 0.1, 0.3 + t * 0.1);
+    }
+
+    const t = (cm - 6) / 6;
+
+    return dim(0.32 - t * 0.1, 0.75 - t * 0.25, 0.4 + t * 0.45);
+};
+
 const lerp = (a, b, t) => a + (b - a) * t;
 
 /* کمترین فاصلهٔ پارچه از پوست؛ کمتر از این، بدن از لباس بیرون می‌زند */
@@ -1047,6 +1092,10 @@ export default (initial = {}) => ({
     sewnNote: '',
     message: '',
     spin: true,
+    /* نما: پارچه | کشش | آزادی — ببینید setView */
+    view: 'fabric',
+    /* مانکن برداشته شده؟ */
+    bare: false,
 
     async boot() {
         if (! this.payload || ! this.payload.ok) {
@@ -1093,7 +1142,7 @@ export default (initial = {}) => ({
         await new Promise((resolve) => requestAnimationFrame(() => resolve()));
 
         try {
-            const [{ ClothWorld, Collider }, { buildDrape, supportGarment, weldSeams }] = await Promise.all([
+            const [{ ClothWorld, Collider, clearanceAt }, { buildDrape, supportGarment, weldSeams }] = await Promise.all([
                 import('../lib/cloth-solver.js'),
                 import('../lib/pattern-drape.js'),
             ]);
@@ -1262,6 +1311,7 @@ export default (initial = {}) => ({
                 throw new Error(wrong);
             }
 
+            this.paintFit(drape, world.colliders, clearanceAt);
             this.showStitched(drape);
             this.sewn = true;
         } catch (error) {
@@ -1279,7 +1329,13 @@ export default (initial = {}) => ({
         const body = buildBody(shell.measurements || {});
         ctx.body = body;
 
-        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+        // preserveDrawingBuffer تا دکمهٔ عکس بتواند همین قاب را بخواند
+        const renderer = new THREE.WebGLRenderer({
+            canvas,
+            antialias: true,
+            alpha: true,
+            preserveDrawingBuffer: true,
+        });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
         renderer.shadowMap.enabled = true;
@@ -1295,9 +1351,28 @@ export default (initial = {}) => ({
          */
         const tall = body.level.ankle * CM;
         const camera = new THREE.PerspectiveCamera(30, canvas.clientWidth / canvas.clientHeight, 0.05, 60);
-        camera.position.set(tall * 0.40, -tall * 0.45, tall * 1.9);
-        camera.lookAt(0, -tall * 0.47, 0);
+
         ctx.camera = camera;
+        /*
+         * دوربینِ مداری، به‌جای زاویهٔ ثابت.
+         *
+         * تا امروز فقط یک دکمهٔ «چرخش» بود و کاربر نمی‌توانست جایی را که
+         * می‌خواهد ببیند: خیاط برای دیدنِ حلقهٔ آستین باید از بالا نگاه کند و
+         * برای درزِ پهلو از پهلو. حالا کشیدن می‌چرخاند، غلتک نزدیک و دور
+         * می‌کند و کشیدن با دکمهٔ راست (یا دو انگشت) قاب را جابه‌جا می‌کند.
+         *
+         * حالتِ دوربین در `ctx.eye` نگه داشته می‌شود تا هم چرخشِ خودکار و هم
+         * دستِ کاربر روی همان یک چیز کار کنند.
+         */
+        ctx.eye = {
+            yaw: -0.42,
+            pitch: 0.12,
+            far: tall * 2.0,
+            at: [0, -tall * 0.47, 0],
+            home: { yaw: -0.42, pitch: 0.12, far: tall * 2.0, at: [0, -tall * 0.47, 0] },
+        };
+        this.aim();
+        this.grip(canvas, tall);
 
         scene.add(new THREE.HemisphereLight(0xf6f4f1, 0x59524c, 1.4));
 
@@ -1332,7 +1407,6 @@ export default (initial = {}) => ({
         scene.add(floor);
 
         const group = new THREE.Group();
-        group.rotation.y = -0.42;
         scene.add(group);
         ctx.group = group;
 
@@ -1356,7 +1430,8 @@ export default (initial = {}) => ({
             last = now;
 
             if (this.spin) {
-                group.rotation.y += delta * 0.42;
+                ctx.eye.yaw += delta * 0.42;
+                this.aim();
             }
 
             renderer.render(scene, camera);
@@ -1383,18 +1458,42 @@ export default (initial = {}) => ({
          */
         cloth.position.y = -ctx.body.height * CM;
 
+        /*
+         * جنسِ دومِ هر قطعه، برای نقشه‌های فیت.
+         *
+         * رنگِ رأس‌ها روی همان هندسه می‌نشیند، پس جابه‌جا کردنِ نما فقط یک
+         * اشاره‌گر است و هیچ چیزی از نو ساخته نمی‌شود.
+         */
+        const painted = track(ctx, new THREE.MeshLambertMaterial({
+            vertexColors: true,
+            side: THREE.DoubleSide,
+        }));
+
+        ctx.painted = painted;
+        ctx.pieces = [];
+
         for (const mesh of drape.meshes) {
             const geometry = track(ctx, new THREE.BufferGeometry());
 
             geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
             geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+
+            if (mesh.strain) {
+                geometry.setAttribute(
+                    'color',
+                    new THREE.BufferAttribute(new Float32Array(mesh.strain.length * 3), 3),
+                );
+            }
+
             geometry.computeVertexNormals();
 
             const piece = new THREE.Mesh(geometry, ctx.fabric);
 
             piece.castShadow = true;
             piece.receiveShadow = true;
+            piece.userData.map = mesh;
             cloth.add(piece);
+            ctx.pieces.push(piece);
         }
 
         /* و خودِ درزها، تا میانِ دو قطعه سوراخ نماند */
@@ -1449,6 +1548,9 @@ export default (initial = {}) => ({
         }));
         ctx.skin = skin;
 
+        // فهرستِ مش‌های بدن، تا بشود مانکن را برداشت و درزهای پشت را دید
+        ctx.figure = [];
+
         const add = (geometry) => {
             if (! geometry) {
                 return;
@@ -1459,6 +1561,7 @@ export default (initial = {}) => ({
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             group.add(mesh);
+            ctx.figure.push(mesh);
         };
 
         add(tube(body.torso));
@@ -1470,6 +1573,7 @@ export default (initial = {}) => ({
         headMesh.position.y = -body.head.centre * CM;
         headMesh.castShadow = true;
         group.add(headMesh);
+        ctx.figure.push(headMesh);
 
         const joint = armJoint(body);
 
@@ -1819,6 +1923,276 @@ export default (initial = {}) => ({
 
     toggleSpin() {
         this.spin = ! this.spin;
+    },
+
+    /**
+     * نما را عوض می‌کند: پارچه، نقشهٔ کشش، یا نقشهٔ آزادی.
+     *
+     * `پارچه` همان جنسِ انتخاب‌شده است. دو نقشهٔ دیگر رنگِ رأس‌ها را از عددهای
+     * `paintFit` می‌سازند:
+     *
+     *   کشش   آبی = چین خورده (زیر ۱)، خاکستری = درست، قرمز = کشیده. مرز روی
+     *          ±۱۰٪ است، چون پارچهٔ بافته تا همان حد بی‌درد کش می‌آید.
+     *   آزادی قرمز = چسبیده به تن (زیر یک سانتی‌متر)، سبز = دو تا شش، آبی =
+     *          گشاد. همان مقیاسی که خیاط با انگشت می‌سنجد.
+     */
+    setView(mode) {
+        const ctx = contextFor(this.$root);
+
+        this.view = mode;
+
+        if (! ctx.pieces) {
+            return;
+        }
+
+        for (const piece of ctx.pieces) {
+            const mesh = piece.userData.map;
+            const values = mode === 'strain' ? mesh?.strain : mode === 'ease' ? mesh?.ease : null;
+            const colours = piece.geometry.getAttribute('color');
+
+            if (! values || ! colours) {
+                piece.material = ctx.fabric;
+
+                continue;
+            }
+
+            for (let v = 0; v < values.length; v++) {
+                const [r, g, b] = mode === 'strain' ? strainColour(values[v]) : easeColour(values[v]);
+
+                colours.setXYZ(v, r, g, b);
+            }
+
+            colours.needsUpdate = true;
+            piece.material = ctx.painted;
+        }
+    },
+
+    /** برداشتنِ مانکن از صحنه، برای دیدنِ درزهای پشت. */
+    toggleBody() {
+        const ctx = contextFor(this.$root);
+
+        this.bare = ! this.bare;
+
+        (ctx.figure || []).forEach((item) => {
+            item.visible = ! this.bare;
+        });
+    },
+
+    /** ذخیرهٔ همین قاب به‌صورت تصویر. */
+    snapshot() {
+        const ctx = contextFor(this.$root);
+
+        if (! ctx.renderer) {
+            return;
+        }
+
+        ctx.renderer.render(ctx.scene, ctx.camera);
+
+        const link = document.createElement('a');
+
+        link.href = ctx.renderer.domElement.toDataURL('image/png');
+        link.download = 'دوخت-سه-بعدی.png';
+        link.click();
+    },
+
+    /**
+     * نقشهٔ کشش و نقشهٔ آزادی — همان چیزی که خیاط با دست روی تن می‌سنجد.
+     *
+     * دو عدد برای هر رأس، هر دو از خودِ حل‌کننده و بی هیچ حدسی:
+     *
+     *   کشش   نسبتِ طولِ یال‌های آن رأس به طولشان روی الگوی تخت. یک یعنی
+     *          پارچه همان‌قدر است که بریده شده؛ بیشتر یعنی کشیده و زیرِ فشار،
+     *          کمتر یعنی چین خورده.
+     *   آزادی فاصلهٔ رأس تا نزدیک‌ترین پوست. صفر یعنی چسبیده به تن.
+     *
+     * رنگ‌ها روی همان بافرِ مش می‌نشینند تا عوض کردنِ نما فقط جنسِ متریال را
+     * جابه‌جا کند و هیچ چیزی از نو ساخته نشود.
+     */
+    paintFit(drape, colliders, clearanceAt) {
+        for (const entry of drape.patches) {
+            const mesh = entry.mesh;
+
+            if (! mesh) {
+                continue;
+            }
+
+            const patch = entry.patch;
+            const count = patch.count;
+            const sum = new Float64Array(count);
+            const seen = new Uint16Array(count);
+
+            for (const group of patch.groups) {
+                for (let i = 0; i < group.rest.length; i++) {
+                    const a = group.a[i];
+                    const b = group.b[i];
+                    const rest = group.rest[i];
+
+                    if (rest < 1e-6) {
+                        continue;
+                    }
+
+                    const pa = a * 3;
+                    const pb = b * 3;
+                    const now = Math.hypot(
+                        patch.positions[pa] - patch.positions[pb],
+                        patch.positions[pa + 1] - patch.positions[pb + 1],
+                        patch.positions[pa + 2] - patch.positions[pb + 2],
+                    ) / rest;
+
+                    sum[a] += now;
+                    sum[b] += now;
+                    seen[a]++;
+                    seen[b]++;
+                }
+            }
+
+            const strain = new Float32Array(count);
+            const ease = new Float32Array(count);
+
+            for (let v = 0; v < count; v++) {
+                strain[v] = seen[v] ? sum[v] / seen[v] : 1;
+                ease[v] = clearanceAt(
+                    colliders,
+                    patch.positions[v * 3],
+                    patch.positions[v * 3 + 1],
+                    patch.positions[v * 3 + 2],
+                );
+            }
+
+            mesh.strain = strain;
+            mesh.ease = ease;
+        }
+    },
+
+    /** دوربین را از حالتِ `ctx.eye` سرِ جایش می‌گذارد. */
+    aim() {
+        const ctx = contextFor(this.$root);
+        const eye = ctx.eye;
+
+        if (! eye || ! ctx.camera) {
+            return;
+        }
+
+        const [ax, ay, az] = eye.at;
+        const cos = Math.cos(eye.pitch);
+
+        ctx.camera.position.set(
+            ax + eye.far * cos * Math.sin(eye.yaw),
+            ay + eye.far * Math.sin(eye.pitch),
+            az + eye.far * cos * Math.cos(eye.yaw),
+        );
+        ctx.camera.lookAt(ax, ay, az);
+    },
+
+    /**
+     * دست گرفتنِ صحنه: کشیدن می‌چرخاند، غلتک نزدیک می‌کند، کشیدنِ راست جابه‌جا.
+     *
+     * دو انگشت هم همین کار را می‌کند: فاصله‌شان نزدیک/دور و میانه‌شان جابه‌جا.
+     * چرخشِ خودکار با اولین لمس می‌ایستد، وگرنه صحنه زیرِ دستِ کاربر می‌چرخد.
+     */
+    grip(canvas, tall) {
+        const ctx = contextFor(this.$root);
+        const touches = new Map();
+        let last = null;
+        let pinch = 0;
+
+        const middle = () => {
+            const points = [...touches.values()];
+
+            return [
+                points.reduce((sum, p) => sum + p.x, 0) / points.length,
+                points.reduce((sum, p) => sum + p.y, 0) / points.length,
+            ];
+        };
+        const spread = () => {
+            const points = [...touches.values()];
+
+            return points.length < 2 ? 0 : Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+        };
+        const zoom = (by) => {
+            ctx.eye.far = clamp(ctx.eye.far * by, tall * 0.35, tall * 6);
+            this.aim();
+        };
+
+        canvas.style.touchAction = 'none';
+        canvas.style.cursor = 'grab';
+
+        canvas.addEventListener('pointerdown', (event) => {
+            canvas.setPointerCapture(event.pointerId);
+            touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+            last = middle();
+            pinch = spread();
+            this.spin = false;
+            canvas.style.cursor = 'grabbing';
+        });
+
+        canvas.addEventListener('pointermove', (event) => {
+            if (! touches.has(event.pointerId)) {
+                return;
+            }
+
+            touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+            const now = middle();
+            const dx = now[0] - last[0];
+            const dy = now[1] - last[1];
+
+            last = now;
+
+            // دو انگشت یا دکمهٔ راست: جابه‌جاییِ قاب، نه چرخش
+            if (touches.size > 1 || event.buttons === 2 || event.shiftKey) {
+                const scale = ctx.eye.far * 0.0016;
+
+                ctx.eye.at[0] -= dx * scale * Math.cos(ctx.eye.yaw);
+                ctx.eye.at[2] += dx * scale * Math.sin(ctx.eye.yaw);
+                ctx.eye.at[1] += dy * scale;
+            } else {
+                ctx.eye.yaw -= dx * 0.008;
+                ctx.eye.pitch = clamp(ctx.eye.pitch + dy * 0.006, -1.2, 1.2);
+            }
+
+            if (touches.size > 1) {
+                const wide = spread();
+
+                if (pinch > 4 && wide > 4) {
+                    zoom(pinch / wide);
+                }
+
+                pinch = wide;
+            }
+
+            this.aim();
+        });
+
+        const release = (event) => {
+            touches.delete(event.pointerId);
+            last = touches.size ? middle() : null;
+            pinch = spread();
+            canvas.style.cursor = 'grab';
+        };
+
+        canvas.addEventListener('pointerup', release);
+        canvas.addEventListener('pointercancel', release);
+        canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+        canvas.addEventListener('wheel', (event) => {
+            event.preventDefault();
+            zoom(event.deltaY > 0 ? 1.12 : 1 / 1.12);
+        }, { passive: false });
+    },
+
+    /** برگرداندنِ دوربین به قابِ نخست. */
+    recentre() {
+        const ctx = contextFor(this.$root);
+
+        if (! ctx.eye) {
+            return;
+        }
+
+        ctx.eye.yaw = ctx.eye.home.yaw;
+        ctx.eye.pitch = ctx.eye.home.pitch;
+        ctx.eye.far = ctx.eye.home.far;
+        ctx.eye.at = [...ctx.eye.home.at];
+        this.aim();
     },
 
     destroy() {
