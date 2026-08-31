@@ -146,7 +146,7 @@ Route::middleware(['auth', 'workshop'])->group(function () {
     Route::post('patterns/{pattern}/publish', [PatternController::class, 'publish'])->name('patterns.publish');
     Route::get('patterns/{pattern}/print', [PatternExportController::class, 'print'])->name('patterns.print');
     Route::get('patterns/{pattern}/export/{format}', [PatternExportController::class, 'export'])
-        ->whereIn('format', ['svg', 'dxf', 'aama', 'astm', 'png', 'pdf', 'json'])->name('patterns.export');
+        ->whereIn('format', ['svg', 'dxf', 'aama', 'astm', 'png', 'pdf', 'json', 'sew3d'])->name('patterns.export');
     Route::get('patterns/{pattern}/versions', [PatternVersionController::class, 'index'])->name('patterns.versions');
     Route::post('patterns/{pattern}/versions', [PatternVersionController::class, 'store'])
         ->name('patterns.versions.store');

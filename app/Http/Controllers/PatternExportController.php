@@ -31,6 +31,7 @@ use Illuminate\View\View;
  *   aama  DXF صنعتی با لایه‌های شماره‌دار AAMA
  *   astm  همان، در گویش ASTM D6673 با صفت‌های قطعه
  *   json  ساختار قابل‌حمل الگو
+ *   sew3d بستهٔ دوختِ سه‌بعدی: قطعه‌ها + نقشهٔ دوخت + اندازه‌های مانکن + پارچه
  */
 class PatternExportController extends Controller
 {
@@ -129,6 +130,11 @@ class PatternExportController extends Controller
                 $base.'-astm.dxf',
                 'application/dxf',
             ),
+            'sew3d' => $this->download(
+                json_encode($this->sewingPackage($pattern), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
+                $base.'-sew3d.json',
+                'application/json',
+            ),
             default => $this->download(
                 json_encode($this->payload($pattern), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
                 $base.'.json',
@@ -175,6 +181,39 @@ class PatternExportController extends Controller
         }
 
         return array_values(array_filter(array_map('trim', explode(',', $sizes))));
+    }
+
+    /**
+     * بستهٔ دوختِ سه‌بعدی — دقیقاً همانی که حل‌کنندهٔ مرورگر و سنجه می‌خورند.
+     *
+     * این خروجی برای موتورهای بیرونی است: هر شبیه‌سازِ پارچه‌ای (XPBD روی
+     * GPU، FEM/IPC، بهینه‌سازِ الگو) که بخواهد لباسِ Dokht را بدوزد، همین
+     * بسته را می‌گیرد و هیچ چیزِ دیگری لازم ندارد. قالبش در
+     * docs/drape-contract.md مستند است و `format_version` قراردادِ آن سند است.
+     *
+     * @return array<string, mixed>
+     */
+    protected function sewingPackage(Pattern $pattern): array
+    {
+        $profile = \App\Support\FabricProfile::make();
+
+        return [
+            'format' => 'dokht-sew3d',
+            'format_version' => 1,
+            'exported_at' => now()->toIso8601String(),
+            'pattern' => [
+                'id' => $pattern->id,
+                'name' => $pattern->name,
+                'generator' => $pattern->template?->generator,
+                'version' => $pattern->version,
+            ],
+            'drape' => app(\App\Services\Simulation\DrapePayloadService::class)->payload($pattern),
+            'avatar' => \App\Support\Measurements::complete($pattern->measurements ?? []),
+            'fabric' => [
+                'drape' => round((float) $profile->get('drape'), 3),
+                'physics' => $profile->physics(),
+            ],
+        ];
     }
 
     /**
