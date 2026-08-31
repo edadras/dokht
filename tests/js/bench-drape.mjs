@@ -683,6 +683,7 @@ const bench = (file) => {
      * برای کت و ترنچ‌کت «✓ روی مانکن» بدهد در حالی که مرورگر همان‌ها را با
      * «قطعه‌ای از لباس بالای سر رفت» رد می‌کرد و به نمای قدیمی برمی‌گشت.
      */
+    world.enableContact();
     world.presettle(150);
     weldSeams(drape);
     relax(drape);

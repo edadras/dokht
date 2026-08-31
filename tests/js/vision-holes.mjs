@@ -100,6 +100,9 @@ for (const [id, name] of WANT) {
 
         if (d.spin) d.toggleSpin();
 
+        // قابِ قطعی: بی این، زاویهٔ عکس به درازای زمانِ دوخت وابسته است
+        if (d.recentre) d.recentre();
+
         // پارچهٔ آبی، تا پارچه از پوست جدا شود
         const denim = (d.fabrics || []).find((one) => /جین/.test(one.name)) || (d.fabrics || [])[0];
 

@@ -1979,6 +1979,247 @@ export class ClothWorld {
         this.sleepDrift = 1e-3;
         this.sleepFrames = 12;
         this.window = 0;
+
+        /* برخوردِ پارچه‌با‌پارچه؛ null یعنی خاموش. ببینید enableContact */
+        this.contact = null;
+    }
+
+    /**
+     * روشن کردنِ برخوردِ پارچه‌با‌پارچه.
+     *
+     * تا امروز پارچه فقط بدن را می‌دید و خودش را نه: برگردانِ یقه در سینه فرو
+     * می‌رفت، سجاف با رویه یکی می‌شد و لایه‌ها در هم سوسو می‌زدند. اندازه گرفته
+     * شد، جفت‌رأس‌هایی از دو قطعهٔ متفاوت که با هم کمتر از ۲ میلی‌متر فاصله
+     * داشتند و درزی هم به هم نمی‌دوختشان: کت رسمی ۶۲ جفت، ترنچ‌کت ۴۱.
+     *
+     * قیدش ساده‌ترین شکلِ برخورد است — رأس‌با‌رأس، با شبکهٔ فضایی — و همین برای
+     * جدا نگه داشتنِ لایه‌ها بس است، چون شعاعِ تماس از ریزیِ مش کوچک‌تر است.
+     *
+     * دو دسته جفت باید کنار گذاشته شوند، وگرنه قیدِ تماس با قیدهای دیگر
+     * می‌جنگد:
+     *
+     *   • همسایه‌های خودِ پارچه: هر جفتی که قیدِ فاصله یا خمش دارد، فاصله‌اش
+     *     را همان قید تعیین می‌کند.
+     *   • دو سوی درز، با دو رأس حاشیه: درزِ دوخته *باید* فاصلهٔ نزدیکِ صفر
+     *     داشته باشد.
+     *
+     * @param {number} [radius] فاصلهٔ تماس (متر)؛ پیش‌فرض دو ضخامتِ پارچه و
+     *        دستِ کم ۳ میلی‌متر
+     */
+    enableContact(radius = null) {
+        const reach = radius ?? Math.max(0.003, (this.law.thickness * 2) + 0.002);
+        const skipSame = [];
+        const skipPair = new Map();
+
+        for (let p = 0; p < this.patches.length; p++) {
+            const set = new Set();
+
+            for (const group of this.patches[p].groups || []) {
+                for (let i = 0; i < group.rest.length; i++) {
+                    const a = group.a[i];
+                    const b = group.b[i];
+
+                    set.add((Math.min(a, b) * 1048576) + Math.max(a, b));
+                }
+            }
+
+            skipSame.push(set);
+        }
+
+        const at = new Map();
+
+        this.patches.forEach((patch, index) => at.set(patch, index));
+
+        for (const seam of this.seams) {
+            const pa = at.get(seam.a);
+            const pb = at.get(seam.b || seam.a);
+
+            if (pa === undefined || pb === undefined) {
+                continue;
+            }
+
+            const key = pa <= pb ? (pa * 4096) + pb : (pb * 4096) + pa;
+
+            if (! skipPair.has(key)) {
+                skipPair.set(key, new Set());
+            }
+
+            const set = skipPair.get(key);
+
+            for (let i = 0; i < seam.count; i++) {
+                const va = seam.pairs[i * 2];
+                const vb = seam.pairs[i * 2 + 1];
+                const vc = seam.second && seam.weight && seam.weight[i] > 0 ? seam.second[i] : vb;
+
+                for (let da = -2; da <= 2; da++) {
+                    for (let db = -2; db <= 2; db++) {
+                        const one = va + da;
+                        const two = vb + db;
+                        const three = vc + db;
+
+                        set.add(pa <= pb ? (one * 1048576) + two : (two * 1048576) + one);
+                        set.add(pa <= pb ? (one * 1048576) + three : (three * 1048576) + one);
+                    }
+                }
+            }
+        }
+
+        this.contact = { reach, skipSame, skipPair };
+    }
+
+    /**
+     * یک پاسِ برخوردِ پارچه‌با‌پارچه: هر جفتِ نزدیک‌تر از شعاعِ تماس، به نسبتِ
+     * جرمش از هم باز می‌شود. شبکهٔ فضایی جست‌وجو را خطی نگه می‌دارد.
+     */
+    contactPass() {
+        const contact = this.contact;
+
+        if (! contact) {
+            return;
+        }
+
+        const { reach, skipSame, skipPair } = contact;
+        const cell = reach;
+        const grid = new Map();
+        const ids = [];
+        const xs = [];
+        const ys = [];
+        const zs = [];
+
+        for (let p = 0; p < this.patches.length; p++) {
+            const patch = this.patches[p];
+
+            for (let v = 0; v < patch.count; v++) {
+                const x = patch.positions[v * 3];
+                const y = patch.positions[v * 3 + 1];
+                const z = patch.positions[v * 3 + 2];
+                const key = (Math.floor(x / cell) & 1023)
+                    | ((Math.floor(y / cell) & 1023) << 10)
+                    | ((Math.floor(z / cell) & 1023) << 20);
+                const id = ids.length;
+
+                ids.push((p * 1048576) + v);
+                xs.push(x);
+                ys.push(y);
+                zs.push(z);
+
+                if (! grid.has(key)) {
+                    grid.set(key, []);
+                }
+
+                grid.get(key).push(id);
+            }
+        }
+
+        const near = (one, two) => {
+            if (one >= two) {
+                return; // هر جفت یک بار
+            }
+
+            const pa = Math.floor(ids[one] / 1048576);
+            const va = ids[one] % 1048576;
+            const pb = Math.floor(ids[two] / 1048576);
+            const vb = ids[two] % 1048576;
+
+            if (pa === pb) {
+                if (skipSame[pa].has((Math.min(va, vb) * 1048576) + Math.max(va, vb))) {
+                    return;
+                }
+            } else {
+                const key = pa <= pb ? (pa * 4096) + pb : (pb * 4096) + pa;
+                const set = skipPair.get(key);
+
+                if (set && set.has(pa <= pb ? (va * 1048576) + vb : (vb * 1048576) + va)) {
+                    return;
+                }
+            }
+
+            const dx = xs[one] - xs[two];
+            const dy = ys[one] - ys[two];
+            const dz = zs[one] - zs[two];
+            const gap = Math.hypot(dx, dy, dz);
+
+            /*
+             * فقط فرورفتگیِ واقعی، نه هر نزدیکی‌ای.
+             *
+             * نسخهٔ اول هر جفتِ نزدیک‌تر از شعاعِ تماس را تا خودِ شعاع باز
+             * می‌کرد و پوشش را می‌شکافت: پنل‌های روی‌همِ راپ و سجافِ کت از پهلو
+             * هل می‌خوردند و پوست از لایشان بیرون می‌زد — جمعِ سوراخِ پنج مدل
+             * از ۲۰۴۷ به ۳۹۳۷ پیکسل. حالا فقط جفتی که واقعاً در هم رفته
+             * (کمتر از ۶۰٪ شعاع) و فقط تا ۷۵٪ شعاع، با نیم‌قدم — لایه جدا
+             * می‌شود بی‌آنکه بادش کند.
+             */
+            if (gap >= reach || gap < 1e-9) {
+                return;
+            }
+
+            const A = this.patches[pa];
+            const B = this.patches[pb];
+            const wa = A.invMass[va];
+            const wb = B.invMass[vb];
+            const sum = wa + wb;
+
+            if (sum <= 0) {
+                return;
+            }
+
+            const push = (reach - gap) / gap / sum;
+
+            A.positions[va * 3] += dx * push * wa;
+            A.positions[va * 3 + 1] += dy * push * wa;
+            A.positions[va * 3 + 2] += dz * push * wa;
+            B.positions[vb * 3] -= dx * push * wb;
+            B.positions[vb * 3 + 1] -= dy * push * wb;
+            B.positions[vb * 3 + 2] -= dz * push * wb;
+            xs[one] = A.positions[va * 3];
+            ys[one] = A.positions[va * 3 + 1];
+            zs[one] = A.positions[va * 3 + 2];
+            xs[two] = B.positions[vb * 3];
+            ys[two] = B.positions[vb * 3 + 1];
+            zs[two] = B.positions[vb * 3 + 2];
+        };
+
+        /*
+         * هر سلول با خودش و ۱۳ همسایهٔ «جلویی» سنجیده می‌شود تا هیچ جفتی دو بار
+         * دیده نشود؛ شعاعِ تماس با اندازهٔ سلول یکی است، پس همسایهٔ دورتر لازم
+         * نیست.
+         */
+        const AHEAD = [
+            [1, 0, 0], [0, 1, 0], [0, 0, 1],
+            [1, 1, 0], [1, -1, 0], [1, 0, 1], [1, 0, -1],
+            [0, 1, 1], [0, 1, -1],
+            [1, 1, 1], [1, 1, -1], [1, -1, 1], [1, -1, -1],
+        ];
+
+        for (const [key, bucket] of grid) {
+            for (let i = 0; i < bucket.length; i++) {
+                for (let j = i + 1; j < bucket.length; j++) {
+                    near(bucket[i], bucket[j]);
+                }
+            }
+
+            const ix = key & 1023;
+            const iy = (key >> 10) & 1023;
+            const iz = (key >> 20) & 1023;
+
+            for (const [dx, dy, dz] of AHEAD) {
+                const other = grid.get(((ix + dx) & 1023) | (((iy + dy) & 1023) << 10) | (((iz + dz) & 1023) << 20));
+
+                if (! other) {
+                    continue;
+                }
+
+                for (const one of bucket) {
+                    for (const two of other) {
+                        if (one < two) {
+                            near(one, two);
+                        } else {
+                            near(two, one);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     addPatch(patch) {
@@ -2090,6 +2331,10 @@ export class ClothWorld {
             return;
         }
 
+        if (this.contact) {
+            this.contactPass();
+        }
+
         for (let p = 0; p < this.patches.length; p++) {
             this.patches[p].collide(this.colliders, this.skin, 1, true);
 
@@ -2163,6 +2408,10 @@ export class ClothWorld {
                 for (let p = 0; p < patches.length; p++) {
                     patches[p].collide(colliders, skin, grip);
                 }
+            }
+
+            if (this.contact) {
+                this.contactPass();
             }
 
             if (this.floor !== null) {
