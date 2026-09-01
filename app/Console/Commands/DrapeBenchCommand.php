@@ -119,8 +119,15 @@ class DrapeBenchCommand extends Command
         return self::SUCCESS;
     }
 
-    /** الگوی در حافظه از یک مدل کاتالوگ؛ این فرمان به پایگاه داده کاری ندارد. */
-    protected function pattern(string $key, array $body): Pattern
+    /**
+     * الگوی در حافظه از یک مدل کاتالوگ؛ این فرمان به پایگاه داده کاری ندارد.
+     *
+     * `$ease` برای حلقهٔ اصلاحِ فیت است (drape:fit): همان فرمان هر دور با
+     * آزادیِ تازه الگو می‌سازد. null یعنی آزادیِ خودِ نوعِ لباس.
+     *
+     * @param array<string, float>|null $ease
+     */
+    protected function pattern(string $key, array $body, ?array $ease = null): Pattern
     {
         $generator = GeneratorRegistry::make($key);
         /*
@@ -132,7 +139,7 @@ class DrapeBenchCommand extends Command
          * بالای سر رفت» رد می‌شدند و به نمای چرخشیِ قدیمی برمی‌گشتند — سه مدل
          * از پنج مدل، و هیچ عددی نگفت.
          */
-        $ease = PatternTemplate::where('generator', $key)->first()?->garmentType?->ease() ?? [];
+        $ease ??= PatternTemplate::where('generator', $key)->first()?->garmentType?->ease() ?? [];
         $pieces = $generator->generate($body, $ease, $generator->defaultParams());
 
         $models = collect($pieces)->map(function (array $piece, int $index) {
