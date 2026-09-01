@@ -20,7 +20,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { buildDrape, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
 import { ClothWorld, Collider } from '../../resources/js/lib/cloth-solver.js';
-import { heightsOf, relax, sagOf, shift } from '../../resources/js/components/garment-solid.js';
+import { heightsOf, relax, sewAnchored } from '../../resources/js/components/garment-solid.js';
 import { bodyColliders, makeBody, rawBody } from './fixtures/payload.js';
 
 const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -461,7 +461,7 @@ const mirrorOf = (drape) => {
  * چرخشیِ قدیمی برمی‌گردد. بقیهٔ سنجه‌ها می‌گویند چقدر خوب است؛ این یکی می‌گوید
  * اصلاً دیده می‌شود یا نه. همان شرط‌های landedWell در garment-solid.js.
  */
-const gateOf = (drape, body, seamError) => {
+const gateOf = (drape, body, seamError, placedHigh = Infinity) => {
     if (drape.stats.checks.some((row) => row.measured !== undefined)) {
         return 'کمانِ درز با الگو نمی‌خواند';
     }
@@ -515,6 +515,18 @@ const gateOf = (drape, body, seamError) => {
     if (anchor === -Infinity) {
         anchor = body.level.shoulder;
     }
+
+    /*
+     * و نه بالاتر از جایی که *چیدن* واقعاً به لباس داده.
+     *
+     * y_top حرفِ سرور برای تک‌تکِ قطعه‌هاست و همیشه با هم سازگار نیست:
+     * رویه‌گذاریِ یقهٔ قبا y_top=۱۴۳٫۵ اعلام می‌کند در حالی که بالای خودِ
+     * لباس ۱۲۸٫۹ است؛ چیدنِ گراف‌محور همان اول رویه را کنارِ درزش می‌گذارد
+     * (۱۲۸٫۹) و لباس هم درست همان‌جا می‌نشیند — ولی دروازه با ۱۴۳٫۵ می‌سنجید
+     * و «۱۶ سانتی‌متر پایین‌تر» می‌داد؛ خرابی‌ای که وجود نداشت. سُر خوردن یعنی
+     * پایین‌تر رفتن از جای چیدن، پس سقفِ چیدن حدِ لنگر است.
+     */
+    anchor = Math.min(anchor, placedHigh);
 
     if (highest < anchor - 0.10) {
         return `از جای خودش پایین‌تر نشست (${((anchor - highest) * 100).toFixed(0)})`;
@@ -622,14 +634,8 @@ const bench = (file) => {
     const placedAt = middleOf();
     const placedYs = heightsOf(drape);
 
-    world.presettle(Math.max(240, drape.stats.presettle));
-
-    /* لباسِ دوخته‌شده دوباره روی شانه؛ ببینید sagOf در garment-solid.js */
-    const sag = sagOf(drape, placedYs, body.level.armhole);
-
-    if (sag < 0) {
-        shift(drape, { x: 0, y: 0, z: 0 }, { x: 0, y: sag, z: 0 });
-    }
+    /* دوختِ بی‌وزنِ لنگردار؛ ببینید sewAnchored در garment-solid.js */
+    sewAnchored(world, drape, placedYs, body.level.armhole, Math.max(240, drape.stats.presettle));
 
     const stitched = world.seamError();
 
@@ -707,7 +713,15 @@ const bench = (file) => {
     const sleeve = sleeveOf(drape, body);
     const cap = armCapOf(drape, body, payload.avatar);
     const name = file.split('/').pop().replace('p-', '').replace('.json', '');
-    const gate = gateOf(drape, body, durable);
+    let placedHigh = -Infinity;
+
+    for (let i = 0; i < placedYs.length; i++) {
+        if (placedYs[i] > placedHigh) {
+            placedHigh = placedYs[i];
+        }
+    }
+
+    const gate = gateOf(drape, body, durable, placedHigh);
 
     console.log(
         `${name.padEnd(20)} ${gate === null ? '✓ روی مانکن' : '✗ ' + gate}` +

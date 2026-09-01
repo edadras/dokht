@@ -2098,7 +2098,7 @@ const isStrip = (piece) => {
  * تبدیل بهینه از خودِ جفت‌رأس‌های درز درمی‌آید (پروکراستسِ محدود به چرخش
  * حول محور y). صُلب است، پس نه پارچه را می‌کشد نه می‌پیچاند.
  */
-const seedPlacement = (patches, seams) => {
+const seedPlacement = (patches, seams, ceiling = Infinity) => {
     if (patches.length < 2 || ! seams.length) {
         return 0;
     }
@@ -2187,11 +2187,20 @@ const seedPlacement = (patches, seams) => {
                 const room = spot.room ?? Infinity;
                 const left = room === Infinity ? Infinity : Math.max(0, room - (spot.slid || 0));
 
+                /* سقفِ چیدن: این قطعه بیش از این نمی‌تواند بالا برود */
+                let topNow = -Infinity;
+
+                for (let i = 1; i < spot.patch.positions.length; i += 3) {
+                    topNow = Math.max(topNow, spot.patch.positions[i]);
+                }
+
+                const headroom = Math.max(0, ceiling - topNow);
+
                 moved += spinFit(spot.patch, source, target, spot.axis || 0, left, (used) => {
                     if (used < 0) {
                         spot.slid = (spot.slid || 0) - used;
                     }
-                });
+                }, headroom);
             }
 
             placed[link.other] = 1;
@@ -2216,7 +2225,7 @@ const seedPlacement = (patches, seams) => {
  * قطعه دورِ بدن می‌چرخد و سُر می‌خورد تا نشانه‌هایش روبه‌روی نشانه‌های همسایه
  * بیاید — دقیقاً کاری که خیاط با قطعه روی مانکن می‌کند.
  */
-const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null) => {
+const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null, roomUp = Infinity) => {
     const n = source.length / 3;
     let dot = 0;
     let cross = 0;
@@ -2244,9 +2253,17 @@ const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null)
      * شبیه‌سازی برداشته شود. آستین به *بازو* دوخته است و روی آن سُر نمی‌خورد؛
      * بازکردنِ حلقه کارِ قیدِ درز است، نه جابه‌جا کردنِ کلِ آستین.
      */
-    // حد فقط برای پایین رفتن؛ بالا رفتنِ آستین همان پوشاندنِ سرِ شانه است
+    /*
+     * حدِ پایین‌رفتن جداست از حدِ بالارفتن.
+     *
+     * بالا رفتنِ آستین همان پوشاندنِ سرِ شانه است و آزاد می‌ماند — ولی نه
+     * بی‌سقف: بالِ پاپیون به تهِ گره دوخته می‌شود و بلندی‌اش رو به بالاست، پس
+     * همین بالابر آن را ۱۹٫۵ سانتی‌متر بالا می‌برد و بال جلوی صورتِ مانکن
+     * می‌ایستاد («قطعه‌ای بالای سر رفت»). سقفِ roomUp از بیرون می‌آید: هیچ
+     * قطعه‌ای بالاتر از سقفِ چیدنِ خودِ لباس نمی‌رود.
+     */
     const want = rise / Math.max(1, n);
-    const lift = want < 0 ? Math.max(want, -room) : want;
+    const lift = want < 0 ? Math.max(want, -room) : Math.min(want, roomUp);
 
     if (spent) {
         spent(lift);
@@ -2279,7 +2296,7 @@ const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null)
  * ساسون (دو کمان از یک قطعه) کنار گذاشته می‌شود: جابه‌جایی صُلب ساسون را نمی‌بندد
  * و فقط کل قطعه را بی‌دلیل می‌کشد.
  */
-const alignPatches = (patches, seams, rounds, radial = false) => {
+const alignPatches = (patches, seams, rounds, radial = false, ceiling = Infinity) => {
     if (! patches.length || ! seams.length) {
         return;
     }
@@ -2323,6 +2340,22 @@ const alignPatches = (patches, seams, rounds, radial = false) => {
     const slid = new Float64Array(patches.length);
     // سهمِ سُر خوردنِ عمودی، جدا از پهلویی؛ ببینید VERTICAL_ROOM
     const dropped = new Float64Array(patches.length);
+    /*
+     * بلندیِ فعلیِ هر قطعه، برای سقفِ چیدن — همان درسِ spinFit: بالا رفتن
+     * آزاد است ولی نه بالاتر از سقفِ خودِ لباس. چرخش دور محورِ y ارتفاع را
+     * عوض نمی‌کند، پس یک بار شمرده می‌شود و بعد فقط با dy جلو می‌رود.
+     */
+    const tops = new Float64Array(patches.length).fill(-Infinity);
+
+    for (let p = 0; p < patches.length; p++) {
+        const positions = patches[p].patch.positions;
+
+        for (let i = 1; i < positions.length; i += 3) {
+            if (positions[i] > tops[p]) {
+                tops[p] = positions[i];
+            }
+        }
+    }
     const want = new Float64Array(patches.length * 3);
     const weight = new Float64Array(patches.length);
     /*
@@ -2472,13 +2505,20 @@ const alignPatches = (patches, seams, rounds, radial = false) => {
              * سرِ بازوی لختِ پیراهن از ۷ به ۸۱ از ۲۸۸ رفت — آستین نتوانست بالا
              * بیاید.
              */
-            const fall = Math.abs(axis[p]) > 1e-6 && dy < 0
+            let fall = Math.abs(axis[p]) > 1e-6 && dy < 0
                 ? Math.max(dy, -Math.max(0, VERTICAL_ROOM - dropped[p]))
                 : dy;
+
+            // و رو به بالا، سقفِ چیدنِ لباس — ببینید roomUp در spinFit
+            if (fall > 0) {
+                fall = Math.min(fall, Math.max(0, ceiling - tops[p]));
+            }
 
             if (fall < 0) {
                 dropped[p] -= fall;
             }
+
+            tops[p] += fall;
 
             for (let i = 0; i < positions.length; i += 3) {
                 positions[i] += dx * slide;
@@ -3018,9 +3058,33 @@ export const buildDrape = (payload, body, options = {}) => {
      * می‌پیچاند، فقط قطعه را می‌برد کنار همسایه‌اش. بعد از این، حل‌کننده فقط
      * باید پارچه را بنشاند، نه اینکه قطعه‌ها را از این سر بدن به آن سر بکشد.
      */
-    stats.seeded = seedPlacement(patches, seams);
+    /*
+     * سقفِ چیدنِ لباس: بلندترین نقطه‌ای که *چیدنِ اولیه* — یعنی حرفِ سرور —
+     * به قطعه‌ای داده، به‌اضافهٔ دو سانتی‌متر جا برای مچ‌شدنِ درزها.
+     *
+     * چیدنِ گراف‌محور و ترازکردنِ درزها بالا بردنِ قطعه را آزاد می‌گذارند
+     * (آستین باید بتواند سرِ شانه را بپوشاند) ولی بی‌سقف، قطعه‌ای که درزش
+     * سرِ پایینِ خودش است — بالِ پاپیون، جلوی جلیقه — تا جلوی صورتِ مانکن
+     * بالا می‌رفت. هیچ درزی نمی‌تواند قطعه را بالاتر از جایی ببرد که چیدنِ
+     * خودِ لباس برای بلندترین قطعه‌اش خواسته.
+     */
+    let ceiling = -Infinity;
+
+    for (const entry of patches) {
+        const positions = entry.patch.positions;
+
+        for (let i = 1; i < positions.length; i += 3) {
+            if (positions[i] > ceiling) {
+                ceiling = positions[i];
+            }
+        }
+    }
+
+    ceiling += 0.02;
+
+    stats.seeded = seedPlacement(patches, seams, ceiling);
     stats.bent = settings.warp === false ? 0 : warpToSeams(patches, seams);
-    alignPatches(patches, seams, settings.alignRounds ?? 60, settings.alignSlide ?? false);
+    alignPatches(patches, seams, settings.alignRounds ?? 60, settings.alignSlide ?? false, ceiling);
 
     // و آخر، یقه اتو می‌شود — پس از آنکه نوار سرِ جای خودش نشست
     stats.folded = foldCreases(creases, law.thickness, scale);
@@ -3473,12 +3537,24 @@ const unsquash = (patch, { heads, near, rest }, folded = null, floor = 0.7, pass
                 }
 
                 if (length < 1e-6) {
-                    // کاملاً روی هم؛ جهتِ باز کردن دلبخواه است، فقط باید بازش کند
+                    /*
+                     * کاملاً روی هم؛ جهتِ باز کردن دلبخواه است، فقط باید بازش کند.
+                     *
+                     * و فاصله باید *صفر* بماند، نه یک: این‌جا length = 1 گذاشته
+                     * شده بود تا تقسیم نترکد، ولی همان یک واردِ (goal - length)
+                     * هم می‌شد و جابه‌جایی به‌جای «از صفر تا goal» می‌شد
+                     * «یک متر منهای goal» — با علامتِ برعکس. دو سرِ بستِ دکمهٔ
+                     * لباسِ ستونی همین بودند: جوش در دورِ ششم آن‌ها را روی هم
+                     * می‌گذاشت و این شاخه هر کدام را ۴۹ سانتی‌متر به یک سو پرت
+                     * می‌کرد — خطای درزِ ۹۸٫۶ سانتی‌متری، که ۱۰۰ منهای goal است.
+                     */
                     dx = 1;
                     dy = 0;
                     dz = 0;
-                    length = 1;
+                    length = 0;
                 }
+
+                const away = length || 1;
 
                 /*
                  * جابه‌جایی روی بردارِ یکه، نه با تقسیم بر طول.
@@ -3490,9 +3566,9 @@ const unsquash = (patch, { heads, near, rest }, folded = null, floor = 0.7, pass
                  * goal است و از آن بیشتر نمی‌شود.
                  */
                 const move = (goal - length) / sum;
-                const ux = dx / length;
-                const uy = dy / length;
-                const uz = dz / length;
+                const ux = dx / away;
+                const uy = dy / away;
+                const uz = dz / away;
 
                 positions[ia] += ux * move * wa;
                 positions[ia + 1] += uy * move * wa;
@@ -4033,6 +4109,26 @@ export const supportGarment = (drape, options = {}) => {
 
     const standing = new Set();
 
+    /*
+     * بلندترین جای لباس؛ هر قطعه‌ای که سرش به این‌جا می‌رسد، بارِ لباس روی
+     * اوست — فارغ از این‌که مولّد چه نقشی برایش نوشته باشد.
+     *
+     * قاعده‌های پایین از روی *ناحیه* کار می‌کنند و ناحیه از نقشِ قطعه در مولّد
+     * می‌آید؛ ولی مولّدِ قبا و بلوز و دشداشهٔ بندری تنهٔ لباس را «جزئیات»
+     * علامت زده‌اند. نتیجه: کلِ لباس از میخِ دو آستین آویزان می‌شد و بالاتنه
+     * شش سانتی‌متر زیرِ سرشانه می‌ماند («از جای خودش پایین‌تر نشست»). آنچه
+     * واقعاً روی شانه یا کمرِ مانکن سوار است، قطعه‌ایست که سرش سرِ لباس است.
+     */
+    let crest = -Infinity;
+
+    for (const { patch } of drape.patches) {
+        for (let i = 0; i < patch.count; i++) {
+            if (patch.positions[i * 3 + 1] > crest) {
+                crest = patch.positions[i * 3 + 1];
+            }
+        }
+    }
+
     for (const { piece, patch, top } of drape.patches) {
         const zone = piece.placement?.zone || '';
         /*
@@ -4043,7 +4139,27 @@ export const supportGarment = (drape, options = {}) => {
          * دامن را با خودش می‌برد. همین بود که پوششِ آن دامن را ناپایدار می‌کرد و
          * با دوازده رأس این‌ور و آن‌ور می‌شد.
          */
+        let reach = -Infinity;
+
+        for (let i = 0; i < patch.count; i++) {
+            if (patch.positions[i * 3 + 1] > reach) {
+                reach = patch.positions[i * 3 + 1];
+            }
+        }
+
+        /*
+         * و فقط اگر همان‌جایی ایستاده که چیدن گفته بود — نه بالاتر.
+         *
+         * رویهٔ توفانیِ ترنچ‌کت در دوختِ بی‌وزنی ده سانتی‌متر بالا می‌پرد و
+         * سرِ لباس می‌شود؛ بی این شرط همان‌جا میخ می‌خورد و جلوی صورتِ مانکن
+         * می‌ماند («قطعه‌ای بالای سر رفت»). قطعه‌ای که از جای چیدنِ خودش
+         * بالاتر رفته روی چیزی تکیه نکرده — باد کرده — و باید رها بماند تا
+         * جاذبه سرِ جایش بیاورد.
+         */
+        const seated = reach >= crest - band && reach <= (top ?? Infinity) + 0.03;
+
         const held = piece.wraps === true
+            || seated
             || zones.some((name) => zone === name || zone.startsWith(`${name}_`));
 
         if (! held || ! patch.follow) {
