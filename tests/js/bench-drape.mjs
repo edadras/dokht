@@ -20,7 +20,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { buildDrape, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
 import { ClothWorld, Collider } from '../../resources/js/lib/cloth-solver.js';
-import { heightsOf, relax, sewAnchored } from '../../resources/js/components/garment-solid.js';
+import { finishGarment, heightsOf, sewAnchored } from '../../resources/js/components/garment-solid.js';
 import { bodyColliders, makeBody, rawBody } from './fixtures/payload.js';
 
 const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -691,9 +691,7 @@ const bench = (file) => {
      */
     world.enableContact();
     world.presettle(150);
-    weldSeams(drape);
-    relax(drape);
-    world.pushOutside();
+    finishGarment(world, drape, weldSeams);
 
     const snapped = world.seamError();
 

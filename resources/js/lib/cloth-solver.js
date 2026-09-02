@@ -2326,20 +2326,56 @@ export class ClothWorld {
      * یک پاسِ برخورد بس است و اصطکاکش کامل، چون این‌جا حرکتی در کار نیست: فقط
      * هر رأسِ فرورفته روی نزدیک‌ترین نقطهٔ سطح می‌نشیند.
      */
-    pushOutside() {
+    pushOutside(rounds = 1) {
         if (this.colliders.length === 0) {
             return;
         }
 
-        if (this.contact) {
-            this.contactPass();
-        }
+        /*
+         * بیرون راندن و بعد دوباره حل کردنِ پارچه — چند دور.
+         *
+         * پاسِ برخوردِ تنها، رأسِ فرورفته را روی پوست می‌نشاند و همسایه‌هایش
+         * را سرِ جای قبلی می‌گذارد؛ یالِ میانشان کش می‌آید و هیچ قیدی دیگر
+         * اجرا نمی‌شود. اندازه گرفته شد روی پولو: بدترین کششِ یال پیش از این
+         * پاس ۱۴× بود و بعدش ۵۷×، و شمارِ مثلثِ خراب از ۳۰۱ به ۴۴۲ رسید —
+         * یعنی همین یک پاس، یک‌سوم خرابیِ نهاییِ مش را می‌ساخت.
+         *
+         * پس با `rounds > 1`، هر بار پس از راندن، قیدهای پارچه (کشش، برش،
+         * خمش، و درزها) چند تکرار حل می‌شوند تا جابه‌جایی به درونِ قطعه پخش
+         * شود، و باز رانده می‌شود؛ حرفِ آخر همچنان با بدن است.
+         *
+         * ولی همان حل، جوشِ درز را باز می‌کند: جوش قید نیست و تعادلِ حل‌کننده
+         * درز را ۵ تا ۸ سانتی‌متر باز نگه می‌دارد (کت رسمی ۲٫۷ → ۸٫۲). پس این
+         * دورها را باید با یک جوشِ دوباره و یک راندنِ تکی دنبال کرد — ببینید
+         * finishGarment در garment-solid.js. پیش‌فرض همان یک پاسِ قدیمی است.
+         */
+        for (let round = 0; round < rounds; round++) {
+            if (this.contact) {
+                this.contactPass();
+            }
 
-        for (let p = 0; p < this.patches.length; p++) {
-            this.patches[p].collide(this.colliders, this.skin, 1, true);
+            for (let p = 0; p < this.patches.length; p++) {
+                this.patches[p].collide(this.colliders, this.skin, 1, true);
 
-            if (this.floor !== null) {
-                this.patches[p].land(this.floor + this.skin, 1);
+                if (this.floor !== null) {
+                    this.patches[p].land(this.floor + this.skin, 1);
+                }
+            }
+
+            this.patches.forEach((patch) => patch.remember());
+
+            if (round === rounds - 1) {
+                break;
+            }
+
+            for (let k = 0; k < 3; k++) {
+                for (let i = 0; i < this.seams.length; i++) {
+                    this.seams[i].project();
+                }
+
+                for (let p = 0; p < this.patches.length; p++) {
+                    this.patches[p].project();
+                }
             }
         }
 

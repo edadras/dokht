@@ -399,6 +399,28 @@ export const sewAnchored = (world, drape, placed, above, steps, chunk = 40) => {
     }
 };
 
+/**
+ * پایانِ دوخت: جوش، صاف‌کردن، بیرون‌راندنِ بدن با حلِ دوباره، جوشِ دوباره.
+ *
+ * ترتیب از اندازه‌گیری آمد (کت رسمی / پیراهن، مثلثِ خراب و خطای درز و رأسِ
+ * درونِ بدن):
+ *
+ *   جوش → صاف → راندنِ تکی            ۲۴۳ / ۲٫۶۵ / ۴۱     ۲۳۱ / ۰٫۳۵ / ۵۱
+ *   جوش → صاف → راندن با حلِ دوباره    ۱۱۷ / ۸٫۱۹ / ۴۹     ۱۰۹ / ۵٫۴۴ / ۶۵
+ *   … → جوشِ دوباره → راندنِ تکی       ۲۱۹ / ۲٫۶۶ / ۲۸     ۲۱۴ / ۰٫۴۸ / ۴۴
+ *
+ * حلِ دوباره مش را سالم می‌کند ولی جوش را باز می‌کند (جوش قید نیست)؛ جوشِ
+ * دوباره درز را برمی‌گرداند و راندنِ تکیِ آخر بدن را بیرون نگه می‌دارد. سطرِ
+ * سوم در هر سه عدد از سطرِ اول بهتر یا برابر است.
+ */
+export const finishGarment = (world, drape, weldSeams) => {
+    weldSeams(drape);
+    relax(drape);
+    world.pushOutside(4);
+    weldSeams(drape);
+    world.pushOutside(1);
+};
+
 /** جابه‌جاییِ صُلبِ کلِ لباس؛ هیچ درزی باز نمی‌شود. */
 export const shift = (drape, want, have) => {
     const dx = want.x - have.x;
@@ -1351,10 +1373,8 @@ export default (initial = {}) => ({
              */
             world.enableContact();
             world.presettle(150);
-            weldSeams(drape);
-            relax(drape);
-            // و بعد بدن حرفِ آخر را می‌زند؛ ببینید pushOutside
-            world.pushOutside();
+            // جوش، صاف‌کردن، بیرون‌راندنِ بدن با حلِ دوباره، جوشِ دوباره؛ ببینید finishGarment
+            finishGarment(world, drape, weldSeams);
 
             const wrong = landedWell(
                 drape,

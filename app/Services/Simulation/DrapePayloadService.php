@@ -1755,9 +1755,12 @@ class DrapePayloadService
             $relation = $entry['relation'];
             $label = (string) ($relation['label'] ?? 'درز');
 
-            [$left, $right] = $this->balance($entry['left'], $entry['right']);
+            [$left, $right, $zipped] = $this->balance($entry['left'], $entry['right']);
 
-            $pairs = $this->pairArcs($left, $right);
+            // کمانِ بریده‌شده تکه‌به‌تکه با همان ترتیب جفت می‌شود؛ ببینید balance
+            $pairs = $zipped
+                ? ['matched' => array_map(null, $left, $right), 'left' => [], 'right' => []]
+                : $this->pairArcs($left, $right);
 
             foreach ($pairs['matched'] as [$a, $b]) {
                 $seams[] = $this->seam($a, $b, $label, $index, $relation);
@@ -2236,39 +2239,28 @@ class DrapePayloadService
                 continue;
             }
 
-            $partners = [$arcs[$short], $best['arc']];
+            /*
+             * کدام تکه به کدام شریک؟ جای هر شریک *روی خودِ کمان*.
+             *
+             * دو ملاکِ پیشین هر دو جهت را نمی‌دیدند. cost() برای دو دستگاهِ
+             * متفاوت (بازو و تنه) فقط اختلافِ ارتفاع را می‌سنجد و با نوسانِ چند
+             * میلی‌متری برمی‌گشت. بعد «هم‌طولی» آمد — و آن هم کور است: تکهٔ اول
+             * همیشه از سرِ `from` بریده می‌شود و سهمِ بزرگ‌تر (تنه) را می‌گیرد،
+             * ولی `from` روی یک آستین نوکِ کپ است و روی آینه‌اش زیربغل. اندازه
+             * گرفته شد روی پیراهنِ کلاسیک: آستینِ چپ از نوکِ کپ [پشت ۱۲٫۸، یوک
+             * ۶٫۷] و راست از زیربغل [پشت ۱۲٫۳، یوک ۷٫۲] — یعنی روی چپ یوک سرِ
+             * زیربغل دوخته می‌شد و همان شانه لخت می‌ماند (۴۶ از ۲۱۶ نقطه در
+             * برابر ۱۴). هر دو ملاک برای هر دو آستین «درست» می‌گفتند.
+             *
+             * جای شریک روی کمان (along) جهت را می‌داند: یوک بالاتر از نوکِ کپ
+             * است و پشت میانِ کمان، پس از هر سری که پیموده شود، یوک سرِ بالایی
+             * را می‌گیرد. تکه‌ها به همان ترتیب بریده و تکه‌به‌تکه جفت می‌شوند.
+             */
+            $partners = $this->alongOrder($arcs[$long], [$arcs[$short], $best['arc']]);
             $parts = $this->splitArc($arcs[$long], $this->shares($partners));
 
             if (count($parts) !== 2) {
                 continue;
-            }
-
-            /*
-             * کدام تکه به کدام شریک؟ فاصله *و* طول، هر دو.
-             *
-             * تا وقتی تنها cost() ملاک بود، این تصمیم روی دو سویِ بدن یک‌جور
-             * درنمی‌آمد: سرِ آستین و حلقهٔ تنه در دو دستگاهِ متفاوت‌اند (بازو و
-             * تنه) و cost() برای دو دستگاه فقط اختلافِ ارتفاع را می‌سنجد. دو
-             * حالتِ ممکن ارتفاعِ نزدیکی داشتند و نوسانِ چند میلی‌متری تصمیم را
-             * برمی‌گرداند: روی آستینِ چپِ پیراهن ۱۲٫۱ سانتی‌متر سرآستین به کمانِ
-             * ۵٫۹ سانتی‌متریِ یوک می‌رفت و ۶٫۳ به کمانِ ۱۱٫۴ سانتی‌متریِ تنه، و
-             * آستینِ راست درست بود.
-             *
-             * طولِ دو سرِ یک درز باید به هم بخورد؛ همین یک عدد ابهام را برمی‌دارد.
-             */
-            $fit = fn (array $one, array $two): float => abs($one['length'] - $two['length'])
-                / max(0.01, max($one['length'], $two['length']));
-            $straight = $fit($parts[0], $partners[0]) + $fit($parts[1], $partners[1]);
-            $swapped = $fit($parts[0], $partners[1]) + $fit($parts[1], $partners[0]);
-
-            if (abs($straight - $swapped) < 0.05) {
-                // طول‌ها تفاوتی نمی‌گذارند؛ جای روی بدن تصمیم می‌گیرد
-                $straight = $this->cost($parts[0], $partners[0]) + $this->cost($parts[1], $partners[1]);
-                $swapped = $this->cost($parts[0], $partners[1]) + $this->cost($parts[1], $partners[0]);
-            }
-
-            if ($swapped < $straight) {
-                $parts = [$parts[1], $parts[0]];
             }
 
             $seams[$index] = $this->seam($parts[0], $partners[0], (string) ($seam['label'] ?? 'درز'), $seam['relation'] ?? null, $seam);
@@ -2759,6 +2751,9 @@ class DrapePayloadService
         $walked = 0.0;
         $index = $arc['from'];
 
+        $first = $this->onBody($arc['instance'], $polygon[$arc['from']]);
+        $last = $this->onBody($arc['instance'], $polygon[$arc['to']]);
+
         for ($step = 0; $step < $count; $step++) {
             $here = $this->distance($this->onBody($arc['instance'], $polygon[$index]), $partner['at'], $same);
 
@@ -2774,6 +2769,34 @@ class DrapePayloadService
             $next = ($index + 1) % $count;
             $walked += Geometry::distance($polygon[$index], $polygon[$next]);
             $index = $next;
+        }
+
+        /*
+         * سرِ مقابلی که *بیرونِ* بازهٔ کمان می‌افتد، همان‌سو ادامه می‌یابد.
+         *
+         * دو قطعه از قاب‌های متفاوت (آستین و تنه) فقط با ارتفاع سنجیده می‌شوند،
+         * و اگر هر دو سرِ مقابل بالاتر از بلندترین رأسِ کمان بنشینند، هر دو به
+         * همان یک رأس نزدیک‌ترند و `along`شان برابر می‌شود؛ آن‌وقت ترتیبشان را
+         * usort تعیین می‌کند، نه هندسه. اندازه گرفته شد روی پیراهنِ کلاسیک: سرِ
+         * آستینِ چپ از نوکِ کپ [پشت ۱۲٫۸، یوک ۶٫۷] بریده می‌شد و راست [یوک
+         * ۷٫۲، پشت ۱۲٫۳] — روی یکی یوک کنارِ زیربغل دوخته می‌شد و همان شانه
+         * لخت می‌ماند (راست ۴۶ از ۲۱۶ نقطه، چپ ۱۴).
+         *
+         * پس بیرونِ بازه، جا برون‌یابی می‌شود: هرچه سرِ مقابل از سرِ بالاییِ کمان
+         * بالاتر باشد، همان‌قدر پیش از آن سر می‌نشیند، و برای سرِ پایینی برعکس.
+         * ترتیب همیشه از هندسه می‌آید.
+         */
+        if (! $same) {
+            $height = (float) ($partner['at']['y'] ?? 0.0);
+            $top = max($first['y'], $last['y']);
+            $bottom = min($first['y'], $last['y']);
+            $topAtStart = $first['y'] >= $last['y'];
+
+            if ($height > $top) {
+                $at = $topAtStart ? -($height - $top) : $walked + ($height - $top);
+            } elseif ($height < $bottom) {
+                $at = $topAtStart ? $walked + ($bottom - $height) : -($bottom - $height);
+            }
         }
 
         return $at;
@@ -2806,18 +2829,52 @@ class DrapePayloadService
     protected function balance(array $left, array $right): array
     {
         if (count($left) === count($right)) {
-            return [$left, $right];
+            return [$left, $right, false];
         }
 
+        /*
+         * تکه‌ها به ترتیبِ *جای روی کمان* بریده و جفت می‌شوند، نه به ترتیبِ فهرست.
+         *
+         * تا امروز کمانِ تنها به نسبتِ طولِ کمان‌های مقابل و به ترتیبِ فهرستشان
+         * بریده می‌شد و بعد pairArcs هر تکه را با نزدیک‌ترین کمان (به فاصلهٔ
+         * میانه‌ها) جفت می‌کرد. برای سرِ آستین این دو با هم غلط درمی‌آمد: کمانِ
+         * پشتِ کپ از نوکِ کپ تا زیربغل می‌رود و باید اول یوک (بالا) و بعد پشت
+         * (پایین‌تر) بگیرد؛ ولی فهرست [پشت، یوک] بود و میانهٔ تکهٔ بالایی به
+         * میانهٔ کمانِ پشت نزدیک‌تر بود تا یوک. روی آستینِ چپِ پیراهنِ کلاسیک یوک
+         * سرِ زیربغل دوخته می‌شد و همان شانه لخت می‌ماند؛ آستینِ راست چون از
+         * سرِ دیگر پیموده می‌شود درست درمی‌آمد. ترتیب باید از هندسهٔ خودِ کمان
+         * بیاید (along) و جفت‌کردن هم به همان ترتیب، تکه به تکه.
+         */
         if (count($left) === 1 && count($right) > 1) {
-            return [$this->splitArc($left[0], $this->shares($right)), $right];
+            $right = $this->alongOrder($left[0], $right);
+            $pieces = $this->splitArc($left[0], $this->shares($right));
+
+            return [$pieces, $right, count($pieces) === count($right)];
         }
 
         if (count($right) === 1 && count($left) > 1) {
-            return [$left, $this->splitArc($right[0], $this->shares($left))];
+            $left = $this->alongOrder($right[0], $left);
+            $pieces = $this->splitArc($right[0], $this->shares($left));
+
+            return [$left, $pieces, count($pieces) === count($left)];
         }
 
-        return [$left, $right];
+        return [$left, $right, false];
+    }
+
+    /**
+     * کمان‌های مقابل به ترتیبِ جایشان روی این کمان، از `from` تا `to`.
+     *
+     * @param  array<int, array>  $partners
+     * @return array<int, array>
+     */
+    protected function alongOrder(array $arc, array $partners): array
+    {
+        $keyed = array_map(fn (array $partner) => ['along' => $this->along($arc, $partner), 'arc' => $partner], $partners);
+
+        usort($keyed, fn (array $a, array $b) => $a['along'] <=> $b['along']);
+
+        return array_column($keyed, 'arc');
     }
 
     /** سهم هر کمان از طول کل، برای شکستن کمان روبه‌رو به همان نسبت‌ها. */
@@ -2851,18 +2908,39 @@ class DrapePayloadService
             return [$arc];
         }
 
+        /*
+         * نمونهٔ آینه‌شده از سرِ دیگر راه می‌رود، تا برش روی *همان* رأس‌ها بیفتد.
+         *
+         * برش به نزدیک‌ترین رأس می‌چسبد و همین چسبیدن جهت‌دار است: کمانِ حلقهٔ
+         * آستینِ چپ از سرشانه به زیربغل پیموده می‌شود و آینه‌اش از زیربغل به
+         * سرشانه، پس هر کدام به رأسِ خودش گرد می‌شود. اندازه گرفته شد روی
+         * پیراهنِ کلاسیک: سرِ آستینِ ۱۹٫۵ سانتی‌متری روی یک بازو ۱۲٫۸۰/۶٫۷۱ بریده
+         * می‌شد و روی بازوی دیگر ۱۲٫۳۰/۷٫۲۱ — نیم سانتی‌متر، یعنی درست یک
+         * پاره‌خطِ چندضلعی — با آن‌که خودِ دو چندضلعی تا ۰٫۰۰۱ سانتی‌متر آینهٔ
+         * هم بودند. همان نیم سانتی‌متر یک شانهٔ پیراهن را لخت می‌گذاشت
+         * (شانهٔ راست ۴۶ از ۲۱۶ نقطه لخت، چپ ۱۴).
+         *
+         * آینه‌کردن ترتیبِ رأس‌ها را وارون می‌کند، پس نمونهٔ آینه‌شده اگر از
+         * `to` رو به عقب راه برود، رأس‌ها را به همان ترتیبِ نمونهٔ اصلی می‌بیند
+         * و به همان‌ها گرد می‌شود.
+         */
+        $backwards = (bool) ($arc['instance']['mirrored'] ?? false);
+        $start = $backwards ? $arc['to'] : $arc['from'];
+        $finish = $backwards ? $arc['from'] : $arc['to'];
+        $ordered = $backwards ? array_reverse($shares) : $shares;
+
         // مرزهای برش را روی رأس‌ها پیدا کن
-        $cuts = [$arc['from']];
+        $cuts = [$start];
         $target = 0.0;
         $walked = 0.0;
-        $index = $arc['from'];
-        $wanted = array_slice($shares, 0, count($shares) - 1);
+        $index = $start;
+        $wanted = array_slice($ordered, 0, count($ordered) - 1);
 
         foreach ($wanted as $share) {
             $target += $share * $total;
 
-            while ($index !== $arc['to']) {
-                $next = ($index + 1) % $count;
+            while ($index !== $finish) {
+                $next = $backwards ? ($index - 1 + $count) % $count : ($index + 1) % $count;
                 $step = Geometry::distance($polygon[$index], $polygon[$next]);
 
                 // نزدیک‌ترین رأس، نه رأسِ پیش از هدف: با گردکردن به پایین، برشِ
@@ -2878,7 +2956,11 @@ class DrapePayloadService
             $cuts[] = $index;
         }
 
-        $cuts[] = $arc['to'];
+        $cuts[] = $finish;
+
+        if ($backwards) {
+            $cuts = array_reverse($cuts);
+        }
 
         $pieces = [];
 
