@@ -137,6 +137,9 @@ Route::middleware(['auth', 'workshop'])->group(function () {
     Route::get('patterns/templates', [PatternController::class, 'templateSearch'])
         ->name('patterns.templates.search');
     Route::resource('patterns', PatternController::class);
+    // آواتارِ سه‌بعدی به اندازهٔ تنِ همین الگو؛ ببینید AvatarFitService
+    Route::get('avatars/{name}/fit/{pattern}', [\App\Http\Controllers\AvatarController::class, 'fit'])
+        ->name('avatars.fit');
     Route::get('patterns/{pattern}/editor', [PatternController::class, 'editor'])->name('patterns.editor');
     Route::put('patterns/{pattern}/geometry', [PatternController::class, 'updateGeometry'])->name('patterns.geometry');
     Route::post('patterns/{pattern}/pieces/{piece}/split', [PatternController::class, 'splitPiece'])

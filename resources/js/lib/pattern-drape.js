@@ -983,6 +983,9 @@ const placePiece = (piece, flat, body, options) => {
         hold = sampleTable(body.armTable, -Math.max(0, reach))[0] + gap;
     } else if (legs) {
         hold = sampleTable(legs, midY)[0] + gap;
+    } else if (placement.zone === 'collar' && hint) {
+        // یقه: استوانه‌ای به شعاعِ خودِ گردن، نه پهنای سرشانه در همان ارتفاع (پایین‌تر)
+        hold = hint + gap;
     } else {
         const row = sampleTable(body.profile, midY);
 
@@ -1104,15 +1107,30 @@ const placePiece = (piece, flat, body, options) => {
          * ریشهٔ همه‌چیز بود سرِ جایش رفع مانده و فقط شعاع بدن را دنبال می‌کند.
          * ترنچ‌کت ۲٫۳٪ → ۱٫۳٪ و پیراهن ۳٫۹٪ → ۳٫۸٪.
          */
-        const skin = arm || legs
+        /*
+         * یقه دورِ گردن می‌پیچد، نه دورِ سرشانه.
+         *
+         * نوارِ یقه چند سانتی‌متر پایین‌تر از ترازِ گردن هم می‌رود و آن‌جا نیم‌رخِ
+         * تن پهنای سرشانه را دارد. با دنبال کردنِ پوست، ردیف‌های بالای یقه روی
+         * گردن (۹ سانتی‌متر) و ردیف‌های پایینش روی سرشانه (۱۲ تا ۱۸) چیده
+         * می‌شد و مشِ یقه هفت برابر کش می‌آمد (آواتارِ گردن‌کوتاه؛ اندازه گرفته
+         * شد). یقه استوانه‌ای به شعاعِ خودش است و نشستنِ لبهٔ پایینش روی سرشانه
+         * کارِ درزِ گردن و برخورد است.
+         */
+        const skin = arm || legs || placement.zone === 'collar'
             ? hold
             : Math.max(sampleRow(body.profile, world), hint || 0) + gap;
         const reach = lerp(hold, skin, HUG);
+        /*
+         * مرکزِ عمقیِ این تراز: محورِ بازو برای آستین (armDepth)، و برای تنه
+         * مرکزِ خودِ مقطع (ستونِ ششمِ نیم‌رخ؛ آواتار گردن و باسنش پشتِ سینه
+         * است). مانکنِ محاسباتی همه را صفر می‌دهد و همان چیدنِ پیشین را می‌گیرد.
+         */
+        const depth = arm ? (body.armDepth || 0) : (legs ? 0 : (sampleTable(body.profile, world)[4] || 0));
 
         positions[i * 3] = center + reach * nudge * Math.sin(spin);
         positions[i * 3 + 1] = world;
-        // محورِ بازو می‌تواند جلو/عقبِ مرکزِ تن باشد (آواتار)؛ ببینید armDepth
-        positions[i * 3 + 2] = reach * nudge * Math.cos(spin) + (arm ? (body.armDepth || 0) : 0);
+        positions[i * 3 + 2] = reach * nudge * Math.cos(spin) + depth;
         axis += center / count;
     }
 
@@ -2770,9 +2788,26 @@ export const buildDrape = (payload, body, options = {}) => {
             mesh,
             axis: placed.axis,
             depth: placed.depth,
-            // بلندیِ لبهٔ بالای قطعه سرِ چیدن؛ نگه‌دارنده با همین می‌فهمد قطعه
-            // در دوختِ بی‌وزنی سُر خورده یا نه (ببینید holdUp)
-            top: placed.top,
+            /*
+             * بلندیِ *واقعیِ* لبهٔ بالای قطعه سرِ چیدن، نه y_top اعلامی؛ نگه‌دارنده
+             * با همین می‌فهمد قطعه در دوختِ بی‌وزنی سُر خورده یا نه (ببینید holdUp).
+             *
+             * یقه‌ی پیراهن y_top=چانه (۱۴۸) اعلام می‌کند ولی عمداً روی خطِ گردن
+             * (۱۴۳) چیده می‌شود؛ با y_top اعلامی، holdUp یقه را پنج سانتی‌متر تا
+             * چانه بالا می‌کشید و همان‌جا میخ می‌کرد — رویه‌ی تا‌خورده باز می‌شد و
+             * یقه سیخ می‌ایستاد (رویه ۱۴۶، پایه ۱۴۴). اندازه‌گیری روی پیراهن.
+             */
+            top: (() => {
+                let high = -Infinity;
+
+                for (let i = 1; i < placed.positions.length; i += 3) {
+                    if (placed.positions[i] > high) {
+                        high = placed.positions[i];
+                    }
+                }
+
+                return high;
+            })(),
             // قطعهٔ روی اندام روی آن سُر نمی‌خورد؛ تنه و دامن جا دارند
             room: Math.abs(placed.axis) > 1e-6 ? VERTICAL_ROOM : Infinity,
         });
@@ -2878,7 +2913,12 @@ export const buildDrape = (payload, body, options = {}) => {
             kind: 'crease',
             rest: settings.gap,
             duration: settings.seamDuration,
-            stiffness: settings.seamStiffness * 0.5,
+            /*
+             * تا، سفت است: خطِ اتوخورده باز نمی‌شود. با نصفِ سختیِ درز، رویه ۲٫۶
+             * سانتی‌متر از پایه فاصله می‌گرفت و بالای آن می‌ایستاد (اندازه‌گیری
+             * روی یقهٔ پیراهن).
+             */
+            stiffness: settings.seamStiffness,
         });
 
         seams.push(set);
@@ -3113,6 +3153,27 @@ export const buildDrape = (payload, body, options = {}) => {
 
     // و آخر، یقه اتو می‌شود — پس از آنکه نوار سرِ جای خودش نشست
     stats.folded = foldCreases(creases, law.thickness, scale);
+
+    /*
+     * بلندیِ چیدنِ یقه، *پس از* تا خوردن.
+     *
+     * بلندیِ هر قطعه پیش از تا ثبت می‌شد، یعنی برای یقه بالای رویه‌ی
+     * سیخ‌ایستاده (۱۴۷٫۵)؛ بعد که رویه روی پایه تا می‌خورد و سرِ قطعه ۱۴۳
+     * می‌شد، نگه‌دارنده آن چهار سانتی‌متر «سُر خوردن» می‌خواند و یقه را تا چانه
+     * بالا می‌کشید و همان‌جا میخ می‌کرد — تا باز می‌شد. اندازه گرفته شد روی
+     * پیراهن: پایه و رویه از ۱۴۱٫۶ به ۱۴۶٫۰، درست در همین مرحله.
+     */
+    for (const { entry } of creases) {
+        let high = -Infinity;
+
+        for (let i = 1; i < entry.patch.positions.length; i += 3) {
+            if (entry.patch.positions[i] > high) {
+                high = entry.patch.positions[i];
+            }
+        }
+
+        entry.top = high;
+    }
 
     stats.presettle = Math.ceil(settings.seamDuration * 60) + 140;
 
@@ -3978,6 +4039,8 @@ const seatOnBody = (patch, body, zone) => {
         let cx = 0;
         let rx;
         let rz;
+        // مرکزِ عمقی: محورِ بازو برای آستین؛ مرکزِ خودِ مقطع (ستونِ ششم) برای تنه
+        let cz = arm ? (body.armDepth || 0) : 0;
 
         if (arm && body.armTable) {
             cx = x < 0 ? -(body.armOffset ?? 0) : (body.armOffset ?? 0);
@@ -3998,10 +4061,13 @@ const seatOnBody = (patch, body, zone) => {
 
             rx = row[0] + gap;
             rz = row[1] + gap;
+            cz = row[4] || 0;
         }
 
         const dx = x - cx;
-        const reach = Math.hypot(dx / Math.max(1e-6, rx), z / Math.max(1e-6, rz));
+        // نشاندن دورِ همان مرکز (محورِ بازو، یا مرکزِ مقطعِ تنه)
+        const dz = z - cz;
+        const reach = Math.hypot(dx / Math.max(1e-6, rx), dz / Math.max(1e-6, rz));
 
         /*
          * و اگر *داخلِ* پوست باشد، بیرون آورده می‌شود — نه فقط تو کشیده.
@@ -4019,13 +4085,13 @@ const seatOnBody = (patch, body, zone) => {
          * جابه‌جایی سقف می‌خورد: رأسی که خیلی داخل افتاده — زیرِ بغل، لای دو
          * قطعه — با یک پرشِ بزرگ به بیرون، درزش را پاره می‌کند.
          */
-        const out = Math.hypot(dx, z);
+        const out = Math.hypot(dx, dz);
         const want = hold * (1 - 1 / Math.max(0.35, reach));
         // سقف فقط روی بیرون آوردن است؛ تو کشیدن هرقدر لازم باشد انجام می‌شود
         const pull = want >= 0 || out < 1e-6 ? want : Math.max(-SEAT_LIFT / out, want);
 
         patch.positions[at] = x - dx * pull;
-        patch.positions[at + 2] = z - z * pull;
+        patch.positions[at + 2] = z - dz * pull;
     }
 
     patch.remember();

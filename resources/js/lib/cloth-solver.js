@@ -88,6 +88,17 @@ export class Collider {
         this.rzs = new Float32Array(rows);
         this.fronts = new Float32Array(rows);
         this.backs = new Float32Array(rows);
+        /*
+         * مرکزِ مقطع، جلو/عقبِ محورِ برخوردگر (ستونِ ششم، اختیاری).
+         *
+         * مانکنِ محاسباتی همهٔ حلقه‌هایش را دورِ یک محور می‌چیند، ولی تنِ واقعی
+         * نه: گردن و سرشانهٔ آواتار پنج سانتی‌متر پشتِ مرکزِ سینه‌اند و باسن هم
+         * همان‌قدر عقب. اگر هر مقطع دورِ z=۰ بسته شود، یقه چهار سانتی‌متر جلوی
+         * گردن می‌ایستد و پشتِ گردن از برخوردگر بیرون می‌ماند — همان یقهٔ
+         * گم‌شده و پوستِ پیدای سرشانه در عکسِ آواتار. پس هر مقطع مرکزِ خودش را
+         * دارد؛ برای سطرهای پنج‌تایی صفر است و هیچ رفتاری عوض نمی‌شود.
+         */
+        this.czs = new Float32Array(rows);
         this.capMin = capMin;
         this.capMax = capMax;
 
@@ -102,8 +113,9 @@ export class Collider {
             this.rzs[i] = Math.max(1e-4, row[2]);
             this.fronts[i] = Math.max(1e-4, row.length > 3 ? row[3] : row[2]);
             this.backs[i] = Math.max(1e-4, row.length > 4 ? row[4] : this.fronts[i]);
+            this.czs[i] = row.length > 5 ? row[5] : 0;
             maxRx = Math.max(maxRx, this.rxs[i]);
-            maxRz = Math.max(maxRz, this.fronts[i], this.backs[i]);
+            maxRz = Math.max(maxRz, this.fronts[i] + Math.abs(this.czs[i]), this.backs[i] + Math.abs(this.czs[i]));
         }
 
         this.capLow = capMin ? Math.min(this.rxs[0], this.rzs[0]) : 0;
@@ -172,9 +184,9 @@ export class Collider {
     /*
      * نیم‌پهنا و نیم‌عمق در ارتفاع محلی y (درون‌یابی خطی روی جدول مقطع).
      *
-     * out[0] نیم‌پهنا، out[1] نیم‌عمقِ جلو و out[2] نیم‌عمقِ پشت. اگر مقطع قرینه
-     * باشد هر دو یکی‌اند، پس هر خواننده‌ای که فقط out[1] را می‌خواند همان
-     * رفتار پیشین را می‌بیند.
+     * out[0] نیم‌پهنا، out[1] نیم‌عمقِ جلو و out[2] نیم‌عمقِ پشت، out[3] مرکزِ
+     * مقطع روی z. اگر مقطع قرینه باشد هر دو نیم‌عمق یکی‌اند، پس هر خواننده‌ای
+     * که فقط out[1] را می‌خواند همان رفتار پیشین را می‌بیند.
      */
     sectionAt(y, out) {
         const ys = this.ys;
@@ -184,6 +196,7 @@ export class Collider {
             out[0] = this.rxs[0];
             out[1] = this.fronts[0];
             out[2] = this.backs[0];
+            out[3] = this.czs[0];
 
             return -1;
         }
@@ -192,6 +205,7 @@ export class Collider {
             out[0] = this.rxs[last];
             out[1] = this.fronts[last];
             out[2] = this.backs[last];
+            out[3] = this.czs[last];
 
             return 1;
         }
@@ -207,6 +221,7 @@ export class Collider {
         out[0] = this.rxs[i] + (this.rxs[i + 1] - this.rxs[i]) * t;
         out[1] = this.fronts[i] + (this.fronts[i + 1] - this.fronts[i]) * t;
         out[2] = this.backs[i] + (this.backs[i + 1] - this.backs[i]) * t;
+        out[3] = this.czs[i] + (this.czs[i + 1] - this.czs[i]) * t;
 
         return 0;
     }
@@ -229,7 +244,7 @@ const STITCH_GRIP = 0.9;
 /* بافرهای موقتِ سطح ماژول؛ داخل حلقه‌ی داغ هیچ شیئی ساخته نمی‌شود */
 const local = [0, 0, 0];
 const world = [0, 0, 0];
-const section = [0, 0, 0];
+const section = [0, 0, 0, 0];
 
 /* ---------------------------------------------------------------------------
  * پایه‌ی مشترک تکه‌های پارچه
@@ -615,12 +630,15 @@ class PatchBase {
                  * با شعاع بادکرده، «روی سطح بودن» یک حالت پایدار است.
                  */
                 const rx = section[0] + skin;
+                // مرکزِ مقطع می‌تواند جلو/عقبِ محور باشد؛ همه چیز نسبت به همان
+                const cz = section[3];
+                const lz = local[2] - cz;
                 /*
                  * جلو یا پشت؟ ذره یا این‌سوی بدن است یا آن‌سو، و همان نیم‌بیضی
-                 * را می‌بیند. دو نیمه در پهلو (z=0) هم‌عمق‌اند و مماسشان
+                 * را می‌بیند. دو نیمه در پهلو (z=مرکز) هم‌عمق‌اند و مماسشان
                  * هم‌راستا، پس درزی میانشان نمی‌ماند.
                  */
-                const rz = (local[2] >= 0 ? section[1] : section[2]) + skin;
+                const rz = (lz >= 0 ? section[1] : section[2]) + skin;
 
                 let dy = 0;
                 let ry = 0;
@@ -642,7 +660,7 @@ class PatchBase {
                 }
 
                 const ux = local[0] / rx;
-                const uz = local[2] / rz;
+                const uz = lz / rz;
                 const uy = ry > 0 ? dy / ry : 0;
                 const distance = Math.sqrt(ux * ux + uy * uy + uz * uz);
 
@@ -682,7 +700,7 @@ class PatchBase {
 
                 local[0] = sx;
                 local[1] = baseY + sy;
-                local[2] = sz;
+                local[2] = sz + cz;
 
                 applyMatrix(collider.matrix, local[0], local[1], local[2], world);
 
@@ -1844,7 +1862,8 @@ export const clearanceAt = (colliders, x, y, z) => {
         }
 
         const rx = section[0];
-        const rz = local[2] >= 0 ? section[1] : section[2];
+        const lz = local[2] - section[3];
+        const rz = lz >= 0 ? section[1] : section[2];
         let dy = 0;
         let ry = 0;
 
@@ -1857,7 +1876,7 @@ export const clearanceAt = (colliders, x, y, z) => {
         }
 
         const ux = local[0] / rx;
-        const uz = local[2] / rz;
+        const uz = lz / rz;
         const uy = ry > 0 ? dy / ry : 0;
         const reach = Math.sqrt((ux * ux) + (uy * uy) + (uz * uz));
 

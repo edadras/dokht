@@ -195,10 +195,11 @@ test('ترجمهٔ بدن به دستگاهِ حل‌کننده وارونه ن�
     assert.ok(table.level.neck < table.level.chin);
     assert.ok(table.level.chin < table.level.top);
 
-    // نیم‌رخ از پایین به بالا مرتب است و هر سطر پنج عدد دارد
+    // نیم‌رخ از پایین به بالا مرتب است و هر سطر شش عدد دارد (ششمی مرکزِ مقطع روی z؛ برای مانکنِ محاسباتی صفر)
     table.profile.forEach((row, i) => {
-        assert.equal(row.length, 5, 'هر سطرِ نیم‌رخ پنج عدد دارد');
-        assert.ok(row.slice(1).every((v) => v > 0), 'شعاع مثبت است');
+        assert.equal(row.length, 6, 'هر سطرِ نیم‌رخ شش عدد دارد');
+        assert.ok(row.slice(1, 5).every((v) => v > 0), 'شعاع مثبت است');
+        assert.equal(row[5], 0, 'مانکنِ محاسباتی مرکزِ مقطعش روی محور است');
 
         if (i > 0) {
             assert.ok(row[0] > table.profile[i - 1][0], 'نیم‌رخ باید صعودی باشد');

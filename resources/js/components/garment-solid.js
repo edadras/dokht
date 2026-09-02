@@ -507,19 +507,24 @@ export const bodyColliders = (Collider, body, table, grow = 1) => {
     at((table.hull || table.profile).filter(([y]) => y >= level.crotch - 1e-6), 'torso');
 
     const neck = table.radii.neck;
+    /*
+     * گردن و سر دورِ مرکزِ خودِ حلقهٔ گردن، نه دورِ محورِ تن: گردنِ آواتار
+     * چند سانتی‌متر پشتِ مرکزِ سینه است (ستونِ ششمِ نیم‌رخ؛ مانکنِ محاسباتی صفر).
+     */
+    const neckZ = sampleRing(body.torso, body.level.neck).z || 0;
 
     at([
-        [level.neck - 0.02, neck * 1.05, neck * 1.05],
-        [level.chin, neck * 0.92, neck * 0.92],
+        [level.neck - 0.02, neck * 1.05, neck * 1.05, neck * 1.05, neck * 1.05, neckZ / 100],
+        [level.chin, neck * 0.92, neck * 0.92, neck * 0.92, neck * 0.92, neckZ / 100],
     ], 'neck');
 
     const headR = body.head.radius / 100;
     const headY = (body.height - body.head.centre) / 100;
 
     at([
-        [headY - headR * 0.95, headR * 0.42, headR * 0.44],
-        [headY, headR * 0.9, headR * 0.95],
-        [headY + headR * 0.95, headR * 0.42, headR * 0.44],
+        [headY - headR * 0.95, headR * 0.42, headR * 0.44, headR * 0.44, headR * 0.44, neckZ / 100],
+        [headY, headR * 0.9, headR * 0.95, headR * 0.95, headR * 0.95, neckZ / 100],
+        [headY + headR * 0.95, headR * 0.42, headR * 0.44, headR * 0.44, headR * 0.44, neckZ / 100],
     ], 'head');
 
     /* دست و پا: زنجیرهٔ خودشان، از پایین به بالا */
@@ -1416,11 +1421,30 @@ export default (initial = {}) => ({
             return;
         }
 
+        const name = encodeURIComponent(wanted);
+        const pattern = (window.location.pathname.match(/\/patterns\/(\d+)/) || [])[1];
+
         try {
-            const response = await fetch(`/avatars/${encodeURIComponent(wanted)}/body.json`);
+            /*
+             * اول آواتارِ به‌اندازهٔ همین الگو (سرور آن را برای اندازه‌های مشتری
+             * می‌پزد و cache می‌کند)؛ اگر نبود، آواتارِ خام با اندازه‌های خودش.
+             */
+            if (pattern) {
+                const fitted = await fetch(`/avatars/${name}/fit/${pattern}`, { headers: { Accept: 'application/json' } });
+                const fit = fitted.ok ? await fitted.json() : null;
+
+                if (fit && fit.ok && fit.body && fit.body.torso) {
+                    shell.avatar = { ...fit.body, url: fit.url };
+
+                    return;
+                }
+            }
+
+            const response = await fetch(`/avatars/${name}/body.json`);
             const json = response.ok ? await response.json() : null;
 
-            shell.avatar = json ? { ...json, url: `/avatars/${encodeURIComponent(wanted)}/model.glb` } : false;
+            // posed.glb همان آواتار است با بازوی آویزان و پخته‌شده — همان تنی که body.json توصیف می‌کند
+            shell.avatar = json ? { ...json, url: `/avatars/${name}/posed.glb` } : false;
         } catch (error) {
             shell.avatar = false;
         }

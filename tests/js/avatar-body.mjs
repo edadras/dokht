@@ -333,11 +333,26 @@ const percentile = (list, share) => {
  * @param {{ world: Array, pose: object }} posed
  * @param {{ body: number, head: number }} meshes شمارهٔ مشِ بدن و سر
  */
-export const bodyFromAvatar = (glb, posed, meshes = null) => {
+export const groupOfBone = (name) => {
+    if (/^Left(Arm|ForeArm|Hand)/.test(name)) return 1;
+    if (/^Right(Arm|ForeArm|Hand)/.test(name)) return 2;
+    if (/^Left(UpLeg|Leg|Foot|Toe)/.test(name)) return 3;
+    if (/^Right(UpLeg|Leg|Foot|Toe)/.test(name)) return 4;
+    if (/^(Head|Neck)/.test(name)) return 5;
+
+    return 0;
+};
+
+export const bodyFromAvatar = (glb, posed, meshes = null, warp = null) => {
     const { json } = glb;
     const nodes = json.nodes;
     const byName = new Map(nodes.map((node, i) => [node.name, i]));
-    const joint = (name) => posed.world[byName.get(name)].t;
+    // مفصل‌ها هم با همان تغییرِ شکلِ رأس‌ها می‌روند
+    const joint = (name) => {
+        const t = posed.world[byName.get(name)].t;
+
+        return warp ? warp(t, groupOfBone(name)) : t;
+    };
 
     /*
      * پوستِ بدن = مشِ بدن + لباسِ زیرِ آواتار.
@@ -354,7 +369,24 @@ export const bodyFromAvatar = (glb, posed, meshes = null) => {
     const bodyMeshes = meshes?.body ?? [...named(/body/i), ...named(/outfit|cloth|top|bottom|footwear/i)];
     const headMeshes = meshes?.head ?? named(/head/i);
     const merge = (list) => {
-        const parts = list.map((index) => skinMesh(glb, index, posed.world));
+        const parts = list.map((index) => {
+            const part = skinMesh(glb, index, posed.world);
+
+            if (warp) {
+                for (let v = 0; v < part.count; v++) {
+                    const moved = warp(
+                        [part.positions[v * 3], part.positions[v * 3 + 1], part.positions[v * 3 + 2]],
+                        groupOfBone(nodes[part.dominant[v]].name),
+                    );
+
+                    part.positions[v * 3] = moved[0];
+                    part.positions[v * 3 + 1] = moved[1];
+                    part.positions[v * 3 + 2] = moved[2];
+                }
+            }
+
+            return part;
+        });
         const count = parts.reduce((sum, part) => sum + part.count, 0);
         const positions = new Float32Array(count * 3);
         const dominant = new Uint16Array(count);
@@ -374,15 +406,7 @@ export const bodyFromAvatar = (glb, posed, meshes = null) => {
 
     /* دسته‌بندیِ رأس‌ها از روی استخوانِ غالب */
     const kind = new Uint8Array(body.count); // 0 تنه، 1 بازوی چپ، 2 بازوی راست، 3 پای چپ، 4 پای راست، 5 سر/گردن
-    const groupOf = (name) => {
-        if (/^Left(Arm|ForeArm|Hand)/.test(name)) return 1;
-        if (/^Right(Arm|ForeArm|Hand)/.test(name)) return 2;
-        if (/^Left(UpLeg|Leg|Foot|Toe)/.test(name)) return 3;
-        if (/^Right(UpLeg|Leg|Foot|Toe)/.test(name)) return 4;
-        if (/^(Head|Neck)/.test(name)) return 5;
-
-        return 0;
-    };
+    const groupOf = groupOfBone;
 
     for (let v = 0; v < body.count; v++) {
         kind[v] = groupOf(nodes[body.dominant[v]].name);
@@ -414,7 +438,7 @@ export const bodyFromAvatar = (glb, posed, meshes = null) => {
      * عکس. پس برای هر نقطه نیم‌عمقی که بیضی از رویش رد شود حساب می‌شود:
      * f ≥ z / √(1 − (x/rx)²)، و بیشینه‌اش برداشته می‌شود.
      */
-    const slice = (y, groups, band = 0.012, reach = Math.abs(shoulderJoint[0]) + 0.01) => {
+    const slice = (y, groups, band = 0.012, reach = Math.abs(shoulderJoint[0]) + 0.01, keep = 0.97) => {
         const points = [];
         let rx = 0;
 
@@ -442,20 +466,43 @@ export const bodyFromAvatar = (glb, posed, meshes = null) => {
          * پهلو سقف دارد (۰٫۸) و به‌جای بیشینه، صدکِ ۹۷ گرفته می‌شود تا یکی‌دو
          * رأسِ پرت جلو و پشت را دو برابر نکنند.
          */
+        /*
+         * مقطع لزوماً دورِ z=۰ نیست (تنه در قابِ «بازو روی z=۰» چند سانتی‌متر
+         * جلوتر است). بیضی دورِ مرکزِ خودِ مقطع بسته می‌شود و بعد نیم‌عمق‌ها
+         * به z=۰ برگردانده می‌شوند: جلو = f′ + zc، پشت = b′ − zc. وگرنه نقطه‌های
+         * پهلو با z≈zc جلو را تا ۲۸ سانتی‌متر باد می‌کردند (اندازه‌گیری شد).
+         */
+        let zMax = -Infinity;
+        let zMin = Infinity;
+
+        for (const [, z] of points) {
+            zMax = Math.max(zMax, z);
+            zMin = Math.min(zMin, z);
+        }
+
+        const zc = (zMax + zMin) / 2;
         const fronts = [];
         const backs = [];
 
         for (const [x, z] of points) {
             const across = Math.min(0.8, Math.abs(x) / Math.max(1e-6, rx));
-            const need = Math.abs(z) / Math.sqrt(1 - across * across);
+            const need = Math.abs(z - zc) / Math.sqrt(1 - across * across);
 
-            (z >= 0 ? fronts : backs).push(need);
+            (z - zc >= 0 ? fronts : backs).push(need);
         }
 
+        /*
+         * ...و حالا مرکزِ مقطع خودش در حلقه می‌رود (`z`، سانتی‌متر، مثبت = جلو)
+         * و جلو/پشت نسبت به همان مرکزند. برخوردگر و چیدن (ستونِ ششمِ نیم‌رخ در
+         * drapeBody) دورِ همین مرکز می‌بندند؛ پیش از این نیم‌عمق‌ها به z=۰
+         * برگردانده می‌شد و گردن — که پنج سانتی‌متر پشتِ مرکزِ سینه است — جلویش
+         * دو سانتی‌متر و پشتش دوازده درمی‌آمد: یقه جلوی گردن می‌ایستاد.
+         */
         return {
             rx: rx * 100,
-            front: percentile(fronts, 0.97) * 100,
-            back: percentile(backs, 0.97) * 100,
+            front: Math.max(0.005, percentile(fronts, keep)) * 100,
+            back: Math.max(0.005, percentile(backs, keep)) * 100,
+            z: zc * 100,
             count: points.length,
         };
     };
@@ -535,15 +582,25 @@ export const bodyFromAvatar = (glb, posed, meshes = null) => {
             sectors[sector] = Math.max(sectors[sector], radial);
         }
 
-        const filled = sectors.filter((r) => r > 0);
+        /*
+         * میانگینِ نیمهٔ بزرگ‌ترِ گوه‌ها، نه میانگینِ همه.
+         *
+         * میانگینِ هشت گوه، بازو را لاغرتر از پوستش می‌داد: اندازه گرفته شد،
+         * پوستِ آواتار در ترازِ بازو تا ۲٫۲ سانتی‌متر بیرونِ برخوردگر می‌ماند و
+         * آستینِ تیشرتِ آواتار از میانِ آستینِ پیراهن پیدا بود. با نیمهٔ
+         * بزرگ‌تر، دایرهٔ برخوردگر مقطعِ تخمِ‌مرغیِ بازو را می‌پوشاند و برآمدگیِ
+         * یک‌گوه‌ایِ آرنج همچنان آن را باد نمی‌کند.
+         */
+        const filled = sectors.filter((r) => r > 0).sort((a, b) => b - a);
+        const top = filled.slice(0, Math.max(1, Math.ceil(filled.length / 2)));
 
-        return filled.length ? (filled.reduce((a, b) => a + b, 0) / filled.length) * 100 : 0;
+        return top.length ? (top.reduce((a, b) => a + b, 0) / top.length) * 100 : 0;
     };
     /* حلقه‌های تنه، از گردن تا فاق */
     const torsoRing = (y) => {
-        const s = slice(y, [0, 5], 0.015) || slice(y, [0, 5], 0.03) || { rx: 5, front: 5, back: 5 };
+        const s = slice(y, [0, 5], 0.015) || slice(y, [0, 5], 0.03) || { rx: 5, front: 5, back: 5, z: 0 };
 
-        return { y: down(y), rx: s.rx, front: s.front, back: s.back };
+        return { y: down(y), rx: s.rx, front: s.front, back: s.back, z: s.z || 0 };
     };
     /*
      * حلقهٔ سرشانه پوستِ خودِ شانه است، تا سرِ دلتوئید.
@@ -554,11 +611,21 @@ export const bodyFromAvatar = (glb, posed, meshes = null) => {
      */
     const shoulderRingAt = (y) => {
         const wide = Math.abs(shoulderJoint[0]) + 0.08;
-        const s = slice(y, [0, 1, 2, 5], 0.02, wide) || slice(y, [0, 1, 2, 5], 0.04, wide) || { rx: 5, front: 5, back: 5 };
+        // سرِ تنه است؛ همهٔ پوستِ شانه را می‌پوشاند (صدکِ صد)، وگرنه پشتِ شانه از زیرِ سرآستین پیدا می‌ماند
+        const s = slice(y, [0, 1, 2, 5], 0.02, wide, 1) || slice(y, [0, 1, 2, 5], 0.04, wide, 1) || { rx: 5, front: 5, back: 5, z: 0 };
 
-        return { y: down(y), rx: s.rx, front: s.front, back: s.back };
+        return { y: down(y), rx: s.rx, front: s.front, back: s.back, z: s.z || 0 };
     };
-    const neckRing = torsoRing(levelY.neck);
+    /*
+     * حلقهٔ گردن از پوستِ خودِ گردن (مشِ سر)، نه از برشِ تنه در آن تراز.
+     *
+     * در ترازِ گردن، برشِ تنه ذوزنقه و ترقوه را هم می‌گیرد و دورِ «گردن» ۴۳
+     * تا ۴۹ سانتی‌متر درمی‌آید؛ شعاعِ گردنِ برخوردگر و جای یقه از همین حلقه
+     * می‌آید و یقه دورتر از گردن چیده می‌شد. فقط رأس‌های گردن/سر، تا ۸ سانتی‌متر
+     * از محور.
+     */
+    const neckOnly = slice(levelY.neck, [5], 0.015, 0.08) || slice(levelY.neck, [5], 0.03, 0.08);
+    const neckRing = neckOnly && neckOnly.rx > 3 ? { y: down(levelY.neck), rx: neckOnly.rx, front: neckOnly.front, back: neckOnly.back, z: neckOnly.z || 0 } : torsoRing(levelY.neck);
     /*
      * ترازِ «سرشانه» به قراردادِ armJoint(): مفصلِ بازو نیم‌شعاع زیرِ آن است،
      * پس خطِ سرشانه نیم‌شعاعِ سرِ بازو بالاتر از مفصلِ خودِ آواتار می‌نشیند و
@@ -646,6 +713,7 @@ export const bodyFromAvatar = (glb, posed, meshes = null) => {
         rx: Math.abs(shoulderJoint[0]) * 100 + ball * 0.35,
         front: torso[4].front,
         back: torso[4].back,
+        z: torso[4].z || 0,
     };
 
     torso[4] = shoulderRing;
@@ -727,8 +795,8 @@ export const clearingTilt = (body, floor = ARM_TILT) => {
     return Math.min(tilt, 0.5);
 };
 
-if (process.argv[1] && process.argv[1].endsWith('avatar-body.mjs')) {
-    const glb = readGlb(process.argv[2]);
+/** بدنِ آماده از یک GLB: ژست، (اختیاری) اندازه کردن به تنِ مشتری، برش. */
+export const prepareAvatar = (glb, want = null) => {
     let posed = poseArms(glb.json);
     let body = bodyFromAvatar(glb, posed);
     const tilt = clearingTilt(body);
@@ -739,21 +807,495 @@ if (process.argv[1] && process.argv[1].endsWith('avatar-body.mjs')) {
     }
 
     body.armTilt = tilt;
+
+    /*
+     * محورِ بازو روی z=۰ می‌نشیند — قراردادِ موتور.
+     *
+     * شانهٔ آواتار ۴٫۶ سانتی‌متر عقب‌ترِ مرکزِ تنه است (طبیعی است، ولی موتور
+     * حلقهٔ آستین را در z=۰ می‌بندد). با «عمقِ بازو» در جدول، آستینِ دوتکهٔ
+     * کت رسمی به هم می‌ریخت: کپ به حلقه‌ای دوخته می‌شد که ۴٫۶ سانتی‌متر جلوتر
+     * از بازو بود و پنلِ زیر تا کنارِ تنه فرو می‌رفت (پوشش ۱۶۵°، بازوی لخت
+     * ۷۱ از ۲۸۸؛ با armZ=۰ همان لباس ۳۴۵° و صفر). پس به‌جای عمق دادن به
+     * موتور، خودِ تن جابه‌جا می‌شود: کلِ مش و مفصل‌ها آن‌قدر جلو می‌آیند که بازو
+     * روی z=۰ بیفتد؛ تنه با جلو/پشتِ جدای هر حلقه همچنان درست توصیف می‌شود.
+     */
+    const byName = new Map(glb.json.nodes.map((node, i) => [node.name, i]));
+    const at = (name) => posed.world[byName.get(name)].t;
+    /*
+     * ...ولی نه با جابه‌جاییِ کلِ تن: تنه سرِ مرکزِ خودش می‌ماند و *بازو* جلو
+     * می‌آید. کلِ تن که عقب برود، تنه ۴٫۶ سانتی‌متر جلوتر از استوانهٔ چیدن
+     * می‌افتد و پنلِ جلو درونِ سینه چیده می‌شود (کت رسمی ۹۰°، بازوی لخت ۹۰).
+     * پس مرکزِ مقطعِ تنه در ترازِ سینه صفر می‌شود و بازوها (رأس‌ها و مفصل‌ها)
+     * آن‌قدر جلو می‌آیند که محورشان روی z=۰ بیفتد — چند سانتی‌متر آزادیِ
+     * آناتومیک، همان‌طور که مانکنِ محاسباتی بازو را در میانهٔ عمقِ تنه آویزان
+     * می‌کند. جابه‌جایی از سرِ شانه تا ده سانتی‌متر زیرِ مفصل نرم می‌شود تا مش
+     * پاره نشود.
+     */
+    const chestY = at('Spine2')[1];
+    const torsoMeshes = glb.json.nodes.filter((n) => n.mesh !== undefined && /body|outfit/i.test(n.name)).map((n) => n.mesh);
+    let zMax = -Infinity;
+    let zMin = Infinity;
+
+    for (const index of torsoMeshes) {
+        const part = skinMesh(glb, index, posed.world);
+
+        for (let v = 0; v < part.count; v++) {
+            if (Math.abs(part.positions[v * 3 + 1] - chestY) > 0.02 || Math.abs(part.positions[v * 3]) > 0.10) {
+                continue;
+            }
+
+            if (groupOfBone(glb.json.nodes[part.dominant[v]].name) !== 0) {
+                continue;
+            }
+
+            zMax = Math.max(zMax, part.positions[v * 3 + 2]);
+            zMin = Math.min(zMin, part.positions[v * 3 + 2]);
+        }
+    }
+
+    const torsoZ = Number.isFinite(zMax) ? (zMax + zMin) / 2 : 0;
+    const armZ = (at('LeftArm')[2] + at('LeftHand')[2]) / 2;
+    const jointY = at('LeftArm')[1];
+    const armForward = torsoZ - armZ;
+    const centre = (p, kind) => {
+        const z = p[2] - torsoZ;
+
+        if (kind === 1 || kind === 2) {
+            const blend = Math.min(1, Math.max(0, (jointY + 0.02 - p[1]) / 0.12));
+
+            return [p[0], p[1], z + armForward * blend];
+        }
+
+        return [p[0], p[1], z];
+    };
+    let warp = centre;
+
+    if (want && Object.keys(want).length) {
+        const frame = { jointX: Math.abs(at('LeftArm')[0]), jointY: at('LeftArm')[1], jointZ: at('LeftArm')[2], legX: Math.abs(at('LeftUpLeg')[0]) };
+        const fit = warpFor(body, want, frame);
+
+        warp = (p, kind) => centre(fit(p, kind), kind);
+    }
+
+    body = bodyFromAvatar(glb, posed, null, warp);
+    body.armTilt = tilt;
+
+    /*
+     * گذرِ دوم: حلقه‌ها *دقیقاً* به اندازهٔ مشتری.
+     *
+     * نسبتِ گذرِ اول از حلقه‌های تنِ خام می‌آید و بیضیِ دربرگیرنده خطی نیست:
+     * اندازه گرفته شد، پس از یک گذر دورِ سینه ۹۵٫۸ بود به‌جای ۹۲، کمر ۷۸٫۸
+     * به‌جای ۷۴، بازو ۳۱٫۲ به‌جای ۲۸٫۵ — یعنی لباسی که برای ۹۲ بریده شده روی
+     * تنی ۹۶ می‌نشست و روی سینه کش می‌آمد. تنِ گذرِ اول دوباره اندازه می‌شود و
+     * نسبتِ باقی‌مانده روی همان تن می‌رود؛ حاشیهٔ پوستِ تنه (TORSO_MARGIN، در
+     * خروجی اضافه می‌شود) از هدفِ دورهای تنه کم می‌شود تا حلقهٔ نهایی همان
+     * عددِ متر باشد.
+     */
+    if (want && Object.keys(want).length) {
+        const jointA = warp(at('LeftArm'), 1);
+        const handA = warp(at('LeftHand'), 1);
+        const frameB = { jointX: Math.abs(jointA[0]), jointY: jointA[1], jointZ: jointA[2], legX: Math.abs(warp(at('LeftUpLeg'), 3)[0]) };
+        const wantB = { ...want };
+        const slack = 2 * Math.PI * TORSO_MARGIN;
+
+        for (const key of ['bust', 'under_bust', 'waist', 'high_hip', 'hip']) {
+            if (typeof wantB[key] === 'number') {
+                wantB[key] = Math.max(1, wantB[key] - slack);
+            }
+        }
+
+        for (const key of ['bicep', 'elbow', 'wrist']) {
+            if (typeof wantB[key] === 'number') {
+                wantB[key] = Math.max(1, wantB[key] - 2 * Math.PI * ARM_MARGIN);
+            }
+        }
+
+        // محورِ بازو در گذرِ اول: همان محوری که مش با آن پیچیده شده
+        const axisA = normalize([handA[0] - jointA[0], handA[1] - jointA[1], handA[2] - jointA[2]]);
+        const tiltA = Math.atan2(Math.abs(axisA[0]), Math.abs(axisA[1]));
+        const first = warp;
+        const fitB = warpFor({ ...body, armTilt: tiltA }, wantB, frameB);
+
+        warp = (p, kind) => fitB(first(p, kind), kind);
+        body = bodyFromAvatar(glb, posed, null, warp);
+        body.armTilt = tilt;
+    }
+
+    return { posed, body, warp };
+};
+
+/**
+ * حاشیهٔ پوست روی حلقه‌های تنه (سانتی‌متر شعاع).
+ *
+ * بیضی هرگز مقطعِ واقعی را دقیق نمی‌پوشاند و سنجش نشان داد پوستِ آواتار تا
+ * ۱٫۶ سانتی‌متر بیرونِ برخوردگر می‌ماند (پهلوی سینه) — لکه‌های سفیدِ زیرِ پارچه.
+ * چهار میلی‌متر برای همهٔ حلقه‌های تنه؛ گذرِ دومِ اندازه کردن همین را از هدف
+ * کم می‌کند تا دورِ نهایی همان عددِ مشتری بماند.
+ */
+export const TORSO_MARGIN = 0.4;
+
+/** همان حاشیه روی حلقه‌های بازو (سانتی‌متر شعاع)؛ مقطعِ بازو دایره نیست و پوستش از دایره بیرون می‌زد */
+export const ARM_MARGIN = 0.3;
+
+
+/* ---------------------------------------------------------------------------
+ * اندازه کردنِ آواتار به تنِ مشتری
+ * ---------------------------------------------------------------------------
+ * آواتار یک تن است با اندازه‌های خودش؛ مشتری تنِ دیگری دارد. لباس باید روی تنِ
+ * مشتری دوخته شود، پس آواتار به همان اندازه‌ها درمی‌آید: قد با مقیاسِ عمودی،
+ * دورها با مقیاسِ شعاعی دورِ محورِ همان اندام (تنه، بازو، پا) که میانِ ترازهای
+ * اندازه‌گیری خطی می‌رود، پهنای سرشانه با جابه‌جاییِ مفصلِ بازو. هر رأس و هر
+ * مفصل با همین تابع می‌رود، پس مشِ پخته‌شده و حلقه‌های حل‌کننده یک تن‌اند.
+ */
+
+const girthOfRing = (ring) => {
+    const a = ring.rx;
+    const c = (ring.front + ring.back) / 2;
+
+    return Math.PI * (3 * (a + c) - Math.sqrt((3 * a + c) * (a + 3 * c)));
+};
+
+/** اندازه‌های یک بدن (سانتی‌متر)، همان کلیدهایی که buildBody می‌خواند. */
+export const measurementsOf = (body) => {
+    const at = (y) => body.torso.reduce((best, r) => (Math.abs(r.y - y) < Math.abs(best.y - y) ? r : best), body.torso[0]);
+    const level = body.level;
+
+    return {
+        height: body.height,
+        bust: girthOfRing(at(level.bust)),
+        under_bust: girthOfRing(at(level.underBust)),
+        waist: girthOfRing(at(level.waist)),
+        high_hip: girthOfRing(at(level.highHip)),
+        hip: girthOfRing(at(level.hip)),
+        neck: girthOfRing(at(level.neck)),
+        shoulder_width: body.shoulderHalf * 2,
+        arm_length: body.armLength,
+        bicep: 2 * Math.PI * body.arm[1].r,
+        elbow: 2 * Math.PI * body.arm[2].r,
+        wrist: 2 * Math.PI * body.arm[5].r,
+        thigh: 2 * Math.PI * body.leg[0].r,
+        knee: 2 * Math.PI * body.leg[2].r,
+        ankle: 2 * Math.PI * body.leg[5].r,
+        back_length: level.waist - level.neck,
+        waist_to_hip: level.hip - level.waist,
+        inseam: level.ankle - level.crotch,
+    };
+};
+
+/**
+ * تابعِ تغییرِ شکل: از تنِ فعلی به اندازه‌های خواسته‌شده.
+ *
+ * @param {object} body تنِ فعلی (خروجیِ bodyFromAvatar)
+ * @param {object} want اندازه‌های مشتری (سانتی‌متر)؛ هرچه نباشد، همان می‌ماند
+ * @param {{ jointX: number, jointY: number, legX: number }} frame جای مفصل‌ها (متر، دستگاهِ جهانی)
+ * @returns {(p: number[], kind: number) => number[]} نقطه (متر) و گروهِ اندام → نقطهٔ تازه
+ */
+export const warpFor = (body, want, frame) => {
+    const have = measurementsOf(body);
+    const ratio = (key) => (typeof want[key] === 'number' && have[key] > 1 ? want[key] / have[key] : 1);
+    const H = body.height / 100;
+    const sy = ratio('height');
+    const up = (yDown) => H - yDown / 100; // تراز (سانتی‌متر رو به پایین) → متر از زمین
+
+    /* مقیاسِ شعاعیِ تنه، خطی میانِ ترازها */
+    const levels = [
+        [up(body.level.crotch), ratio('hip')],
+        [up(body.level.hip), ratio('hip')],
+        [up(body.level.highHip), ratio('high_hip')],
+        [up(body.level.waist), ratio('waist')],
+        [up(body.level.underBust), ratio('under_bust')],
+        [up(body.level.bust), ratio('bust')],
+        [up(body.level.shoulder) - 0.03, ratio('bust')],
+        /*
+         * گردن مقیاس نمی‌شود: حلقهٔ «گردن»ِ برش‌خورده ذوزنقه/ترقوه را هم دارد
+         * (دورش ۴۹ درمی‌آید در حالی که گردنِ مشتری ۳۶ است) و مقیاس‌کردنش با
+         * آن نسبت، سرشانه را ۲۷٪ می‌فشرد. گردن و سر با قد می‌روند و بس.
+         */
+        [up(body.level.neck), 1],
+    ].sort((a, b) => a[0] - b[0]);
+    const torsoScale = (y) => {
+        if (y <= levels[0][0]) return levels[0][1];
+        if (y >= levels[levels.length - 1][0]) return levels[levels.length - 1][1];
+
+        for (let i = 1; i < levels.length; i++) {
+            if (y <= levels[i][0]) {
+                const t = (y - levels[i - 1][0]) / Math.max(1e-6, levels[i][0] - levels[i - 1][0]);
+
+                return levels[i - 1][1] + (levels[i][1] - levels[i - 1][1]) * t;
+            }
+        }
+
+        return 1;
+    };
+
+    /* سرشانه: نوکِ شانه به نیم‌پهنای خواسته‌شده می‌رسد؛ اثرش دورِ ترازِ سرشانه */
+    const shoulderRatio = ratio('shoulder_width');
+    const shoulderY = up(body.level.shoulder);
+    const shoulderBlend = (y) => Math.max(0, 1 - Math.abs(y - shoulderY) / 0.12);
+
+    /* بازو: شعاع خطی میانِ بازو/آرنج/مچ، طول با arm_length */
+    const armLen = ratio('arm_length');
+    /*
+     * ایستگاه‌ها روی خودِ حلقه‌های اندازه‌گیری (۰٫۱۶ بازو، ۰٫۴۶ آرنج، ۱ مچ؛
+     * ببینید سهم‌های `arm` در bodyFromAvatar). پیش از این ایستگاهِ بازو روی
+     * صفر بود و حلقهٔ بازو (۰٫۱۶) آمیزه‌ای از نسبتِ بازو و آرنج می‌گرفت —
+     * گذرِ دوم به‌جای همگرا شدن، آرنج را ۲۲ به‌جای ۲۵٫۸ می‌داد.
+     */
+    const armScale = (t) => {
+        const stops = [[0.16, ratio('bicep')], [0.46, ratio('elbow')], [1, ratio('wrist')]];
+
+        if (t <= stops[0][0]) return stops[0][1];
+        if (t >= 1) return stops[2][1];
+
+        const [a, b] = t < 0.46 ? [stops[0], stops[1]] : [stops[1], stops[2]];
+
+        return a[1] + (b[1] - a[1]) * ((t - a[0]) / (b[0] - a[0]));
+    };
+    const tilt = body.armTilt ?? ARM_TILT;
+    const armAxis = [Math.sin(tilt), -Math.cos(tilt), 0];
+    const jointDx = (want.shoulder_width ? (want.shoulder_width / 2 - 0.35 * body.arm[0].r * ratio('bicep')) / 100 : frame.jointX) - frame.jointX;
+
+    /* پا: شعاع خطی میانِ ران/زانو/مچ */
+    const legScale = (t) => {
+        const stops = [[0, ratio('thigh')], [0.5, ratio('knee')], [1, ratio('ankle')]];
+
+        if (t <= 0) return stops[0][1];
+        if (t >= 1) return stops[2][1];
+
+        const [a, b] = t < 0.5 ? [stops[0], stops[1]] : [stops[1], stops[2]];
+
+        return a[1] + (b[1] - a[1]) * ((t - a[0]) / (b[0] - a[0]));
+    };
+    const crotchY = up(body.level.crotch);
+    const ankleY = up(body.level.ankle);
+
+    return (p, kind) => {
+        const [x, y, z] = p;
+
+        if (kind === 1 || kind === 2) {
+            const side = kind === 1 ? 1 : -1;
+            const ox = side * frame.jointX;
+            const d = [x - ox, y - frame.jointY, z - frame.jointZ];
+            const along = d[0] * side * armAxis[0] + d[1] * armAxis[1] + d[2] * armAxis[2];
+            const t = Math.max(0, along) / Math.max(1e-6, body.armLength / 100);
+            const r = [d[0] - side * armAxis[0] * along, d[1] - armAxis[1] * along, d[2] - armAxis[2] * along];
+            const rs = armScale(Math.min(1, t));
+            const a2 = along * armLen;
+            const nx = ox + side * jointDx + side * armAxis[0] * a2 + r[0] * rs;
+            const ny = frame.jointY + armAxis[1] * a2 + r[1] * rs;
+            const nz = frame.jointZ + armAxis[2] * a2 + r[2] * rs;
+
+            // قد: مفصل با تنه بالا/پایین می‌رود
+            return [nx, ny + (frame.jointY * sy - frame.jointY), nz];
+        }
+
+        if (kind === 3 || kind === 4) {
+            const side = kind === 3 ? 1 : -1;
+            const cx = side * frame.legX;
+            const t = Math.min(1, Math.max(0, (crotchY - y) / Math.max(1e-6, crotchY - ankleY)));
+            const s = legScale(t);
+
+            return [cx + (x - cx) * s, y * sy, z * s];
+        }
+
+        // تنه و سر
+        const s = y > up(body.level.neck) + 0.02 ? 1 : torsoScale(y);
+        const sh = 1 + (shoulderRatio - 1) * shoulderBlend(y);
+
+        return [x * s * sh, y * sy, z * s];
+    };
+};
+
+/* ---------------------------------------------------------------------------
+ * پختنِ GLB: مشِ ژست‌گرفته و اندازه‌شده، بی‌اسکلت، با همان بافت‌ها
+ * ---------------------------------------------------------------------------
+ * مرورگر همین را می‌کشد؛ چون همان تابعِ تغییرِ شکل روی رأس‌ها و مفصل‌ها
+ * رفته، چیزی که دیده می‌شود دقیقاً همان است که پارچه به آن می‌خورد.
+ */
+import { writeFileSync } from 'node:fs';
+
+export const bakeGlb = (glb, posed, warp, outFile) => {
+    const { json, bin, accessor } = glb;
+    const nodes = json.nodes;
+    const chunks = [];
+    let offset = 0;
+    const bufferViews = [];
+    const accessors = [];
+    const push = (bytes, target = null) => {
+        const pad = (4 - (bytes.byteLength % 4)) % 4;
+        const view = { buffer: 0, byteOffset: offset, byteLength: bytes.byteLength };
+
+        if (target) {
+            view.target = target;
+        }
+
+        chunks.push(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+
+        if (pad) {
+            chunks.push(Buffer.alloc(pad));
+        }
+
+        offset += bytes.byteLength + pad;
+        bufferViews.push(view);
+
+        return bufferViews.length - 1;
+    };
+
+    /* تصاویر: همان بایت‌ها، در بافرِ تازه */
+    const images = (json.images || []).map((image) => {
+        const bv = json.bufferViews[image.bufferView];
+        const bytes = new Uint8Array(bin.buffer, bin.byteOffset + (bv.byteOffset || 0), bv.byteLength);
+
+        return { ...image, bufferView: push(bytes) };
+    });
+
+    const outNodes = [];
+    const outMeshes = [];
+
+    for (const node of nodes) {
+        if (node.mesh === undefined) {
+            continue;
+        }
+
+        const part = skinMesh(glb, node.mesh, posed.world);
+        const positions = new Float32Array(part.count * 3);
+
+        for (let v = 0; v < part.count; v++) {
+            let p = [part.positions[v * 3], part.positions[v * 3 + 1], part.positions[v * 3 + 2]];
+
+            if (warp) {
+                p = warp(p, groupOfBone(nodes[part.dominant[v]].name));
+            }
+
+            positions[v * 3] = p[0];
+            positions[v * 3 + 1] = p[1];
+            positions[v * 3 + 2] = p[2];
+        }
+
+        /* نرمال‌ها از خودِ مثلث‌ها */
+        const normals = new Float32Array(part.count * 3);
+        const idx = part.indices;
+
+        for (let t = 0; t < idx.length; t += 3) {
+            const a = idx[t] * 3;
+            const b = idx[t + 1] * 3;
+            const c = idx[t + 2] * 3;
+            const ux = positions[b] - positions[a];
+            const uy = positions[b + 1] - positions[a + 1];
+            const uz = positions[b + 2] - positions[a + 2];
+            const vx = positions[c] - positions[a];
+            const vy = positions[c + 1] - positions[a + 1];
+            const vz = positions[c + 2] - positions[a + 2];
+            const nx = uy * vz - uz * vy;
+            const ny = uz * vx - ux * vz;
+            const nz = ux * vy - uy * vx;
+
+            for (const i of [a, b, c]) {
+                normals[i] += nx;
+                normals[i + 1] += ny;
+                normals[i + 2] += nz;
+            }
+        }
+
+        for (let v = 0; v < part.count; v++) {
+            const l = Math.hypot(normals[v * 3], normals[v * 3 + 1], normals[v * 3 + 2]) || 1;
+
+            normals[v * 3] /= l;
+            normals[v * 3 + 1] /= l;
+            normals[v * 3 + 2] /= l;
+        }
+
+        const prim = json.meshes[node.mesh].primitives[0];
+        const uv = prim.attributes.TEXCOORD_0 !== undefined ? accessor(prim.attributes.TEXCOORD_0).data : null;
+        let min = [Infinity, Infinity, Infinity];
+        let max = [-Infinity, -Infinity, -Infinity];
+
+        for (let v = 0; v < part.count; v++) {
+            for (let k = 0; k < 3; k++) {
+                min[k] = Math.min(min[k], positions[v * 3 + k]);
+                max[k] = Math.max(max[k], positions[v * 3 + k]);
+            }
+        }
+
+        const attributes = {};
+
+        accessors.push({ bufferView: push(positions, 34962), componentType: 5126, count: part.count, type: 'VEC3', min, max });
+        attributes.POSITION = accessors.length - 1;
+        accessors.push({ bufferView: push(normals, 34962), componentType: 5126, count: part.count, type: 'VEC3' });
+        attributes.NORMAL = accessors.length - 1;
+
+        if (uv) {
+            accessors.push({ bufferView: push(new Float32Array(uv), 34962), componentType: 5126, count: part.count, type: 'VEC2' });
+            attributes.TEXCOORD_0 = accessors.length - 1;
+        }
+
+        const indices = new Uint32Array(idx);
+
+        accessors.push({ bufferView: push(indices, 34963), componentType: 5125, count: indices.length, type: 'SCALAR' });
+
+        outMeshes.push({ name: node.name, primitives: [{ attributes, indices: accessors.length - 1, material: prim.material, mode: 4 }] });
+        outNodes.push({ name: node.name, mesh: outMeshes.length - 1 });
+    }
+
+    const out = {
+        asset: { version: '2.0', generator: 'dokht avatar-body' },
+        scene: 0,
+        scenes: [{ nodes: outNodes.map((_, i) => i) }],
+        nodes: outNodes,
+        meshes: outMeshes,
+        materials: json.materials || [],
+        textures: json.textures || [],
+        images,
+        samplers: json.samplers || [],
+        accessors,
+        bufferViews,
+        buffers: [{ byteLength: offset }],
+    };
+
+    const jsonBytes = Buffer.from(JSON.stringify(out), 'utf8');
+    const jsonPad = (4 - (jsonBytes.length % 4)) % 4;
+    const binBytes = Buffer.concat(chunks);
+    const total = 12 + 8 + jsonBytes.length + jsonPad + 8 + binBytes.length;
+    const header = Buffer.alloc(12 + 8);
+
+    header.writeUInt32LE(0x46546C67, 0);
+    header.writeUInt32LE(2, 4);
+    header.writeUInt32LE(total, 8);
+    header.writeUInt32LE(jsonBytes.length + jsonPad, 12);
+    header.writeUInt32LE(0x4E4F534A, 16);
+
+    const binHeader = Buffer.alloc(8);
+
+    binHeader.writeUInt32LE(binBytes.length, 0);
+    binHeader.writeUInt32LE(0x004E4942, 4);
+
+    writeFileSync(outFile, Buffer.concat([header, jsonBytes, Buffer.alloc(jsonPad, 0x20), binHeader, binBytes]));
+};
+
+if (process.argv[1] && process.argv[1].endsWith('avatar-body.mjs')) {
+    const glb = readGlb(process.argv[2]);
+    const args = process.argv.slice(3);
+    const bakeAt = args.includes('--bake') ? args[args.indexOf('--bake') + 1] : null;
+    const wantFile = args.find((a) => a.endsWith('.json'));
+    const want = wantFile ? JSON.parse(readFileSync(wantFile, 'utf8')) : null;
+    const { posed, body, warp } = prepareAvatar(glb, want);
+
+    if (bakeAt) {
+        bakeGlb(glb, posed, warp, bakeAt);
+    }
+
     // گودیِ زیربغلِ برخوردگر بیش از این زیرِ پوستِ آواتار نرود؛ ببینید drapeBody
     body.carveCap = 0.5;
 
-    /*
-     * یک سانتی‌متر پوستِ اضافه روی تنه.
-     *
-     * بیضی هرگز مقطعِ واقعی را دقیق نمی‌پوشاند و سنجش نشان داد پوستِ آواتار
-     * تا ۱٫۶ سانتی‌متر بیرونِ برخوردگر می‌ماند (پهلوی سینه، x=۱۳) — همان
-     * لکه‌های سفیدِ زیرِ پارچه. پارچهٔ واقعی هم روی پوست می‌نشیند نه درونش؛
-     * یک سانتی‌متر برای همهٔ حلقه‌های تنه، بهای ناچیزی برای پوستی که بیرون نزند.
-     */
+    // حاشیهٔ پوست روی تنه؛ گذرِ دومِ اندازه کردن همین را از هدف کم کرده است
     for (const ring of body.torso) {
-        ring.rx += 1;
-        ring.front += 1;
-        ring.back += 1;
+        ring.rx += TORSO_MARGIN;
+        ring.front += TORSO_MARGIN;
+        ring.back += TORSO_MARGIN;
+    }
+
+    for (const ring of body.arm) {
+        ring.r += ARM_MARGIN;
     }
     process.stdout.write(JSON.stringify(body));
 }

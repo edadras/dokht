@@ -300,6 +300,8 @@ export const sampleRing = (rings, y) => {
                 rx: lerp(rings[i - 1].rx, rings[i].rx, t),
                 front: lerp(rings[i - 1].front, rings[i].front, t),
                 back: lerp(rings[i - 1].back, rings[i].back, t),
+                // مرکزِ مقطع روی z (آواتار)؛ مانکنِ محاسباتی ندارد و صفر می‌ماند
+                z: lerp(rings[i - 1].z || 0, rings[i].z || 0, t),
             };
         }
     }
@@ -364,8 +366,8 @@ export const drapeBody = (body) => {
      * باسن از زیرِ پارچه پیدا باشند.
      */
     const profile = [
-        [at(level.ankle), legOut + ankleR * 1.25, ankleR * 1.6, ankleR * 1.6, ankleR * 1.6],
-        [at(knee), body.leg[2].x / 100 + kneeR, kneeR * 1.6, kneeR * 1.6, kneeR * 1.6],
+        [at(level.ankle), legOut + ankleR * 1.25, ankleR * 1.6, ankleR * 1.6, ankleR * 1.6, 0],
+        [at(knee), body.leg[2].x / 100 + kneeR, kneeR * 1.6, kneeR * 1.6, kneeR * 1.6, 0],
     ];
 
     /*
@@ -426,9 +428,17 @@ export const drapeBody = (body) => {
          */
         const carve = Math.min(body.carveCap ?? Infinity, ring.rx - Math.min(ring.rx, ribs));
         const skin = (ring.rx - carve * near) / 100;
+        /*
+         * ستونِ ششم: مرکزِ مقطع روی z (متر، مثبت = جلو).
+         *
+         * حلقه‌های مانکنِ محاسباتی همه دورِ یک محورند و این ستون صفر است؛ حلقه‌های
+         * آواتار مرکزِ خودشان را دارند (گردن پشتِ سینه، باسن پشتِ کمر) و
+         * برخوردگر و چیدن هر دو همان را می‌خوانند.
+         */
+        const cz = (ring.z || 0) / 100;
 
-        profile.push([at(ring.y), rx, mean, ring.front / 100, ring.back / 100]);
-        hull.push([at(ring.y), skin, mean, ring.front / 100, ring.back / 100]);
+        profile.push([at(ring.y), rx, mean, ring.front / 100, ring.back / 100, cz]);
+        hull.push([at(ring.y), skin, mean, ring.front / 100, ring.back / 100, cz]);
     }
 
     /* دست: صفر روی مفصل، منفی رو به پایین */
