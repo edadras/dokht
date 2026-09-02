@@ -1731,7 +1731,9 @@ export default (initial = {}) => ({
                     }
                 });
 
-                root.position.y = -avatar.height * CM;
+                // posed.glb از قبل با کف روی y=0 و سر روی قد واقعی ذخیره شده است.
+                // کم‌کردن دوبارهٔ قد، آواتار را یک قد کامل زیر لباس می‌برد.
+                root.position.y = 0;
                 group.add(root);
                 ctx.avatar = root;
                 window.__dokhtAvatar = root;
