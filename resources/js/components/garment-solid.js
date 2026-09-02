@@ -569,7 +569,7 @@ export const bodyColliders = (Collider, body, table, grow = 1) => {
                 [ball * 0.85, ball * 0.55, ball * 0.55],
             ],
             name,
-            [side * table.armOffset, table.armTop, 0],
+            [side * table.armOffset, table.armTop, table.armDepth || 0],
             side * table.armTilt,
             false,
             { capMax: false },
@@ -1193,6 +1193,7 @@ export default (initial = {}) => ({
 
         try {
             THREE ??= await import('three');
+            await this.loadAvatar();
             this.build();
             this.ready = true;
         } catch (error) {
@@ -1400,11 +1401,46 @@ export default (initial = {}) => ({
         this.sewing = false;
     },
 
+    /**
+     * حلقه‌های بدنِ آواتار، پیش از ساختنِ صحنه.
+     *
+     * باید *پیش از* build و sew برسد: دوخت از ctx.body می‌خواند و اگر آواتار
+     * دیر برسد، لباس روی مانکنِ محاسباتی دوخته می‌شود و آواتار زیرش کشیده —
+     * یک بار همین شد و نمای چرخشی به‌جای پارچهٔ دوخته دیده شد.
+     */
+    async loadAvatar() {
+        const shell = this.payload;
+        const wanted = new URLSearchParams(window.location.search).get('avatar');
+
+        if (! wanted || shell.avatar !== undefined) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/avatars/${encodeURIComponent(wanted)}/body.json`);
+            const json = response.ok ? await response.json() : null;
+
+            shell.avatar = json ? { ...json, url: `/avatars/${encodeURIComponent(wanted)}/model.glb` } : false;
+        } catch (error) {
+            shell.avatar = false;
+        }
+    },
+
     build() {
         const ctx = contextFor(this.$root);
         const canvas = this.$refs.canvas;
         const shell = this.payload;
-        const body = buildBody(shell.measurements || {});
+
+        /*
+         * مانکن از آواتارِ GLB، اگر خواسته شده باشد (‎?avatar=نام؛ ببینید loadAvatar).
+         *
+         * پروندهٔ body.json همان حلقه‌هایی است که buildBody می‌سازد — از
+         * برش‌زدنِ مشِ ژست‌گرفتهٔ آواتار (tests/js/avatar-body.mjs) — پس
+         * حل‌کننده، چیدن و برخوردگرها هیچ فرقی نمی‌بینند؛ فقط آنچه *کشیده*
+         * می‌شود خودِ آواتار است، با همان ژستِ بازوها.
+         */
+        const avatar = shell.avatar && shell.avatar.torso ? shell.avatar : null;
+        const body = avatar || buildBody(shell.measurements || {});
         ctx.body = body;
 
         // preserveDrawingBuffer تا دکمهٔ عکس بتواند همین قاب را بخواند
@@ -1499,7 +1535,11 @@ export default (initial = {}) => ({
         scene.add(group);
         ctx.group = group;
 
-        this.addBody(group, body);
+        if (avatar) {
+            this.addAvatar(group, avatar);
+        } else {
+            this.addBody(group, body);
+        }
 
         /*
          * نمای چرخشی در گروهِ خودش می‌ماند تا اگر دوختِ واقعی رسید، یک‌جا
@@ -1538,6 +1578,9 @@ export default (initial = {}) => ({
     showStitched(drape) {
         const ctx = contextFor(this.$root);
         const cloth = new THREE.Group();
+
+        // برای سنجه‌های مرورگری (Playwright): هندسهٔ دوخته‌شده در دسترس باشد
+        window.__dokhtDrape = drape;
 
         /*
          * حل‌کننده در دستگاهِ خودش کار می‌کند — متر، y رو به بالا، صفر روی زمین —
@@ -1623,6 +1666,56 @@ export default (initial = {}) => ({
         if (ctx.spun) {
             ctx.spun.visible = false;
         }
+    },
+
+    /**
+     * مانکن از آواتارِ GLB: همان پرونده، با بازوهای آویزان.
+     *
+     * ژستِ استخوان‌ها از body.json می‌آید و دقیقاً همان چرخشی است که ابزارِ
+     * برش‌زدن روی مش اعمال کرده؛ پس بدنی که کشیده می‌شود همان بدنی است که
+     * پارچه به آن می‌خورد. دستگاهِ GLB متر و y رو به بالا با پا روی صفر است —
+     * همان دستگاهِ حل‌کننده — پس همان جابه‌جایی‌ای که پارچه می‌گیرد، این هم
+     * می‌گیرد (ببینید showStitched).
+     */
+    addAvatar(group, avatar) {
+        const ctx = contextFor(this.$root);
+
+        ctx.skin = track(ctx, new THREE.MeshStandardMaterial({ color: 0xcdc2b8, roughness: 0.96 }));
+        ctx.figure = [];
+
+        import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
+            new GLTFLoader().load(avatar.url, (gltf) => {
+                const root = gltf.scene;
+                const pose = (avatar.avatar && avatar.avatar.pose) || {};
+                const hide = new Set((avatar.avatar && avatar.avatar.hide) || []);
+
+                root.traverse((node) => {
+                    if (pose[node.name]) {
+                        node.quaternion.set(...pose[node.name]);
+                    }
+
+                    if (hide.has(node.name)) {
+                        node.visible = false;
+                    }
+
+                    if (node.isMesh) {
+                        node.castShadow = true;
+                        node.receiveShadow = true;
+                        // مشِ پوست‌دار پس از چرخشِ بازو از جعبهٔ اولیه‌اش بیرون می‌زند
+                        node.frustumCulled = false;
+                        ctx.figure.push(node);
+                    }
+                });
+
+                root.position.y = -avatar.height * CM;
+                group.add(root);
+                ctx.avatar = root;
+                window.__dokhtAvatar = root;
+            });
+        }).catch(() => {
+            // اگر آواتار بار نشد، مانکنِ محاسباتی کشیده می‌شود
+            this.addBody(group, avatar);
+        });
     },
 
     /** مانکن: سر، گردن، تنه، دو دست و دو پا — همه از اندازه‌های مشتری. */

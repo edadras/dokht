@@ -153,8 +153,9 @@ const girthOf = (level, arm, side) => {
                 continue;
             }
 
-            const reach = Math.hypot(x - cx, z);
-            const bin = Math.floor(((Math.atan2(x - cx, z) + Math.PI) / (2 * Math.PI)) * WEDGES) % WEDGES;
+            const cz = arm ? (body.armDepth || 0) : 0;
+            const reach = Math.hypot(x - cx, z - cz);
+            const bin = Math.floor(((Math.atan2(x - cx, z - cz) + Math.PI) / (2 * Math.PI)) * WEDGES) % WEDGES;
 
             spokes[bin] = Math.max(spokes[bin], reach);
         }

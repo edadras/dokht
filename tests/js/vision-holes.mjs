@@ -46,7 +46,8 @@ await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle' }), page.cl
 const rows = [];
 
 for (const [id, name] of WANT) {
-    await page.goto(`${BASE}/patterns/${id}`, { waitUntil: 'networkidle' });
+    // PAGE_QUERY مثلاً «?avatar=demo»: همان صفحه، روی آواتارِ GLB
+    await page.goto(`${BASE}/patterns/${id}${process.env.PAGE_QUERY || ''}`, { waitUntil: 'networkidle' });
 
     /*
      * تا *پایانِ دوخت* صبر می‌کنیم، نه تا `ready`.

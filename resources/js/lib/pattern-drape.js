@@ -1111,11 +1111,13 @@ const placePiece = (piece, flat, body, options) => {
 
         positions[i * 3] = center + reach * nudge * Math.sin(spin);
         positions[i * 3 + 1] = world;
-        positions[i * 3 + 2] = reach * nudge * Math.cos(spin);
+        // محورِ بازو می‌تواند جلو/عقبِ مرکزِ تن باشد (آواتار)؛ ببینید armDepth
+        positions[i * 3 + 2] = reach * nudge * Math.cos(spin) + (arm ? (body.armDepth || 0) : 0);
         axis += center / count;
     }
 
-    return { positions, grain, minX, maxX, minY, maxY, top, axis };
+    // محورِ چرخشِ قطعهٔ روی اندام: x از میانگینِ مرکزها، z از عمقِ محورِ بازو
+    return { positions, grain, minX, maxX, minY, maxY, top, axis, depth: arm ? (body.armDepth || 0) : 0 };
 };
 
 /* ---------------------------------------------------------------------------
@@ -2218,7 +2220,7 @@ const seedPlacement = (patches, seams, ceiling = Infinity) => {
                     if (used < 0) {
                         spot.slid = (spot.slid || 0) - used;
                     }
-                }, headroom);
+                }, headroom, spot.depth || 0);
             }
 
             placed[link.other] = 1;
@@ -2243,7 +2245,7 @@ const seedPlacement = (patches, seams, ceiling = Infinity) => {
  * قطعه دورِ بدن می‌چرخد و سُر می‌خورد تا نشانه‌هایش روبه‌روی نشانه‌های همسایه
  * بیاید — دقیقاً کاری که خیاط با قطعه روی مانکن می‌کند.
  */
-const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null, roomUp = Infinity) => {
+const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null, roomUp = Infinity, depth = 0) => {
     const n = source.length / 3;
     let dot = 0;
     let cross = 0;
@@ -2251,9 +2253,9 @@ const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null,
 
     for (let i = 0; i < n; i++) {
         const bx = source[i * 3] - axis;
-        const bz = source[i * 3 + 2];
+        const bz = source[i * 3 + 2] - depth;
         const ax = target[i * 3] - axis;
-        const az = target[i * 3 + 2];
+        const az = target[i * 3 + 2] - depth;
 
         dot += ax * bx + az * bz;
         cross += ax * bz - az * bx;
@@ -2292,11 +2294,11 @@ const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null,
 
     for (let i = 0; i < positions.length; i += 3) {
         const x = positions[i] - axis;
-        const z = positions[i + 2];
+        const z = positions[i + 2] - depth;
 
         positions[i] = axis + (x * cos + z * sin);
         positions[i + 1] += lift;
-        positions[i + 2] = -x * sin + z * cos;
+        positions[i + 2] = depth + (-x * sin + z * cos);
     }
 
     patch.remember();
@@ -2330,6 +2332,8 @@ const alignPatches = (patches, seams, rounds, radial = false, ceiling = Infinity
      * یک‌وری می‌نشیند. اندازه: ناقرینگیِ آستین با چرخشِ دورِ تنه ۶٫۲ سانتی‌متر.
      */
     const axis = patches.map((entry) => entry.axis || 0);
+    // عمقِ محورِ چرخش (بازوی آواتار جلو/عقبِ مرکزِ تن است)
+    const depth = patches.map((entry) => entry.depth || 0);
     /*
      * نوارِ *بسته* مثل قطعهٔ روی اندام است: می‌چرخد و بالا-پایین می‌رود، نه بیشتر.
      *
@@ -2425,12 +2429,14 @@ const alignPatches = (patches, seams, rounds, radial = false, ceiling = Infinity
 
                 // گشتاور چرخش دور محور خودِ قطعه: Δx ≈ θz و Δz ≈ −θx
                 const ax = pa[at] - axis[ia];
+                const az = pa[at + 2] - depth[ia];
                 const bx = pb[to] - axis[ib];
+                const bz = pb[to + 2] - depth[ib];
 
-                spin[ia] += pa[at + 2] * ex - ax * ez;
-                inertia[ia] += ax * ax + pa[at + 2] * pa[at + 2];
-                spin[ib] += bx * ez - pb[to + 2] * ex;
-                inertia[ib] += bx * bx + pb[to + 2] * pb[to + 2];
+                spin[ia] += az * ex - ax * ez;
+                inertia[ia] += ax * ax + az * az;
+                spin[ib] += bx * ez - bz * ex;
+                inertia[ib] += bx * bx + bz * bz;
             }
 
             const n = Math.max(1, seam.count);
@@ -2478,10 +2484,10 @@ const alignPatches = (patches, seams, rounds, radial = false, ceiling = Infinity
 
                 for (let i = 0; i < positions.length; i += 3) {
                     const x = positions[i] - axis[p];
-                    const z = positions[i + 2];
+                    const z = positions[i + 2] - depth[p];
 
                     positions[i] = axis[p] + (x * cos + z * sin);
-                    positions[i + 2] = -x * sin + z * cos;
+                    positions[i + 2] = depth[p] + (-x * sin + z * cos);
                 }
             }
 
@@ -2763,6 +2769,7 @@ export const buildDrape = (payload, body, options = {}) => {
             patch,
             mesh,
             axis: placed.axis,
+            depth: placed.depth,
             // بلندیِ لبهٔ بالای قطعه سرِ چیدن؛ نگه‌دارنده با همین می‌فهمد قطعه
             // در دوختِ بی‌وزنی سُر خورده یا نه (ببینید holdUp)
             top: placed.top,

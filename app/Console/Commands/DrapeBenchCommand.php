@@ -28,6 +28,7 @@ class DrapeBenchCommand extends Command
         {--model=* : کلید مدل‌ها؛ خالی یعنی فهرست پیش‌فرض}
         {--sample= : به‌جای فهرست، این تعداد مدل از سرتاسر کاتالوگ}
         {--size=40 : سایز بدن}
+        {--measurements= : به‌جای سایز، پروندهٔ JSON اندازه‌ها (مثلاً از آواتار)}
         {--out=storage/app/drape-bench : پوشهٔ خروجی}';
 
     protected $description = 'نوشتن بستهٔ دوخت سه‌بعدی چند مدل برای سنجش';
@@ -84,7 +85,14 @@ class DrapeBenchCommand extends Command
         $models = $this->option('sample')
             ? $this->sample((int) $this->option('sample'))
             : ($this->option('model') ?: static::DEFAULT_MODELS);
-        $body = Measurements::complete(Measurements::fromSize((string) $this->option('size')));
+        /*
+         * اندازه‌ها یا از جدولِ سایز، یا از یک پروندهٔ JSON — مثلاً اندازه‌هایی
+         * که از حلقه‌های آواتارِ GLB درآمده (tests/js/avatar-body.mjs)؛ لباس
+         * باید برای همان تنی بریده شود که رویش دوخته می‌شود.
+         */
+        $file = (string) $this->option('measurements');
+        $given = $file !== '' && is_file($file) ? (array) json_decode((string) file_get_contents($file), true) : [];
+        $body = Measurements::complete($given !== [] ? $given : Measurements::fromSize((string) $this->option('size')));
         $out = base_path((string) $this->option('out'));
 
         if (! is_dir($out) && ! mkdir($out, 0755, true) && ! is_dir($out)) {

@@ -292,7 +292,7 @@ const armCapOf = (drape, body, avatar = {}) => {
             for (let k = 0; k < 12; k++) {
                 const u = (k / 12) * Math.PI * 2;
                 const x = axis + Math.cos(u) * radius;
-                const z = Math.sin(u) * radius;
+                const z = Math.sin(u) * radius + (body.armDepth || 0);
                 let close = Infinity;
 
                 for (let i = 0; i < points.length; i += 3) {
@@ -381,7 +381,7 @@ const sleeveOf = (drape, body) => {
                     continue;
                 }
 
-                const u = Math.atan2(patch.positions[v * 3 + 2], patch.positions[v * 3] - middle);
+                const u = Math.atan2(patch.positions[v * 3 + 2] - (body.armDepth || 0), patch.positions[v * 3] - middle);
 
                 bins[Math.min(23, Math.floor((u + Math.PI) / (2 * Math.PI) * 24))] = 1;
                 seen++;

@@ -278,7 +278,7 @@ export const armJoint = (body) => ({
 });
 
 /** مرکزِ دست در فاصلهٔ داده‌شده از مفصل. */
-export const armCentre = (body, along) => armJoint(body).x + Math.max(0, along) * ARM_TILT;
+export const armCentre = (body, along) => armJoint(body).x + Math.max(0, along) * (body.armTilt ?? ARM_TILT);
 
 /** تراز بدن در ارتفاع دلخواه، با میان‌یابی. */
 export const sampleRing = (rings, y) => {
@@ -414,7 +414,18 @@ export const drapeBody = (body) => {
         const underArm = ring.y >= shoulderLevel && ring.y <= bustLevel;
         const rx = (underArm ? Math.min(ring.rx, ribs) : ring.rx) / 100;
         const near = Math.max(0, 1 - Math.abs(ring.y - armhole) / hollow);
-        const skin = (ring.rx - (ring.rx - Math.min(ring.rx, ribs)) * near) / 100;
+        /*
+         * سقفِ گودی، اگر بدن خودش بخواهد (`carveCap`، سانتی‌متر).
+         *
+         * آواتاری که مفصلِ شانه‌اش درونِ پهنای سینه است (ریگِ T-pose) گودی را
+         * چهار سانتی‌متر می‌کرد و لباس همان‌قدر زیرِ پوستش می‌رفت — لکه‌های
+         * سفیدِ پهلوی سینه در عکس؛ ابزارِ آواتار سقفِ ۱٫۵ می‌گذارد. برای مانکنِ
+         * محاسباتی سقفی نیست: یک بار برای همه ۱٫۵ گذاشته شد و دروازهٔ هشت مدل
+         * فرو ریخت (پوششِ آستینِ پیراهن ۳۰۰° → ۱۲۰°، راپ ۳۰۰° → ۹۰°) — همان
+         * گودی است که آستین را کنارِ تنه جا می‌دهد.
+         */
+        const carve = Math.min(body.carveCap ?? Infinity, ring.rx - Math.min(ring.rx, ribs));
+        const skin = (ring.rx - carve * near) / 100;
 
         profile.push([at(ring.y), rx, mean, ring.front / 100, ring.back / 100]);
         hull.push([at(ring.y), skin, mean, ring.front / 100, ring.back / 100]);
@@ -472,7 +483,10 @@ export const drapeBody = (body) => {
         armTable,
         armLength: body.armLength / 100,
         armOffset: armJoint(body).x / 100,
-        armTilt: ARM_TILT,
+        // کجیِ بازو از خودِ بدن (آواتار کجیِ خودش را دارد)؛ وگرنه ثابتِ مانکن
+        armTilt: body.armTilt ?? ARM_TILT,
+        // محورِ بازو چقدر جلو/عقبِ مرکزِ تن است؛ مانکنِ محاسباتی صفر، آواتار از خودش
+        armDepth: (body.armZ || 0) / 100,
         // ارتفاعِ مفصل، برای چیدنِ آستین و ساختِ برخوردگرِ بازو
         armTop: at(armJoint(body).y),
     };

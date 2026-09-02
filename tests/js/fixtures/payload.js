@@ -38,8 +38,14 @@ const SIZE_40 = {
     arm_length: 58,
 };
 
-/* بدنِ مانکن در فضای خودش (سانتی‌متر، y رو به پایین) */
-export const rawBody = (avatar = {}) => buildBody({ ...SIZE_40, ...avatar });
+/*
+ * بدنِ مانکن در فضای خودش (سانتی‌متر، y رو به پایین).
+ *
+ * اگر بسته خودِ حلقه‌های بدن را داشته باشد (`avatar.body`، از آواتارِ GLB —
+ * ببینید tests/js/avatar-body.mjs) همان به کار می‌رود؛ وگرنه از اندازه‌ها
+ * ساخته می‌شود.
+ */
+export const rawBody = (avatar = {}) => avatar.body || buildBody({ ...SIZE_40, ...avatar });
 
 /* همان بدن، به زبانِ حل‌کننده (متر، y رو به بالا) */
 export const makeBody = (avatar = {}) => drapeBody(rawBody(avatar));
