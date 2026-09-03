@@ -32,7 +32,7 @@
                 const form = this.$root;
                 const params = new URLSearchParams();
                 ['customer_id', 'base_size'].forEach(name => {
-                    const field = form.querySelector('[name="' + name + '"]');
+                    const field = form.elements.namedItem(name);
                     if (field && field.value && ! field.disabled) { params.set(name, field.value); }
                 });
 
