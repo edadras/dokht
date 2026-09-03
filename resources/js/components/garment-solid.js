@@ -1712,9 +1712,11 @@ export default (initial = {}) => ({
                 const root = gltf.scene;
                 const pose = (avatar.avatar && avatar.avatar.pose) || {};
                 const hide = new Set((avatar.avatar && avatar.avatar.hide) || []);
+                const bakedPose = /(?:^|\\/)posed\\.glb(?:$|\\?)/i.test(String(avatar.url || ''));
 
                 root.traverse((node) => {
-                    if (pose[node.name]) {
+                    // posed.glb ژست را از قبل داخل مش پخته است؛ دوباره‌کاری دست‌ها را بالای سر می‌برد.
+                    if (! bakedPose && pose[node.name]) {
                         node.quaternion.set(...pose[node.name]);
                     }
 
@@ -1723,6 +1725,7 @@ export default (initial = {}) => ({
                     }
 
                     if (node.isMesh) {
+                        node.material = ctx.skin;
                         node.castShadow = true;
                         node.receiveShadow = true;
                         // مشِ پوست‌دار پس از چرخشِ بازو از جعبهٔ اولیه‌اش بیرون می‌زند
@@ -1731,9 +1734,13 @@ export default (initial = {}) => ({
                     }
                 });
 
-                // posed.glb از قبل با کف روی y=0 و سر روی قد واقعی ذخیره شده است.
-                // کم‌کردن دوبارهٔ قد، آواتار را یک قد کامل زیر لباس می‌برد.
-                root.position.y = 0;
+                /*
+                 * دستگاهِ فایل Mixamo برعکسِ دستگاهِ حل‌کننده است: سر روی y=0
+                 * و کف پا روی y=قد قرار دارد. آن را حول z برمی‌گردانیم و به
+                 * اندازهٔ قد بالا می‌بریم تا کف روی صفر و سر روی قد بنشیند.
+                 */
+                root.rotation.z = Math.PI;
+                root.position.y = Number(avatar.top || avatar.height * CM || 0);
                 group.add(root);
                 ctx.avatar = root;
                 window.__dokhtAvatar = root;
