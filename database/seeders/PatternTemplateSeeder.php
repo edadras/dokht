@@ -11,6 +11,7 @@ use App\Services\Pattern\SeamAllowanceService;
 use App\Services\Pattern\SvgRenderer;
 use App\Support\Measurements;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -33,6 +34,16 @@ class PatternTemplateSeeder extends Seeder
     protected const PREVIEW_SIZE = '38';
 
     public function run(): void
+    {
+        Cache::lock('pattern-template-seeder', 1800)->block(1800, function (): void {
+            $this->seedTemplates();
+        });
+    }
+
+    /**
+     * ساخت کتابخانه درون قفل توزیع‌شده تا اجرای هم‌زمان seed ردیف تکراری نسازد.
+     */
+    protected function seedTemplates(): void
     {
         $garments = GarmentType::all()->keyBy('code');
 
