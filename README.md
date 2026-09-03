@@ -28,7 +28,8 @@
 
 ## راه‌اندازی
 
-نیازمندی‌ها: PHP ۸.۳ یا بالاتر، Composer، MySQL/MariaDB، Node.js ۲۰ یا بالاتر.
+نیازمندی‌ها: PHP ۸.۳ یا بالاتر با افزونه‌های `pdo_mysql`، `mbstring`، `openssl`،
+`fileinfo`، `zip` و `gd`، Composer، MySQL/MariaDB و Node.js ۲۰ یا بالاتر.
 
 ```bash
 git clone <repo> dokht && cd dokht
@@ -51,6 +52,31 @@ npm run build                     # یا npm run dev در حین توسعه
 
 php artisan serve
 ```
+
+### استقرار تولید با Docker
+
+فایل‌های Docker، Nginx، صف و زمان‌بند همراه پروژه هستند. روی سروری که Docker
+Compose دارد:
+
+```bash
+cp .env.production.example .env.production
+docker compose --env-file .env.production build app
+docker compose --env-file .env.production run --rm --no-deps --entrypoint php app artisan key:generate --show
+# مقدار نمایش‌داده‌شده و رمزهای قوی دیتابیس را در .env.production قرار دهید
+docker compose --env-file .env.production up -d --build
+docker compose --env-file .env.production ps
+```
+
+سرویس روی پورت `8080` بالا می‌آید و مسیر `/up` برای health check است. در سرور
+عمومی، دامنه و HTTPS را با reverse proxy به این پورت وصل کنید. کانتینر اصلی
+مهاجرت‌ها، لینک فضای ذخیره‌سازی و cacheهای Laravel را هنگام شروع اعمال می‌کند؛
+صف و زمان‌بند در کانتینرهای جدا اجرا می‌شوند. `SEED_DATABASE=true` را فقط برای
+اولین نصب و در صورت نیاز به داده‌های اولیه فعال کنید و سپس به `false` برگردانید.
+
+برای استقرار بدون Docker، ریشهٔ وب‌سرور باید فقط پوشهٔ `public/` باشد، پردازشگر
+صف باید دائماً `php artisan queue:work` را اجرا کند و cron باید هر دقیقه
+`php artisan schedule:run` را صدا بزند. در production حتماً `APP_DEBUG=false`،
+کوکی امن، HTTPS، ایمیل واقعی و حداقل `memory_limit=512M` تنظیم شود.
 
 `php artisan migrate --seed` در محیط توسعه یک کارگاه نمونه با مشتری، پارچه، الگو، پروژه و سفارش
 هم می‌سازد (`DemoWorkshopSeeder`) تا بدون ورود داده بتوانید همه بخش‌ها را ببینید.
@@ -195,3 +221,4 @@ DXF ساده و DXF صنعتی **AAMA/ASTM**، JSON، نقشه برش، برگه
 ## مجوز
 
 بر پایه فریم‌ورک Laravel که با مجوز [MIT](https://opensource.org/licenses/MIT) منتشر شده است.
+
