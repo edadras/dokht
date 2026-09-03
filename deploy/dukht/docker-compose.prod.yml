@@ -1,7 +1,7 @@
 services:
   app:
     build:
-      context: ../..
+      context: .
       dockerfile: Dockerfile
     container_name: dukht-app
     restart: unless-stopped
@@ -34,7 +34,7 @@ services:
 
   queue:
     build:
-      context: ../..
+      context: .
       dockerfile: Dockerfile
     container_name: dukht-queue
     restart: unless-stopped
@@ -59,7 +59,7 @@ services:
 
   scheduler:
     build:
-      context: ../..
+      context: .
       dockerfile: Dockerfile
     container_name: dukht-scheduler
     restart: unless-stopped
