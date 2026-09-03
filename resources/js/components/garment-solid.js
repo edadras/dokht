@@ -1712,7 +1712,7 @@ export default (initial = {}) => ({
                 const root = gltf.scene;
                 const pose = (avatar.avatar && avatar.avatar.pose) || {};
                 const hide = new Set((avatar.avatar && avatar.avatar.hide) || []);
-                const bakedPose = /(?:^|\\/)posed\\.glb(?:$|\\?)/i.test(String(avatar.url || ''));
+                const bakedPose = String(avatar.url || '').split('?')[0].toLowerCase().endsWith('/posed.glb');
 
                 root.traverse((node) => {
                     // posed.glb ژست را از قبل داخل مش پخته است؛ دوباره‌کاری دست‌ها را بالای سر می‌برد.
