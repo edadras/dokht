@@ -323,6 +323,8 @@ class DrapePayloadService
             $notes[] = 'شریکِ جاماندهٔ درزها پیدا نشد: '.$error->getMessage();
         }
 
+        $this->pruneLooseDetails($instances, $seams, $notes);
+
         return [
             'scale' => 0.01,
             'pieces' => array_values(array_map(fn (array $instance) => $instance['payload'], $instances)),
@@ -2248,6 +2250,13 @@ class DrapePayloadService
                 continue;
             }
 
+            // جزئیات (جیب، سجاف، نوار فاق، بند) مقصدِ امنی برای دوختِ
+            // حدسی نیستند. لبهٔ آزادِ آنها ممکن است هم‌طولِ یقه یا حلقه باشد؛
+            // نتیجه درزی می‌شود که اصلاً در الگو وجود ندارد.
+            if (($instance['role'] ?? '') === 'detail') {
+                continue;
+            }
+
             foreach ($this->sewableArcs($instance) as $arc) {
                 if (! isset($used[$id.'|'.$arc['from'].'|'.$arc['to']])) {
                     $free[] = $arc;
@@ -2273,6 +2282,11 @@ class DrapePayloadService
 
         foreach ($instances as $id => $instance) {
             if (isset($stitched[$id]) || $free === []) {
+                continue;
+            }
+
+            // جزئیات فقط از رابطهٔ صریحِ الگو دوخته می‌شوند، نه از طول و فاصله.
+            if (($instance['role'] ?? '') === 'detail') {
                 continue;
             }
 
@@ -2340,6 +2354,42 @@ class DrapePayloadService
         }
 
         return $out;
+    }
+
+    /**
+     * جزئیاتِ بی‌درز واقعاً بخشی از پوستهٔ لباس نیستند.
+     *
+     * پیش‌تر adopt() برای اینکه این قطعه‌ها نیفتند، آنها را به نزدیک‌ترین
+     * کمانِ هم‌طول می‌دوخت. در بادی، نوار فاق به یقه رسید و روی شانه آویزان شد.
+     * جزئیاتی که رابطهٔ دوختِ صریح ندارند، تا زمانِ پشتیبانی از surface attachment
+     * نباید در مشِ نهایی باشند.
+     *
+     * @param  array<int, array<string, mixed>>  $instances
+     * @param  array<int, array<string, mixed>>  $seams
+     * @param  array<int, string>  $notes
+     */
+    protected function pruneLooseDetails(array &$instances, array $seams, array &$notes): void
+    {
+        $stitched = [];
+
+        foreach ($seams as $seam) {
+            foreach (['a', 'b'] as $end) {
+                $id = (string) ($seam[$end]['piece'] ?? '');
+
+                if ($id !== '') {
+                    $stitched[$id] = true;
+                }
+            }
+        }
+
+        foreach ($instances as $id => $instance) {
+            if (($instance['role'] ?? '') !== 'detail' || isset($stitched[$id])) {
+                continue;
+            }
+
+            $notes[] = "جزئیات «{$instance['code']}» رابطهٔ دوختِ صریح ندارد و از نمای سه‌بعدی حذف شد.";
+            unset($instances[$id]);
+        }
     }
 
     /**
@@ -3597,3 +3647,4 @@ class DrapePayloadService
         ];
     }
 }
+
