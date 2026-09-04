@@ -11,6 +11,9 @@ fabric = p.get('fabric', {})
 out = '/data/app/public/renders/' + job['id']
 os.makedirs(out, exist_ok=True)
 
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete(use_global=False)
+
 def mat(name, color, rough=.55, metallic=0.0):
     m = bpy.data.materials.new(name)
     m.diffuse_color = (*color, 1)
@@ -90,16 +93,20 @@ def garment_mesh(mode='dry'):
 garment_ob = garment_mesh('dry')
 bpy.ops.mesh.primitive_plane_add(size=8, location=(0,0,0)); floor=bpy.context.object
 floor.data.materials.append(mat('زمین',(.12,.12,.12),.8))
+floor.hide_render = True
 
 bpy.ops.object.light_add(type='AREA', location=(3,-4,4)); bpy.context.object.data.energy=950; bpy.context.object.data.shape='DISK'; bpy.context.object.data.size=4
 bpy.ops.object.light_add(type='AREA', location=(-3,-1,3)); bpy.context.object.data.energy=650; bpy.context.object.data.size=3
 bpy.ops.object.light_add(type='AREA', location=(0,3,4)); bpy.context.object.data.energy=800; bpy.context.object.data.size=2
 
 scene=bpy.context.scene
-scene.render.engine='BLENDER_EEVEE_NEXT' if hasattr(scene,'eevee') else 'BLENDER_EEVEE'
+try:
+    scene.render.engine = 'BLENDER_EEVEE_NEXT'
+except TypeError:
+    scene.render.engine = 'BLENDER_EEVEE'
 scene.render.resolution_x=720; scene.render.resolution_y=900; scene.render.resolution_percentage=100
 scene.render.image_settings.file_format='PNG'; scene.render.film_transparent=False
-scene.world.color=(.035,.035,.035)
+scene.world.color=(.14,.14,.14)
 bpy.ops.object.camera_add(); camera=bpy.context.object; scene.camera=camera
 
 def shot(name, pos, mode='dry'):
