@@ -181,7 +181,8 @@ for (const { piece, patch } of drape.patches) {
     }
 }
 
-if (band) {
+// وقتی رأس‌های دوخته جوش خورده‌اند، نوارِ درز مشِ تکراری و شناور می‌سازد.
+if (band && welds.length === 0) {
     meshes.push({ id: 'seams', name: 'درزها', role: 'seam', positions: band.positions, indices: band.indices });
 }
 
@@ -199,4 +200,5 @@ writeFileSync(output, JSON.stringify({
     // جای دکمه‌ها (متر) و جهتِ بیرون؛ ببینید بالا
     buttons,
 }));
+
 
