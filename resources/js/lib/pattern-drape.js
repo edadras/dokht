@@ -3152,6 +3152,74 @@ export const anchorTargets = (patches, body, payload, scale = 0.01) => {
     }
 
     /*
+     * سنجاقِ فاق بادی: این درز باید زیرِ لگن بسته شود، نه از کوتاه‌ترین راه
+     * داخل بدن یا روی شکم.
+     *
+     * جلو و پشت در چیدن اولیه در دو نیمهٔ مخالف بدن‌اند. قید درز به‌تنهایی
+     * نمی‌داند کدام مسیر بیرونی را انتخاب کند و هر دو لبه را به یک سمت لگن
+     * می‌کشد؛ نتیجه در رندر، پشتِ لباس روی جلو و چند چین بزرگ در مرکز بود.
+     * خیاط پیش از دوخت، دو سر نوار فاق را زیرِ مانکن روی هم سنجاق می‌کند. این
+     * بلوک همان کار را انجام می‌دهد: خط فاق روی محور میانی، کمی پایین‌تر از
+     * تراز فاق و با همان قوسِ خودِ الگو نگه داشته می‌شود. بعد از مرحلهٔ دوخت
+     * سنجاق‌ها مثل سنجاق سرشانه آزاد می‌شوند.
+     */
+    const crotchPin = (piece, end, reverse = false) => {
+        const entry = entryOf(piece.id);
+        if (! entry || ! end) return;
+
+        const n = piece.polygon.length;
+        const walk = [end.from];
+        while (walk[walk.length - 1] !== end.to && walk.length <= n) {
+            walk.push((walk[walk.length - 1] + 1) % n);
+        }
+        if (walk[walk.length - 1] !== end.to) return;
+
+        const points = walk.map((at) => piece.polygon[at]);
+        const minX = Math.min(...points.map(([x]) => x));
+        const maxX = Math.max(...points.map(([x]) => x));
+        const minY = Math.min(...points.map(([, y]) => y));
+        const centreX = (minX + maxX) / 2;
+        const limit = Math.max(0.025, (body.legAxis || body.radii.thigh || 0.07) * 0.8);
+        const crotchY = body.level.crotch - 0.008;
+        const crotchZ = czAt(body.level.crotch);
+        const grain = entry.mesh.grain;
+
+        for (const at of walk) {
+            const [px, py] = piece.polygon[at];
+            let best = -1;
+            let bd = Infinity;
+
+            for (let v = 0; v < entry.patch.count; v++) {
+                const d = Math.hypot(grain[v * 2] - px * scale, grain[v * 2 + 1] - py * scale);
+                if (d < bd) { bd = d; best = v; }
+            }
+
+            if (best < 0 || bd >= 0.004) continue;
+
+            const localX = (px - centreX) * scale * (reverse ? -1 : 1);
+            const x = Math.max(-limit, Math.min(limit, localX));
+            anchors.push({
+                patch: entry.patch,
+                vertex: best,
+                target: [x, crotchY - ((py - minY) * scale), crotchZ],
+                persistent: true,
+            });
+        }
+    };
+
+    for (const seam of payload.seams) {
+        if ((seam.kind || 'seam') !== 'seam' || ! seam.a || ! seam.b) continue;
+        if (! /درز فاق بادی/.test(seam.label || '')) continue;
+
+        const pa = payload.pieces.find((piece) => piece.id === seam.a.piece);
+        const pb = payload.pieces.find((piece) => piece.id === seam.b.piece);
+        if (! pa || ! pb || pa === pb) continue;
+
+        crotchPin(pa, seam.a);
+        crotchPin(pb, seam.b, seam.reverse === true);
+    }
+
+    /*
      * سرِ کپِ آستین روی سرِ شانه.
      *
      * سرشانه سنجاق می‌شد ولی آستین نه: سرِ کپ در دوختِ بی‌وزنی از سرِ شانه دور
@@ -5159,3 +5227,4 @@ export const supportGarment = (drape, options = {}) => {
         holdUp(piece, patch, top);
     }
 };
+
