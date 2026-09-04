@@ -36,3 +36,6 @@ storage/app/drape-bench
 
 # آواتارهای پخته‌شده به اندازهٔ مشتری (cache؛ از آواتارِ اصلی ساخته می‌شوند)
 public/avatars/*/fit/
+
+# پایتونِ موتور رندر
+__pycache__/
