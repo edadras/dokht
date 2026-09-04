@@ -6,6 +6,7 @@ use App\Models\Project;
 use App\Models\Simulation;
 use App\Services\Fit\FitAnalysisService;
 use App\Services\Simulation\ClothPreviewService;
+use App\Services\Simulation\ServerRenderService;
 use App\Support\Jalali;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -18,7 +19,13 @@ use Illuminate\View\View;
  */
 class SimulationController extends Controller
 {
-    public function store(Request $request, Project $project, FitAnalysisService $fit)
+    public function store(
+        Request $request,
+        Project $project,
+        FitAnalysisService $fit,
+        ClothPreviewService $preview,
+        ServerRenderService $renders,
+    )
     {
         $data = $request->validate([
             'pose' => ['nullable', 'string', 'in:'.implode(',', array_keys(Simulation::POSES))],
@@ -59,6 +66,18 @@ class SimulationController extends Controller
             'fit_score' => $analysis['fit_score'],
         ]);
 
+        try {
+            $project->pattern->loadMissing(['pieces', 'garmentType']);
+            $renders->queue($simulation, $preview->payload(
+                $project->pattern,
+                $project->fabric,
+                $project->resolvedMeasurements(),
+                ['zones' => $analysis['zones'], 'pose' => $pose],
+            ));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         $project->update([
             'settings' => array_merge($project->settings ?? [], ['pose' => $pose]),
             'step' => max((int) $project->step, 8),
@@ -75,7 +94,11 @@ class SimulationController extends Controller
         return redirect($target)->with('status', $this->summary($simulation));
     }
 
-    public function show(Simulation $simulation, ClothPreviewService $preview): View
+    public function show(
+        Simulation $simulation,
+        ClothPreviewService $preview,
+        ServerRenderService $renders,
+    ): View
     {
         $simulation->load(['project', 'pattern.pieces', 'fabric', 'measurementSet']);
 
@@ -104,7 +127,13 @@ class SimulationController extends Controller
             'project' => $simulation->project,
             'payload' => $payload,
             'levels' => Simulation::LEVELS,
+            'serverRender' => $renders->result($simulation),
         ]);
+    }
+
+    public function renderStatus(Simulation $simulation, ServerRenderService $renders)
+    {
+        return response()->json($renders->result($simulation));
     }
 
     /** خلاصه‌ی فارسی نتیجه برای پیام موفقیت. */
@@ -127,3 +156,4 @@ class SimulationController extends Controller
         return $summary.' هیچ مشکل مهمی پیدا نشد.';
     }
 }
+
