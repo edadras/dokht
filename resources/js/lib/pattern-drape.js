@@ -884,9 +884,54 @@ const placePiece = (piece, flat, body, options) => {
      * از راهی می‌رفت. همین بود که لباس یک‌وری می‌نشست: مرکزِ آستینِ چپ در عمق
      * z=−۹٫۲ و راست z=+۶٫۰ — یکی پشتِ بدن، یکی جلویش.
      */
-    const side =
+    let side =
         piece.side === 'right' ? 1 : piece.side === 'left' ? -1 : placement.flip || piece.instance % 2 ? -1 : 1;
     const legs = zone.startsWith('leg') ? legTable(body) : null;
+    let legInner = null;
+
+    /*
+     * سمتِ پای شلوار از خودِ الگو: لبهٔ فاق سمتِ داخلِ پاست.
+     *
+     * قاعدهٔ «نمونهٔ اصل راست، آینه چپ» برای تنه درست است ولی پای شلوار در
+     * الگو با فاق در سمتِ x بزرگ کشیده شده؛ با آن قاعده لبهٔ فاق بیرونِ پا
+     * می‌افتاد و spinFit قطعه را ۱۸۰ درجه می‌چرخاند تا به درزهایش برسد — پای
+     * جلو پشتِ پا چیده می‌شد (اندازه گرفته شد: جینِ کلوش، z از −۱۱ تا +۱).
+     * اگر لبهٔ فاق در نیمهٔ +x قطعه باشد، داخلِ پا رو به +x است، یعنی این
+     * پای چپ است.
+     */
+    if (legs && Array.isArray(piece.edges) && Array.isArray(piece.polygon)) {
+        let sum = 0;
+        let hits = 0;
+        const count = piece.polygon.length;
+
+        for (const edge of piece.edges) {
+            if (edge.tag !== 'crotch') {
+                continue;
+            }
+
+            let walk = edge.start;
+
+            for (let k = 0; k <= count; k++) {
+                sum += piece.polygon[walk][0];
+                hits++;
+
+                if (walk === edge.end) {
+                    break;
+                }
+
+                walk = (walk + 1) % count;
+            }
+        }
+
+        if (hits) {
+            const xs = piece.polygon.map((point) => point[0]);
+            const middle = (Math.min(...xs) + Math.max(...xs)) / 2;
+
+            side = sum / hits > middle ? -1 : 1;
+            // لبهٔ فاق سرِ داخلیِ قطعه است؛ پیچیدن از همین سر شروع می‌شود (ببینید spin)
+            legInner = side < 0 ? Math.max(...xs) : Math.min(...xs);
+        }
+    }
     /*
      * اگر بسته شعاع خودش را گفته باشد، همان حرف آخر است.
      *
@@ -982,7 +1027,18 @@ const placePiece = (piece, flat, body, options) => {
 
         hold = sampleTable(body.armTable, -Math.max(0, reach))[0] + gap;
     } else if (legs) {
-        hold = sampleTable(legs, midY)[0] + gap;
+        /*
+         * پای شلوار به اندازهٔ خودش می‌پیچد، نه به اندازهٔ زانو.
+         *
+         * شعاعِ ران/زانو (۶ سانتی‌متر) برای پای ۳۱ سانتی‌متریِ جینِ کلوش یعنی
+         * ۳۰۰ درجه پیچیدن دورِ یک استوانهٔ باریک؛ جلو و پشتِ پا روی هم می‌افتادند
+         * و درزها همه را به یک سو می‌کشیدند (اندازه گرفته شد: کلِ شلوار ۱۸
+         * سانتی‌متر پشتِ تن). شعاعی که پهنای قطعه را دقیقاً در بازهٔ زاویه‌اش
+         * جا بدهد — جلو و پشت هر یک نیم‌دور — و کمتر از خودِ پا نه.
+         */
+        const fit = ((maxX - minX) * scale) / Math.max(0.5, u1 - u0);
+
+        hold = Math.max(sampleTable(legs, midY)[0], fit) + gap;
     } else if (placement.zone === 'collar' && hint) {
         // یقه: استوانه‌ای به شعاعِ خودِ گردن، نه پهنای سرشانه در همان ارتفاع (پایین‌تر)
         hold = hint + gap;
@@ -1051,6 +1107,23 @@ const placePiece = (piece, flat, body, options) => {
         }
 
         /*
+         * بالای فاق، قطعهٔ پا دورِ لگن می‌پیچد نه دورِ ران.
+         *
+         * پای شلوار تا کمر ادامه دارد، ولی تا این‌جا سراسرش دورِ استوانهٔ ران
+         * پیچیده می‌شد: نیم‌پهنای باسن ۱۷ سانتی‌متر است و ران ۶، پس بالاتنهٔ
+         * شلوار درونِ لگن چیده می‌شد و از کمر تا فاق زیرِ پوستِ مانکن می‌ماند
+         * (اندازه گرفته شد: جینِ کلوش). از فاق به بالا، مرکز به محورِ تن و شعاع
+         * به نیم‌رخِ تنه می‌رود و زاویه نصف می‌شود: هر پا یک‌چهارمِ لگن را
+         * می‌گیرد، درزِ داخلی روی خطِ مرکز و درزِ بیرونی روی پهلو. گذر در چهار
+         * سانتی‌متر نرم است تا مش پاره نشود.
+         */
+        let pelvis = 0;
+
+        if (legs && world > body.level.crotch - 0.01) {
+            pelvis = Math.min(1, (world - (body.level.crotch - 0.01)) / 0.05);
+        }
+
+        /*
          * یک تلنگر ریزِ قطعی روی شعاع.
          *
          * قطعه‌ی کاملاً هموار روی استوانه‌ی کاملاً هموار هیچ دلیلی برای چین
@@ -1090,6 +1163,22 @@ const placePiece = (piece, flat, body, options) => {
         // فقط آستینِ یک‌تکه که دورِ کاملِ بازو می‌پیچد؛ آستینِ دوتکه از سرور زاویهٔ خودش را دارد
         const outward = arm && (u1 - u0) >= Math.PI * 1.8 ? side * Math.PI / 2 : 0;
         let spin = uMid + outward + (x * scale - xMid) / hold;
+
+        /*
+         * پای شلوار از لبهٔ فاق می‌پیچد: داخلِ پا رو به تن، بیرون رو به پهلو.
+         *
+         * با نگاشتِ زاویه‌ایِ عمومی، لبهٔ بیرونیِ پای پشت (x بزرگ) روی ۳π/۲
+         * می‌افتاد یعنی داخلِ پا، و spinFit پای جلو را ۱۸۰ درجه می‌چرخاند تا
+         * به درزهایش برسد — پای جلو پشتِ پا چیده می‌شد (اندازه گرفته شد:
+         * جینِ کلوش). این‌جا زاویه از سرِ فاق شمرده می‌شود: جلو از −π/۲ (داخل)
+         * تا +π/۲ (بیرون) از جلوی پا، پشت از −π/۲ به سمتِ −۳π/۲ از پشتِ پا.
+         */
+        if (legs && legInner !== null) {
+            const t = Math.abs(x - legInner) * scale / hold;
+            const isBack = Math.abs(uMid) > 1;
+
+            spin = side * (-Math.PI / 2 + (isBack ? -t : t));
+        }
 
         if (rim && world > armhole) {
             const over = Math.min(1, (world - armhole) / Math.max(0.02, shoulder - armhole));
@@ -1140,9 +1229,24 @@ const placePiece = (piece, flat, body, options) => {
          */
         const depth = arm ? (body.armDepth || 0) : (legs ? 0 : (sampleTable(body.profile, world)[4] || 0));
 
-        positions[i * 3] = center + reach * nudge * Math.sin(spin);
+        let px = center + reach * nudge * Math.sin(spin);
+        let pz = reach * nudge * Math.cos(spin) + depth;
+
+        if (pelvis > 0) {
+            const legMid = (u0 + u1) / 2;
+            const bodyMid = Math.abs(legMid) < 1 ? side * Math.PI / 4 : Math.PI - side * Math.PI / 4;
+            const wrapped = Math.atan2(Math.sin(spin - legMid), Math.cos(spin - legMid));
+            const bodySpin = bodyMid + wrapped / 2;
+            const bodyReach = Math.max(sampleRow(body.profile, world), hint || 0) + gap;
+            const bodyDepth = sampleTable(body.profile, world)[4] || 0;
+
+            px = lerp(px, bodyReach * nudge * Math.sin(bodySpin), pelvis);
+            pz = lerp(pz, bodyReach * nudge * Math.cos(bodySpin) + bodyDepth, pelvis);
+        }
+
+        positions[i * 3] = px;
         positions[i * 3 + 1] = world;
-        positions[i * 3 + 2] = reach * nudge * Math.cos(spin) + depth;
+        positions[i * 3 + 2] = pz;
         axis += center / count;
     }
 
@@ -2870,13 +2974,14 @@ export const buildDrape = (payload, body, options = {}) => {
     const creases = [];
 
     for (const entry of patches) {
-        const roll = Number(entry.piece.roll);
+        const roll = entry.piece.roll;
+        const usable = typeof roll === 'number' ? Number.isFinite(roll) : !! (roll && Number.isFinite(roll.x1) && Number.isFinite(roll.x2));
 
-        if (! Number.isFinite(roll)) {
+        if (! usable) {
             continue;
         }
 
-        const pairs = creaseAt(entry, roll * scale, (stats.targetEdge ?? requested) * scale);
+        const pairs = creaseAt(entry, roll, (stats.targetEdge ?? requested) * scale, scale);
 
         if (pairs.length >= 6) {
             creases.push({ entry, pairs });
@@ -3797,11 +3902,10 @@ const foldCreases = (creases, thickness, scale) => {
          * فقط میان خودِ رویه پخش می‌شود — اگر پایه هم در میانگین بیاید، تای
          * تازه‌ساخته را دوباره باز می‌کند.
          */
-        const grain = entry.mesh.grain;
-        const rollY = Number(entry.piece.roll) * scale;
+        const geometry = rollGeometry(entry, entry.piece.roll, scale);
 
         for (let v = 0; v < count; v++) {
-            if (grain[v * 2 + 1] < rollY) {
+            if (geometry.over(v)) {
                 fall[v] = 1;
             }
         }
@@ -3874,20 +3978,65 @@ const foldCreases = (creases, thickness, scale) => {
  * جفت‌سازی یک‌به‌یک است: اگر چند رأس یک شریکِ مشترک بگیرند، اصلاحِ همه‌شان روی
  * همان یک رأس می‌نشیند و رأس پرت می‌شود.
  */
-const creaseAt = (entry, rollY, step) => {
+/*
+ * خطِ برگردان: یا یک عدد (y، یقهٔ پیراهن) یا یک پاره‌خط (لپهٔ کت، از نقطهٔ
+ * شکست تا گردن). برای هر رأس فاصلهٔ علامت‌دار از خط و بازتابش را می‌دهد؛
+ * سمتِ «رویه» (آنچه برمی‌گردد) برای عدد همان بالای خط است و برای پاره‌خط
+ * سمتِ کوچک‌تر — لپه از تنه کوچک‌تر است.
+ */
+const rollGeometry = (entry, roll, scale) => {
     const { grain } = entry.mesh;
     const count = entry.patch.count;
+
+    if (typeof roll === 'number') {
+        const rollY = roll * scale;
+
+        return {
+            over: (v) => grain[v * 2 + 1] < rollY,
+            reflect: (v) => [grain[v * 2], rollY - (grain[v * 2 + 1] - rollY)],
+        };
+    }
+
+    const px = roll.x1 * scale;
+    const py = roll.y1 * scale;
+    let dx = (roll.x2 - roll.x1) * scale;
+    let dy = (roll.y2 - roll.y1) * scale;
+    const len = Math.hypot(dx, dy) || 1;
+
+    dx /= len;
+    dy /= len;
+
+    const signed = (v) => dx * (grain[v * 2 + 1] - py) - dy * (grain[v * 2] - px);
+    let positive = 0;
+
+    for (let v = 0; v < count; v++) {
+        if (signed(v) > 0) {
+            positive++;
+        }
+    }
+
+    const overSign = positive * 2 < count ? 1 : -1;
+
+    return {
+        over: (v) => signed(v) * overSign > 1e-6,
+        reflect: (v) => {
+            const s = signed(v);
+
+            // نرمالِ خط (−dy, dx)؛ بازتاب = v − 2·s·n
+            return [grain[v * 2] + 2 * s * dy, grain[v * 2 + 1] - 2 * s * dx];
+        },
+    };
+};
+
+const creaseAt = (entry, roll, step, scale = 1) => {
+    const { grain } = entry.mesh;
+    const count = entry.patch.count;
+    const geometry = rollGeometry(entry, roll, scale);
     const above = [];
     const below = [];
 
     for (let v = 0; v < count; v++) {
-        const gap = grain[v * 2 + 1] - rollY;
-
-        if (Math.abs(gap) < 1e-6) {
-            continue;
-        }
-
-        (gap < 0 ? above : below).push(v);
+        (geometry.over(v) ? above : below).push(v);
     }
 
     /*
@@ -3903,8 +4052,7 @@ const creaseAt = (entry, rollY, step) => {
     const pairs = [];
 
     for (const one of below) {
-        const wantY = rollY - (grain[one * 2 + 1] - rollY);
-        const wantX = grain[one * 2];
+        const [wantX, wantY] = geometry.reflect(one);
         let best = -1;
         let bestGap = Infinity;
 

@@ -333,6 +333,33 @@ class DrapePayloadService
 
         $tags = Geometry::edgeTags(['outline' => $outline, 'meta' => $model->meta ?? []]);
 
+        /*
+         * کمربندِ دوتکه، یک‌تکه.
+         *
+         * کمربندِ شلوار دو نیمه است (هر یک نیم‌دور به‌اضافهٔ روی‌هم، دو بار
+         * بریده) که در پهلو به هم می‌رسند. برای دوختنِ سه‌بعدی همان نوارِ کاملِ
+         * دورِ کمر است — مثلِ مچ یا نوارِ یقه که یک‌تکه‌اند. پیش از این نیمهٔ
+         * دوم به عنوانِ همتای هم‌جا حذف می‌شد و فقط نیم‌دورِ جلو نوار داشت؛ درزِ
+         * کمرِ پشت به همان نیمه کشیده می‌شد (اندازه گرفته شد: جینِ کلوش).
+         */
+        $single = false;
+
+        if (in_array($model->meta['part'] ?? null, ['waistband', 'elastic-band'], true)
+            && (int) $model->cut_quantity === 2
+            && ! $model->mirror
+            && $count === 4
+            && is_numeric($model->meta['band_girth'] ?? null)) {
+            [$minX, $minY, $maxX, $maxY] = Geometry::bounds($outline);
+            $width = (float) $model->meta['band_girth'] + (float) ($model->meta['band_overlap'] ?? 0);
+            $outline = [
+                Geometry::point($minX, $minY),
+                Geometry::point($minX + $width, $minY),
+                Geometry::point($minX + $width, $maxY),
+                Geometry::point($minX, $maxY),
+            ];
+            $single = true;
+        }
+
         $piece = [
             'code' => (string) $model->code,
             'name' => (string) $model->name,
@@ -372,6 +399,7 @@ class DrapePayloadService
             'origins' => $oriented['per_edge'],
             'tags' => $tags,
             'unfolded' => $unfolded,
+            'single' => $single,
         ];
     }
 
@@ -491,7 +519,8 @@ class DrapePayloadService
     protected function instances(array $prepared, DrapeBody $body): array
     {
         $model = $prepared['model'];
-        $quantity = max(1, (int) $model->cut_quantity);
+        // نوارِ یک‌تکه‌شده (ببینید prepare) یک نمونه دارد
+        $quantity = ($prepared['single'] ?? false) ? 1 : max(1, (int) $model->cut_quantity);
         $mirror = (bool) $model->mirror;
         $out = [];
 
@@ -1746,7 +1775,13 @@ class DrapePayloadService
                 continue;
             }
 
-            $resolved[$index] = ['left' => $left, 'right' => $right, 'relation' => $relation];
+            $resolved[$index] = [
+                'left' => $left,
+                'right' => $right,
+                'relation' => $relation,
+                // دو سرِ رابطه یک قطعه و یک لبه است (درزِ فاق): هر جفت یک بار
+                'self' => $from['piece'] === $to['piece'] && $from['edges'] === $to['edges'],
+            ];
         }
 
         $resolved = $this->share($resolved);
@@ -1760,7 +1795,7 @@ class DrapePayloadService
             // کمانِ بریده‌شده تکه‌به‌تکه با همان ترتیب جفت می‌شود؛ ببینید balance
             $pairs = $zipped
                 ? ['matched' => array_map(null, $left, $right), 'left' => [], 'right' => []]
-                : $this->pairArcs($left, $right);
+                : $this->pairArcs($left, $right, (bool) ($entry['self'] ?? false));
 
             foreach ($pairs['matched'] as [$a, $b]) {
                 $seams[] = $this->seam($a, $b, $label, $index, $relation);
@@ -2282,11 +2317,36 @@ class DrapePayloadService
      * @param  array<int, array{x: float, y: float}>  $polygon
      * @param  array<int, array{tag: string, start: int}>  $edges
      */
-    protected function rollLine(array $piece, array $polygon, array $edges): ?float
+    protected function rollLine(array $piece, array $polygon, array $edges): float|array|null
     {
         $roll = $piece['meta']['roll_line'] ?? null;
 
         if (! is_numeric($roll) || (float) $roll <= 0.01 || $polygon === []) {
+            /*
+             * خطِ برگردانِ مورب (کت): نشانگرِ «roll_line» روی قطعه، از نقطهٔ
+             * شکست تا گردن. یقهٔ پیراهن با یک عدد (فاصله از لبهٔ گردن) خط می‌شود؛
+             * لپهٔ کت با یک پاره‌خط در همان دستگاهِ چندضلعی. مرورگر روی هر دو
+             * تا می‌زند (ببینید creaseAt).
+             */
+            foreach ((array) ($piece['markers'] ?? []) as $marker) {
+                if (($marker['key'] ?? '') !== 'roll_line' || ! isset($marker['from']['x'], $marker['to']['x'])) {
+                    continue;
+                }
+
+                $length = hypot((float) $marker['to']['x'] - (float) $marker['from']['x'], (float) $marker['to']['y'] - (float) $marker['from']['y']);
+
+                if ($length < 1.0) {
+                    continue;
+                }
+
+                return [
+                    'x1' => round((float) $marker['from']['x'], 3),
+                    'y1' => round((float) $marker['from']['y'], 3),
+                    'x2' => round((float) $marker['to']['x'], 3),
+                    'y2' => round((float) $marker['to']['y'], 3),
+                ];
+            }
+
             return null;
         }
 
@@ -2991,12 +3051,20 @@ class DrapePayloadService
      *
      * @return array{matched: array<int, array{0: array, 1: array}>, left: array, right: array}
      */
-    protected function pairArcs(array $left, array $right): array
+    protected function pairArcs(array $left, array $right, bool $self = false): array
     {
         $costs = [];
 
         foreach ($left as $i => $a) {
             foreach ($right as $j => $b) {
+                /*
+                 * رابطه‌ای که دو سرش یک قطعه است (درزِ فاق): دو فهرست یکی‌اند؛
+                 * نمونه به خودش دوخته نمی‌شود و هر جفت یک بار می‌آید (i<j).
+                 */
+                if ($self && ($i >= $j || $a['piece'] === $b['piece'])) {
+                    continue;
+                }
+
                 $costs[] = [$this->cost($a, $b), $i, $j];
             }
         }

@@ -177,6 +177,17 @@ def body_from_rings(body):
     base.name = 'پایه'
     base.data.materials.append(steel)
     bpy.ops.object.shade_smooth()
+    # پا: وقتی لباس از فاق پایین‌تر می‌رود (شلوار، شورت، دامن)، مانکن پا دارد
+    ys = [m['positions'][i] for m in sewn.get('meshes', []) for i in range(1, len(m['positions']), 3)]
+    if ys and min(ys) < crotch - .03 and body.get('leg'):
+        for side in (-1, 1):
+            lrings = []
+            for row in body['leg']:
+                cy = crotch - float(row['y']) / 100
+                r = max(.01, float(row['r']) / 100 - .003)
+                cx = side * float(row.get('x', 9)) / 100
+                lrings.append([(cx + r * math.cos(2 * math.pi * i / N), -(r * math.sin(2 * math.pi * i / N)), cy) for i in range(N)])
+            loft('پا', lrings, form)
     if has_sleeves:
         arm = body['arm']
         ring0 = body['shoulderRing']

@@ -500,8 +500,9 @@ trait PantsBlock
         // منحنی فاق: دو پاره منحنی؛ پشت گودتر و قلاب‌دارتر از جلو
         $midX = $fork * $scoop;
         $midY = $hipY + (($crotchY - $hipY) * ($isFront ? 0.62 : 0.72));
-        $add(Geometry::curve($midX, $y($midY), $midX * ($isFront ? 0.52 : 0.44), $y($crotchY * 0.995)), 'default');
-        $add(Geometry::curve($fork, $y($hipY), $fork * ($isFront ? 0.95 : 0.92), $y($hipY + (($crotchY - $hipY) * ($isFront ? 0.3 : 0.33)))), 'default');
+        // برچسبِ «crotch»: دو پای جلو (و دو پای پشت) روی همین منحنی به هم دوخته می‌شوند
+        $add(Geometry::curve($midX, $y($midY), $midX * ($isFront ? 0.52 : 0.44), $y($crotchY * 0.995)), 'crotch');
+        $add(Geometry::curve($fork, $y($hipY), $fork * ($isFront ? 0.95 : 0.92), $y($hipY + (($crotchY - $hipY) * ($isFront ? 0.3 : 0.33)))), 'crotch');
 
         $count = count($points);
         $offset = $top > 0 ? 1 : 0;

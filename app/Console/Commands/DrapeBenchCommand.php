@@ -157,6 +157,9 @@ class DrapeBenchCommand extends Command
             $model->outline = $piece['outline'];
             $model->meta = $piece['meta'] ?? [];
             $model->darts = $piece['darts'] ?? [];
+            // نشانگرها و نشانه‌ها هم؛ خطِ برگردانِ لپه نشانگر است و بی‌آن سنجه یقهٔ کت را تا نمی‌زد
+            $model->markers = $piece['markers'] ?? [];
+            $model->notches = $piece['notches'] ?? [];
             $model->layer = (string) ($piece['layer'] ?? 'outer');
             $model->cut_quantity = (int) ($piece['cut_quantity'] ?? 1);
             $model->on_fold = (bool) ($piece['on_fold'] ?? false);

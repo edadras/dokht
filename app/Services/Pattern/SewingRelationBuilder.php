@@ -56,6 +56,20 @@ class SewingRelationBuilder
             $relations = array_merge($relations, static::pairTag($front, $back, 'side', $label));
         }
 
+        /*
+         * درزِ فاق: دو پای جلو به هم، دو پای پشت به هم.
+         *
+         * بی این درز، هر پا یک لولهٔ جدا بود و دو لوله هیچ‌جا به هم نمی‌رسیدند؛
+         * در نمای سه‌بعدی شلوار از تن جدا می‌ماند (اندازه گرفته شد: جینِ کلوش،
+         * هر دو پا پشتِ تن). هر دو سرِ رابطه یک قطعه است و بستهٔ سه‌بعدی
+         * نمونهٔ اصل را به نمونهٔ آینه می‌دوزد.
+         */
+        foreach ([[$front, 'درز فاق جلو'], [$back, 'درز فاق پشت']] as [$leg, $crotchLabel]) {
+            if ($leg && in_array($leg['part'], ['front_leg', 'back_leg'], true)) {
+                $relations = array_merge($relations, static::pairTag($leg, $leg, 'crotch', $crotchLabel));
+            }
+        }
+
         // آستین به حلقه آستین
         foreach ($tagged as $entry) {
             if (($entry['part'] ?? null) !== 'sleeve') {
