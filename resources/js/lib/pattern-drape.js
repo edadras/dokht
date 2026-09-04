@@ -2541,7 +2541,7 @@ const seedPlacement = (patches, seams, ceiling = Infinity) => {
                     if (used < 0) {
                         spot.slid = (spot.slid || 0) - used;
                     }
-                }, headroom, spot.depth || 0, ! spot.spinLocked);
+                }, headroom, spot.depth || 0);
             }
 
             placed[link.other] = 1;
@@ -2566,7 +2566,7 @@ const seedPlacement = (patches, seams, ceiling = Infinity) => {
  * قطعه دورِ بدن می‌چرخد و سُر می‌خورد تا نشانه‌هایش روبه‌روی نشانه‌های همسایه
  * بیاید — دقیقاً کاری که خیاط با قطعه روی مانکن می‌کند.
  */
-const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null, roomUp = Infinity, depth = 0, allowSpin = true) => {
+const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null, roomUp = Infinity, depth = 0) => {
     const n = source.length / 3;
     let dot = 0;
     let cross = 0;
@@ -2583,7 +2583,7 @@ const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null,
         rise += target[i * 3 + 1] - source[i * 3 + 1];
     }
 
-    const theta = ! allowSpin || Math.abs(dot) + Math.abs(cross) < 1e-9 ? 0 : Math.atan2(cross, dot);
+    const theta = Math.abs(dot) + Math.abs(cross) < 1e-9 ? 0 : Math.atan2(cross, dot);
     /*
      * سُر خوردنِ عمودی حد دارد، وگرنه آستین از شانه می‌افتد.
      *
@@ -2795,7 +2795,7 @@ const alignPatches = (patches, seams, rounds, radial = false, ceiling = Infinity
             const positions = patch.positions;
 
             // چرخش کوچک و میراشده؛ بیش از ده درجه در یک دور، قطعه را پرت می‌کند
-            const theta = inertia[p] > 1e-6 && ! patches[p].spinLocked
+            const theta = inertia[p] > 1e-6
                 ? clamp((spin[p] / inertia[p]) * 0.5, -0.17, 0.17)
                 : 0;
 
@@ -2878,6 +2878,123 @@ const alignPatches = (patches, seams, rounds, radial = false, ceiling = Infinity
             break; // نشست
         }
     }
+};
+
+/**
+ * حلقهٔ آستینِ تنه دورِ مفصلِ بازو.
+ *
+ * پنلِ پشت روی استوانهٔ تنه چیده می‌شود و لبهٔ حلقه‌اش همان‌جا روی دنده‌ها
+ * می‌ماند (x=۱۴، پشتِ بغل)، در حالی که پشتِ مفصلِ بازو در x=۱۸ تا ۲۳ است. با
+ * چنین حلقه‌ای چیدنِ صُلب آستین را می‌چرخاند تا به آن برسد (سرِ کپ ۱۲۵ درجه رو
+ * به جلو) و پس از دوخت نیمهٔ پشتِ آستین از *میانِ* بازو و تن رد می‌شد نه دورِ
+ * بازو — پشتِ بازو از سرِ شانه تا ده سانتی‌متر پایین‌تر لخت (اندازه گرفته شد:
+ * پیراهن). خیاط حلقه را دورِ مفصل سنجاق می‌کند: از سرِ شانه، جلو از جلوی بازو
+ * پایین تا زیرِ بغل و پشت از پشتِ بازو. همین: هر لبهٔ «armhole» پنل‌های تنه
+ * روی بیضی‌ای دورِ مفصل می‌نشیند، به نسبتِ طولش از سرِ شانه. سرِ بیضی روی
+ * سرِ گنبدِ دلتویید است (ببینید bodyColliders) و تهش زیرِ بغل.
+ *
+ * چیدن همین‌جا رأس‌ها را می‌نشاند تا آستین درست بچرخد، و دوختِ بی‌وزنی همان
+ * را سنجاق می‌کند (shoulderAnchors).
+ *
+ * @returns {{patch: object, vertex: number, target: number[]}[]}
+ */
+export const armholeTargets = (patches, body, scale = 0.01) => {
+    const out = [];
+
+    if (! body || ! body.level || body.armOffset === undefined || body.armTop === undefined) {
+        return out;
+    }
+
+    const czAt = (y) => sampleTable(body.profile, y)[4] || 0;
+    const ball = Math.max(0.03, ...(body.armTable || []).map((row) => row[1] || 0));
+    const domeTop = body.armTop + 0.85 * ball;
+    const ringTop = domeTop + 0.008;
+    const ringBottom = body.level.armhole - 0.05;
+    const ringZ = ball + 0.008;
+    const onRing = (side, theta, front) => {
+        const yc = (ringTop + ringBottom) / 2;
+        const ry = (ringTop - ringBottom) / 2;
+        const inward = (1 - Math.cos(theta)) / 2;
+
+        return [
+            side * lerp(body.armOffset + 0.005, 0.15, inward),
+            yc + ry * Math.cos(theta),
+            (front ? 1 : -1) * ringZ * Math.sin(theta) + czAt(body.level.shoulder),
+        ];
+    };
+    const touches = (piece, vertex, tag) => (piece.edges || []).some((edge) => edge.tag === tag && (edge.start === vertex || edge.end === vertex));
+    const armholes = [];
+
+    for (const entry of patches) {
+        const piece = entry.piece;
+        const zone = (piece && piece.placement && piece.placement.zone) || '';
+
+        if (! piece || ! zone.startsWith('torso') || ! Array.isArray(piece.edges) || ! Array.isArray(piece.polygon)) continue;
+
+        const n = piece.polygon.length;
+        const xs = piece.polygon.map((point) => point[0]);
+        const minX = Math.min(...xs);
+        const spanX = Math.max(1e-6, Math.max(...xs) - minX);
+        const u0 = piece.placement.u0 ?? 0;
+        const u1 = piece.placement.u1 ?? 0;
+
+        for (const edge of piece.edges) {
+            if (edge.tag !== 'armhole' || edge.length < 1) continue;
+
+            const walk = [edge.start];
+            while (walk[walk.length - 1] !== edge.end && walk.length <= n) walk.push((walk[walk.length - 1] + 1) % n);
+            // سرِ بالا: رأسی که به سرشانه چسبیده، وگرنه رأسِ بالاترِ الگو (y کوچک‌تر)
+            const top0 = touches(piece, walk[0], 'shoulder');
+            const top1 = touches(piece, walk[walk.length - 1], 'shoulder');
+            if (top1 && ! top0) walk.reverse();
+            else if (! top0 && ! top1 && piece.polygon[walk[0]][1] > piece.polygon[walk[walk.length - 1]][1]) walk.reverse();
+
+            const meanX = walk.reduce((sum, v) => sum + piece.polygon[v][0], 0) / walk.length;
+            const u = u0 + (u1 - u0) * ((meanX - minX) / spanX);
+
+            armholes.push({ entry, piece, walk, side: Math.sin(u) >= 0 ? 1 : -1, front: Math.cos(u) >= 0, upper: touches(piece, walk[0], 'shoulder'), length: edge.length });
+        }
+    }
+
+    // هر سمت و هر نیمه (جلو/پشت) یک کمان است که شاید میان دو پنل (یوک و پشت) تقسیم شده باشد
+    for (const side of [-1, 1]) {
+        for (const front of [true, false]) {
+            const parts = armholes.filter((arc) => arc.side === side && arc.front === front);
+            if (! parts.length) continue;
+            parts.sort((a, b) => Number(b.upper) - Number(a.upper));
+            const total = parts.reduce((sum, arc) => sum + arc.length, 0) || 1;
+            let offset = 0;
+
+            for (const arc of parts) {
+                const { entry, piece, walk } = arc;
+                const grain = entry.mesh.grain;
+                const cum = [0];
+                for (let i = 1; i < walk.length; i++) {
+                    const a = piece.polygon[walk[i - 1]];
+                    const b = piece.polygon[walk[i]];
+                    cum.push(cum[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1]));
+                }
+                const len = cum[cum.length - 1] || 1;
+
+                for (let i = 0; i < walk.length; i++) {
+                    const [px, py] = piece.polygon[walk[i]];
+                    let best = -1;
+                    let bd = Infinity;
+                    for (let v = 0; v < entry.patch.count; v++) {
+                        const d = Math.hypot(grain[v * 2] - px * scale, grain[v * 2 + 1] - py * scale);
+                        if (d < bd) { bd = d; best = v; }
+                    }
+                    if (best < 0 || bd >= 0.004) continue;
+                    const theta = Math.PI * (offset + (cum[i] / len) * arc.length) / total;
+                    out.push({ patch: entry.patch, vertex: best, target: onRing(side, theta, front) });
+                }
+
+                offset += arc.length;
+            }
+        }
+    }
+
+    return out;
 };
 
 export const buildDrape = (payload, body, options = {}) => {
@@ -3113,20 +3230,6 @@ export const buildDrape = (payload, body, options = {}) => {
             })(),
             // قطعهٔ روی اندام روی آن سُر نمی‌خورد؛ تنه و دامن جا دارند
             room: Math.abs(placed.axis) > 1e-6 ? VERTICAL_ROOM : Infinity,
-            /*
-             * آستینِ یک‌تکه دورِ محورِ بازو نمی‌چرخد.
-             *
-             * سرِ کپش رو به بیرونِ بازو چیده می‌شود (ببینید outward در placePiece)
-             * و همان جهتِ فیزیکیِ درست است. ولی چیدنِ صُلب آن را می‌چرخاند تا به
-             * حلقهٔ تنه‌ای برسد که هنوز روی استوانهٔ تنه چسبیده است — و سرِ کپ
-             * ۱۲۵ درجه به سمتِ جلو می‌رفت: پس از دوخت، بیرونِ بازو از ۱۲۷ تا ۱۳۶
-             * سانتی‌متر هیچ پارچه‌ای نداشت و بازو از سرِ آستین بیرون می‌زد
-             * (اندازه گرفته شد: پیراهن، ستونِ میانیِ کپ روی z=+۳ تا +۵ چیده شده
-             * بود). حلقهٔ تنه بعداً دورِ مفصل سنجاق می‌شود (shoulderAnchors)، پس
-             * آستین همان‌جا که هست می‌ماند و فقط بالا و پایین می‌رود.
-             */
-            spinLocked: piece.placement?.zone === 'sleeve'
-                && ((piece.placement.u1 ?? 0) - (piece.placement.u0 ?? 0)) >= Math.PI * 1.8,
         });
         meshes.push(mesh);
         stats.triangles += flat.indices.length / 3;
@@ -3505,6 +3608,17 @@ export const buildDrape = (payload, body, options = {}) => {
     }
 
     ceiling += 0.02;
+
+    // لبه‌های حلقهٔ تنه از همین اول دورِ مفصلِ بازو می‌نشینند؛ ببینید armholeTargets
+    for (const { patch, vertex, target } of armholeTargets(patches, body, scale)) {
+        patch.positions[vertex * 3] = target[0];
+        patch.positions[vertex * 3 + 1] = target[1];
+        patch.positions[vertex * 3 + 2] = target[2];
+    }
+
+    for (const { patch } of patches) {
+        patch.remember();
+    }
 
     stats.seeded = seedPlacement(patches, seams, ceiling);
     stats.bent = settings.warp === false ? 0 : warpToSeams(patches, seams);
