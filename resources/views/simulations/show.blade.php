@@ -25,61 +25,43 @@
     <div class="grid gap-5 lg:grid-cols-3">
         {{-- نمای سه‌بعدی --}}
         <div class="lg:col-span-2">
-            @if ($payload)
-                <div x-data="garmentViewer(@js(['payload' => $payload, 'pose' => $simulation->pose]))">
-                <div class="overflow-hidden rounded-2xl border border-stone-200 bg-stone-900 shadow-sm">
-                    <div x-ref="stage" class="relative aspect-4/5 w-full sm:aspect-video">
-                        <div x-cloak x-show="! supported"
-                            class="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center text-stone-200">
-                            <x-icon name="alert" class="h-8 w-8" />
-                            <p class="text-sm leading-6">
-                                مرورگر شما نمای سه‌بعدی را پشتیبانی نمی‌کند؛ جدول پایین همه‌ی نتیجه را نشان می‌دهد.
-                            </p>
-                        </div>
-                    </div>
-
-                    <div class="flex flex-wrap items-center gap-2 border-t border-stone-800 px-4 py-3">
-                        <button type="button" @click="setView('front')"
-                            class="rounded-lg bg-stone-800 px-3 py-1.5 text-xs text-stone-200 hover:bg-stone-700">جلو</button>
-                        <button type="button" @click="setView('side')"
-                            class="rounded-lg bg-stone-800 px-3 py-1.5 text-xs text-stone-200 hover:bg-stone-700">پهلو</button>
-                        <button type="button" @click="setView('back')"
-                            class="rounded-lg bg-stone-800 px-3 py-1.5 text-xs text-stone-200 hover:bg-stone-700">پشت</button>
-                        <button type="button" @click="toggleRotate()" class="rounded-lg px-3 py-1.5 text-xs"
-                            x-bind:class="autoRotate ? 'bg-brand-600 text-white' : 'bg-stone-800 text-stone-200'">
-                            چرخش خودکار
-                        </button>
-                        <button type="button" @click="toggleZones()" class="rounded-lg px-3 py-1.5 text-xs"
-                            x-bind:class="showZones ? 'bg-brand-600 text-white' : 'bg-stone-800 text-stone-200'">
-                            نقشه‌ی فشار
-                        </button>
-                        <button type="button" @click="toggleLive()" class="rounded-lg px-3 py-1.5 text-xs"
-                            x-bind:class="liveSim ? 'bg-brand-600 text-white' : 'bg-stone-800 text-stone-200'">
-                            شبیه‌سازی زنده
-                        </button>
-                        <button type="button" x-show="canDrape" @click="toggleTrueSeams()"
-                            class="rounded-lg px-3 py-1.5 text-xs"
-                            x-bind:class="trueSeams ? 'bg-brand-600 text-white' : 'bg-stone-800 text-stone-200'">
-                            دوخت قطعه‌های الگو
-                        </button>
-                    </div>
+            @if (($serverRender['status'] ?? null) === 'ready')
+                @php
+                    $renderLabels = ['front' => 'جلو', 'side' => 'پهلو', 'back' => 'پشت', 'water' => 'افت پارچه سنگین', 'airflow' => 'اثر جریان هوا'];
+                @endphp
+                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    @foreach (($serverRender['images'] ?? []) as $key => $url)
+                        <figure class="overflow-hidden rounded-2xl border border-stone-200 bg-stone-950 shadow-sm">
+                            <img src="{{ $url }}" alt="{{ $renderLabels[$key] ?? $key }}" loading="lazy"
+                                class="aspect-4/5 h-auto w-full object-cover">
+                            <figcaption class="border-t border-stone-800 px-3 py-2 text-center text-xs font-semibold text-stone-200">
+                                {{ $renderLabels[$key] ?? $key }}
+                            </figcaption>
+                        </figure>
+                    @endforeach
                 </div>
-
-                {{-- توضیح یک‌خطی: کاربر باید بداند چه چیزی را دارد می‌بیند --}}
+                @if (! empty($serverRender['model']))
+                    <div class="mt-3">
+                        <x-button :href="$serverRender['model']" variant="secondary" icon="download">
+                            دریافت مدل سه‌بعدی GLB
+                        </x-button>
+                    </div>
+                @endif
                 <p class="mt-3 text-xs leading-6 text-stone-500">
-                    <span x-show="trueSeams && canDrape">
-                        آنچه می‌بینید دوختِ خودِ الگوست: هر قطعه از روی مسیر واقعی‌اش بریده و مثلث‌بندی شده،
-                        درزها و ساسون‌ها به هم دوخته شده‌اند و پارچه زیر وزن خودش روی همین بدن نشسته است.
-                    </span>
-                    <span x-show="! trueSeams || ! canDrape">
-                        پارچه زنده حساب می‌شود: زیر وزن خودش می‌افتد و به بدن برخورد می‌کند، پس لباس هیچ‌جا داخل
-                        مانکن فرو نمی‌رود و افتادگی‌اش از مشخصات همین پارچه می‌آید.
-                    </span>
+                    این تصاویر و مدل سه‌بعدی توسط موتور Blender روی سرور ساخته شده‌اند؛ مرورگر فقط فایل آماده را نمایش می‌دهد.
                 </p>
+            @elseif (($serverRender['status'] ?? null) === 'pending')
+                <div x-data="{ checking: true }" x-init="setTimeout(() => location.reload(), 7000)"
+                    class="rounded-2xl border border-brand-200 bg-brand-50 p-8 text-center">
+                    <x-icon name="refresh" class="mx-auto h-8 w-8 animate-spin text-brand-600" />
+                    <p class="mt-3 font-semibold text-brand-900">رندر واقعی روی سرور در حال ساخت است…</p>
+                    <p class="mt-1 text-xs text-brand-700">پس از آماده‌شدن، این صفحه خودکار تازه می‌شود.</p>
                 </div>
+            @elseif (($serverRender['status'] ?? null) === 'failed')
+                <x-alert type="warning">موتور سرور نتوانست این رندر را کامل کند. گزارش خطا ثبت شده است.</x-alert>
             @else
                 <x-empty-state icon="cube" title="نمای سه‌بعدی برای این گزارش موجود نیست"
-                    description="الگوی این شبیه‌سازی حذف شده است." />
+                    description="برای این شبیه‌سازی هنوز درخواست رندر سرور ثبت نشده است؛ شبیه‌سازی را دوباره اجرا کنید." />
             @endif
 
             {{-- جدول نواحی --}}
@@ -188,3 +170,4 @@
         </div>
     </div>
 </x-app-layout>
+
