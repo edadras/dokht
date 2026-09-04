@@ -1077,6 +1077,11 @@ class DrapePayloadTest extends TestCase
                     continue;
                 }
 
+                // رویهٔ لپه و سجاف و کیسهٔ جیب درونِ لباس‌اند و عمداً در بسته نمی‌آیند (ببینید DrapePayloadService::payload)
+                if (in_array($model->meta['part'] ?? null, ['lapel', 'facing', 'pocket-bag', 'bag'], true)) {
+                    continue;
+                }
+
                 $checked++;
                 $instances = $byCode[$model->code] ?? [];
 
