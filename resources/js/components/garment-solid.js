@@ -1725,7 +1725,6 @@ export default (initial = {}) => ({
                     }
 
                     if (node.isMesh) {
-                        node.material = ctx.skin;
                         node.castShadow = true;
                         node.receiveShadow = true;
                         // مشِ پوست‌دار پس از چرخشِ بازو از جعبهٔ اولیه‌اش بیرون می‌زند
@@ -1735,12 +1734,13 @@ export default (initial = {}) => ({
                 });
 
                 /*
-                 * دستگاهِ فایل Mixamo برعکسِ دستگاهِ حل‌کننده است: سر روی y=0
-                 * و کف پا روی y=قد قرار دارد. آن را حول z برمی‌گردانیم و به
-                 * اندازهٔ قد بالا می‌بریم تا کف روی صفر و سر روی قد بنشیند.
+                 * هر سه GLBِ این مخزن (model، posed، fit) پا روی y=۰ و سر روی
+                 * y=قد دارند — همان دستگاهِ حل‌کننده. یک بار با این فرض که فایل
+                 * وارونه است حول z چرخانده شد و مانکن سر و ته و بیرونِ قاب رسم
+                 * شد (عکس گرفته شد: فقط بالای سر زیرِ دکمه‌ها پیدا بود). همان
+                 * جابه‌جاییِ پارچه (showStitched) این‌جا هم کافی است.
                  */
-                root.rotation.z = Math.PI;
-                root.position.y = Number(avatar.top || avatar.height * CM || 0);
+                root.position.y = -avatar.height * CM;
                 group.add(root);
                 ctx.avatar = root;
                 window.__dokhtAvatar = root;

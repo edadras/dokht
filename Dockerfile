@@ -13,7 +13,8 @@ COPY vite.config.js ./
 RUN npm run build
 
 FROM php:8.4-fpm-alpine AS application
-RUN apk add --no-cache icu-libs libpng libjpeg-turbo freetype libzip nginx supervisor \
+# nodejs برای اندازه کردنِ آواتار به تنِ مشتری در زمانِ اجرا (AvatarFitService → tests/js/avatar-body.mjs)
+RUN apk add --no-cache icu-libs libpng libjpeg-turbo freetype libzip nginx supervisor nodejs \
     && apk add --no-cache --virtual .build-deps icu-dev libpng-dev libjpeg-turbo-dev freetype-dev libzip-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) bcmath exif gd intl opcache pcntl pdo_mysql zip \

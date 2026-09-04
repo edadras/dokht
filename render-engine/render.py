@@ -50,15 +50,90 @@ bust = float(avatar.get('bust', 90))/100
 waist = float(avatar.get('waist', 72))/100
 hip = float(avatar.get('hip', 98))/100
 z_waist, z_bust, z_shoulder = height*.55, height*.69, height*.79
-uv('Torso', (0,0,(z_waist+z_bust)/2), (bust*.27,bust*.18,(z_bust-z_waist)*.75), skin)
-uv('Hips', (0,0,z_waist-.11), (hip*.26,hip*.18,.22), skin)
-uv('Head', (0,0,height-.12), (.105,.09,.13), skin)
-cylinder('Neck',(0,0,z_shoulder),(0,0,height-.23),.065,skin)
-shoulder = float(avatar.get('shoulder_width', 38))/200
-arm_len = float(avatar.get('arm_length', 58))/100
-for side in (-1,1):
-    cylinder('Arm', (side*shoulder,0,z_shoulder), (side*(shoulder+.05),0,z_shoulder-arm_len), .055, skin)
-    cylinder('Leg', (side*.105,0,z_waist-.22), (side*.09,0,.12), .075, skin)
+
+def loft(name, rings, material, cap=True):
+    """یک مش از حلقه‌های پشتِ سرِ هم؛ هر حلقه فهرستی از نقطه‌های (x, y, z) در دستگاهِ Blender."""
+    verts, faces = [], []
+    n = len(rings[0])
+    for ring in rings:
+        verts.extend(ring)
+    for r in range(len(rings) - 1):
+        for i in range(n):
+            j = (i + 1) % n
+            faces.append((r*n+i, r*n+j, (r+1)*n+j, (r+1)*n+i))
+    if cap:
+        faces.append(tuple(range(n)))
+        faces.append(tuple(reversed(range((len(rings)-1)*n, len(rings)*n))))
+    mesh = bpy.data.meshes.new(name); mesh.from_pydata(verts, [], faces); mesh.update()
+    ob = bpy.data.objects.new(name, mesh); bpy.context.collection.objects.link(ob); ob.data.materials.append(material)
+    for poly in mesh.polygons: poly.use_smooth = True
+    return ob
+
+def body_from_rings(body):
+    """
+    مانکن از همان حلقه‌هایی که پارچه رویشان دوخته شد (sew.mjs آن‌ها را در sewn.json می‌گذارد).
+
+    پیش از این مانکن از کره و استوانه با نسبت‌های ثابت ساخته می‌شد و لباسِ دوخته‌شده
+    روی تنِ دیگری می‌نشست: سرشانه و سینه با هم جور نبودند. حلقه‌ها به سانتی‌متر و
+    y رو به پایین از فرقِ سرند (قراردادِ mannequin.js)؛ z مثبت جلوست. هر حلقه نیم‌پهنا
+    (rx)، نیم‌عمقِ جلو و پشت و مرکزِ خودش روی z را دارد. دستگاهِ Blender: (x, -z, y).
+    """
+    H = float(body['height']) / 100
+    up = lambda y_down: H - float(y_down) / 100
+    N = 48
+    def ellipse(rx, front, back, zc, y):
+        ring = []
+        for i in range(N):
+            a = 2*math.pi*i/N
+            s = math.sin(a)
+            depth = front if s >= 0 else back
+            ring.append((rx*math.cos(a)/100, -(zc + depth*s)/100, y))
+        return ring
+    torso = sorted(body['torso'], key=lambda r: -float(r['y']))  # از فاق به بالا
+    rings = [ellipse(float(r['rx']), float(r['front']), float(r['back']), float(r.get('z', 0)), up(r['y'])) for r in torso]
+    loft('تنه', rings, skin)
+    # سر: کره روی مرکزِ حلقهٔ گردن
+    head = body.get('head', {})
+    neck = torso[1] if len(torso) > 1 else torso[-1]
+    neck_z = float(neck.get('z', 0)) / 100
+    head_r = float(head.get('radius', 9)) / 100
+    uv('سر', (0, -neck_z, H - float(head.get('centre', 12))/100), (head_r, head_r*1.05, head_r*1.15), skin)
+    # بازو: مفصل به قراردادِ armJoint()، محور با کجیِ armTilt و عمقِ armZ
+    arm = body['arm']
+    ring0 = body['shoulderRing']
+    joint_x = (float(ring0['rx']) - 0.35*float(arm[0]['r'])) / 100
+    joint_y = up(float(ring0['y']) + 0.5*float(arm[0]['r']))
+    tilt = float(body.get('armTilt', 0.085))
+    arm_z = float(body.get('armZ', 0)) / 100
+    for side in (-1, 1):
+        arings = []
+        for row in arm:
+            along = float(row['y']) / 100
+            cx = side*(joint_x + along*math.sin(tilt)); cy = joint_y - along*math.cos(tilt); r = float(row['r'])/100
+            arings.append([(cx + r*math.cos(2*math.pi*i/N), -(arm_z + r*math.sin(2*math.pi*i/N)), cy) for i in range(N)])
+        loft('بازو', arings, skin)
+    # پا: از فاق تا مچ، هر تراز مرکز و شعاعِ خودش
+    crotch = up(body['level']['crotch'])
+    for side in (-1, 1):
+        lrings = []
+        for row in body['leg']:
+            cy = crotch - float(row['y'])/100; r = float(row['r'])/100; cx = side*float(row.get('x', 9))/100
+            lrings.append([(cx + r*math.cos(2*math.pi*i/N), -(r*math.sin(2*math.pi*i/N)), cy) for i in range(N)])
+        loft('پا', lrings, skin)
+    return H
+
+if sewn.get('body') and sewn['body'].get('torso'):
+    height = body_from_rings(sewn['body'])
+else:
+    uv('Torso', (0,0,(z_waist+z_bust)/2), (bust*.27,bust*.18,(z_bust-z_waist)*.75), skin)
+    uv('Hips', (0,0,z_waist-.11), (hip*.26,hip*.18,.22), skin)
+    uv('Head', (0,0,height-.12), (.105,.09,.13), skin)
+    cylinder('Neck',(0,0,z_shoulder),(0,0,height-.23),.065,skin)
+    shoulder = float(avatar.get('shoulder_width', 38))/200
+    arm_len = float(avatar.get('arm_length', 58))/100
+    for side in (-1,1):
+        cylinder('Arm', (side*shoulder,0,z_shoulder), (side*(shoulder+.05),0,z_shoulder-arm_len), .055, skin)
+        cylinder('Leg', (side*.105,0,z_waist-.22), (side*.09,0,.12), .075, skin)
 
 def garment_mesh(mode='dry'):
     if sewn.get('meshes'):

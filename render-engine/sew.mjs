@@ -53,6 +53,8 @@ writeFileSync(output, JSON.stringify({
     format: 'dokht-sewn-mesh',
     seam_error: world.seamError(),
     stats: drape.stats,
+    // همان تنی که پارچه رویش دوخته شد (حلقه‌ها، سانتی‌متر)؛ رندر مانکن را از همین می‌سازد
+    body: raw,
     meshes,
 }));
 

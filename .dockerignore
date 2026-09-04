@@ -13,6 +13,9 @@ storage/framework/cache/*
 storage/framework/sessions/*
 storage/framework/views/*
 tests
+# ابزارِ آواتار در زمانِ اجرا لازم است (AvatarFitService)
+!tests/js
+!tests/js/avatar-body.mjs
 work
 *.log
 

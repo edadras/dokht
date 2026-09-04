@@ -45,6 +45,21 @@ services:
       app:
         condition: service_healthy
 
+  # موتور رندرِ سرور (Blender + همان حل‌کنندهٔ دوخت). صفِ کار و خروجی روی همان
+  # فضای ذخیره‌سازیِ app است: storage/app/render-queue → storage/app/public/renders
+  renderer:
+    build:
+      context: .
+      dockerfile: render-engine/Dockerfile
+    restart: unless-stopped
+    environment:
+      BLENDER_USER_CONFIG: /tmp/blender-config
+    volumes:
+      - dokht-storage:/data
+    depends_on:
+      app:
+        condition: service_healthy
+
   db:
     image: mysql:8.4
     restart: unless-stopped

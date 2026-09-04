@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import glob, os, shutil, subprocess, time
+import glob, os, shutil, subprocess, sys, time
 
 QUEUE = '/data/app/render-queue'
 PROCESSING = '/data/app/render-processing'
@@ -29,6 +29,8 @@ while True:
         os.remove(sewn)
     except Exception as error:
         failure = os.path.join(FAILED, os.path.basename(job))
+        # در لاگِ کانتینر هم دیده شود، نه فقط در پروندهٔ .error
+        print(f'render failed for {os.path.basename(job)}: {error}', file=sys.stderr, flush=True)
         try:
             shutil.move(job, failure)
             with open(failure + '.error', 'w', encoding='utf-8') as stream:
