@@ -481,6 +481,43 @@ export const shoulderAnchors = (drape, table, payload) => {
     }
 
     /*
+     * سرِ کپِ آستین روی سرِ شانه.
+     *
+     * سرشانه سنجاق می‌شد ولی آستین نه: سرِ کپ در دوختِ بی‌وزنی از سرِ شانه دور
+     * می‌ماند و درزِ حلقه در بالاترین نقطه‌اش تا ده سانتی‌متر باز می‌ماند
+     * (اندازه گرفته شد: پیراهن ۱۰٫۳، کت اسپرت ۷٫۱). در عکس همان «پارگیِ
+     * سرشانه» بود: پوستِ سرِ شانه از میانِ حلقهٔ باز، و نوارِ درز که مثلِ نخِ
+     * پاره از سرِ آستین تا تنه کشیده می‌شد. خیاط سرِ کپ را روی سرِ شانه سنجاق
+     * می‌کند و بعد دورِ حلقه را می‌دوزد؛ این‌جا هم بالاترین رأسِ الگوی آستین
+     * (سرِ کپ) روی سرِ شانهٔ بدن، کمی بیرون‌تر از سرِ درزِ سرشانه، سنجاق می‌شود.
+     */
+    for (const entry of drape.patches) {
+        const piece = entry.piece;
+        const zone = (piece && piece.placement && piece.placement.zone) || '';
+
+        if (! piece || ! zone.startsWith('sleeve') || ! Array.isArray(piece.edges)) continue;
+        if (! piece.edges.some((edge) => edge.tag === 'armhole')) continue;
+
+        const side = piece.side === 'right' ? 1 : piece.side === 'left' ? -1 : (((piece.placement && piece.placement.flip) || piece.instance % 2) ? -1 : 1);
+        const grain = entry.mesh.grain;
+        let apex = -1;
+        let high = Infinity;
+
+        for (let v = 0; v < entry.patch.count; v++) {
+            if (grain[v * 2 + 1] < high) {
+                high = grain[v * 2 + 1];
+                apex = v;
+            }
+        }
+
+        // فقط اگر سرِ کپ واقعاً بالاترین نقطهٔ قطعه است و کپ پهنای معناداری دارد (آستینِ دوتکه: پنلِ رو)
+        if (apex < 0) continue;
+
+        const tipX = side * (table.armOffset + 0.004);
+        anchors.push({ patch: entry.patch, vertex: apex, target: [tipX, table.armTop + 0.022, czAt(table.level.shoulder) + 0.004] });
+    }
+
+    /*
      * لنگرِ کمر: شلوار و دامن و شورت از کمر آویزان‌اند، نه از سرشانه.
      *
      * دوختِ بی‌وزن هیچ تکیه‌گاهی برای پایین‌تنه نداشت: سنجاقِ سرشانه به آن
@@ -821,6 +858,9 @@ export const bodyColliders = (Collider, body, table, grow = 1) => {
  * ساخته می‌شود: میان هر دو سوزنِ پشتِ سرِ هم، دو مثلث. جایی که درز بسته است،
  * نوار پهنای صفر دارد و دیده نمی‌شود؛ جایی که باز مانده، پارچه است نه سوراخ.
  */
+/* بیشترین شکافی که نوارِ درز پر می‌کند (متر)؛ بیش از آن درز باز است، نه نوار */
+const BAND_REACH = 0.025;
+
 export const seamBand = (drape) => {
     const positions = [];
     const indices = [];
@@ -843,7 +883,23 @@ export const seamBand = (drape) => {
              * سرش همان رأسِ این سمت گذاشته می‌شود تا مثلث‌هایش مساحتِ صفر بگیرند.
              */
             const a = seam.pairs[i * 2] * 3;
-            const b = seam.dead && seam.dead[i] ? -1 : seam.pairs[i * 2 + 1] * 3;
+            let b = seam.dead && seam.dead[i] ? -1 : seam.pairs[i * 2 + 1] * 3;
+
+            /*
+             * درزی که واقعاً باز مانده هم نوار نمی‌گیرد. نوار برای شکافِ چند
+             * میلی‌متریِ درزِ بسته است؛ روی شکافِ چند سانتی‌متری یک مثلثِ باریکِ
+             * دراز می‌شد که در رندر مثلِ نخِ پاره از سرِ آستین تا شانه کشیده
+             * می‌شد (پیراهن، سرِ شانه).
+             */
+            if (b >= 0) {
+                const dx = pa[a] - pb[b];
+                const dy = pa[a + 1] - pb[b + 1];
+                const dz = pa[a + 2] - pb[b + 2];
+
+                if (dx * dx + dy * dy + dz * dz > BAND_REACH * BAND_REACH) {
+                    b = -1;
+                }
+            }
 
             if (b < 0) {
                 positions.push(pa[a], pa[a + 1], pa[a + 2], pa[a], pa[a + 1], pa[a + 2]);

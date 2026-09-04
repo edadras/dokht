@@ -91,12 +91,93 @@ for (const seam of drape.seams) {
         continue;
     }
 
+    const pa = seam.a.positions;
+    const pb = other.positions;
+
     for (let i = 0; i < seam.count; i++) {
-        if (seam.dead && seam.dead[i]) {
+        const a = seam.pairs[i * 2] * 3;
+        const b = seam.pairs[i * 2 + 1] * 3;
+        const gap = Math.hypot(pa[a] - pb[b], pa[a + 1] - pb[b + 1], pa[a + 2] - pb[b + 2]);
+
+        // سوزنِ خاموش (ناسازگار) فقط اگر خودش نزدیک افتاده جوش می‌خورد؛ درزِ واقعاً باز باز می‌ماند
+        if ((seam.dead && seam.dead[i] && gap > 0.012) || gap > 0.03) {
             continue;
         }
 
         welds.push(ia, seam.pairs[i * 2], ib, seam.pairs[i * 2 + 1]);
+    }
+}
+
+/*
+ * دکمه‌ها: روی بستِ جلو، و یکی روی کمربند.
+ *
+ * بستِ جلو در حل‌کننده یک درز است و در عکس چیزی نشان نمی‌دهد؛ کاربر لباسِ
+ * بسته را «رها روی مانکن» می‌دید. هر نُه سانتی‌متر از سرِ بست یک دکمه، و روی
+ * کمربندِ شلوار و دامن یکی در مرکزِ جلو. جای هر دکمه وسطِ جفت‌رأسِ درز است و
+ * جهتش رو به بیرونِ تن (از محورِ تن)؛ رندر قرصی همان‌جا می‌گذارد.
+ */
+const buttons = [];
+const outward = (x, y, z) => {
+    const cz = body.profile ? (body.profile.find((row) => row[0] >= y) || body.profile[body.profile.length - 1])[5] || 0 : 0;
+    const len = Math.hypot(x, z - cz) || 1;
+
+    return [x / len, 0, (z - cz) / len];
+};
+
+for (const seam of drape.seams) {
+    if (! /بستن مرکز جلو/.test(seam.label || '') || ! seam.b) {
+        continue;
+    }
+
+    const pa = seam.a.positions;
+    const pb = seam.b.positions;
+    const spots = [];
+
+    for (let i = 0; i < seam.count; i++) {
+        if (seam.dead && seam.dead[i]) continue;
+        const a = seam.pairs[i * 2] * 3;
+        const b = seam.pairs[i * 2 + 1] * 3;
+        spots.push([(pa[a] + pb[b]) / 2, (pa[a + 1] + pb[b + 1]) / 2, (pa[a + 2] + pb[b + 2]) / 2]);
+    }
+
+    spots.sort((one, two) => two[1] - one[1]);
+
+    let lastY = Infinity;
+
+    for (const [x, y, z] of spots) {
+        if (y > lastY - 0.09) continue;
+        // اولین دکمه دو سانتی‌متر زیرِ سرِ بست
+        if (lastY === Infinity && spots.length > 1 && y > spots[0][1] - 0.02) continue;
+        lastY = y;
+        buttons.push({ at: [x, y, z], normal: outward(x, y, z) });
+    }
+}
+
+for (const { piece, patch } of drape.patches) {
+    if (! piece || piece.wraps !== true || ! piece.placement || piece.placement.radius_hint !== 'waist') continue;
+    let best = -1;
+    let bestZ = -Infinity;
+    let top = -Infinity;
+    let low = Infinity;
+
+    for (let v = 0; v < patch.count; v++) {
+        top = Math.max(top, patch.positions[v * 3 + 1]);
+        low = Math.min(low, patch.positions[v * 3 + 1]);
+    }
+
+    const mid = (top + low) / 2;
+
+    for (let v = 0; v < patch.count; v++) {
+        const z = patch.positions[v * 3 + 2];
+        if (Math.abs(patch.positions[v * 3 + 1] - mid) < 0.012 && Math.abs(patch.positions[v * 3]) < 0.03 && z > bestZ) {
+            bestZ = z;
+            best = v;
+        }
+    }
+
+    if (best >= 0) {
+        const x = patch.positions[best * 3], y = patch.positions[best * 3 + 1], z = patch.positions[best * 3 + 2];
+        buttons.push({ at: [x, y, z], normal: outward(x, y, z) });
     }
 }
 
@@ -115,5 +196,7 @@ writeFileSync(output, JSON.stringify({
     meshes,
     // [شمارهٔ مشِ a، رأسِ a، شمارهٔ مشِ b، رأسِ b] پشتِ سرِ هم؛ ببینید بالا
     welds,
+    // جای دکمه‌ها (متر) و جهتِ بیرون؛ ببینید بالا
+    buttons,
 }));
 

@@ -9,8 +9,8 @@
 قراردادها:
   - حل‌کننده: متر، y رو به بالا، z مثبت جلو. Blender: z رو به بالا؛ پس (x, -z, y).
   - حلقه‌های بدن (sewn.body): سانتی‌متر، y رو به پایین از فرقِ سر (mannequin.js).
-  - مانکن مثل مانکنِ خیاطی است: تنه تا فاق، پایهٔ فلزی تا زمین، بی‌سر. بازو فقط
-    وقتی که لباس آستین دارد.
+  - مانکن مثل مانکنِ خیاطی است: تنه تا فاق، پایهٔ فلزی تا زمین، بی‌سر، همیشه با
+    بازو؛ پا وقتی که لباس از فاق پایین‌تر می‌رود.
   - Cycles روی CPU، چون کانتینر GPU و نمایشگر ندارد و EEVEE بی‌آن بالا نمی‌آید.
 """
 import bmesh, bpy, json, math, os, sys
@@ -129,7 +129,10 @@ _bump.inputs['Distance'].default_value = .0008
 _links.new(_noise.outputs['Fac'], _bump.inputs['Height'])
 _links.new(_bump.outputs['Normal'], _nodes['Principled BSDF'].inputs['Normal'])
 
-has_sleeves = any((m.get('role') == 'sleeve') for m in sewn.get('meshes', []))
+# مانکن همیشه دست دارد: حل‌کننده هم همیشه با بازو می‌دوزد (bodyColliders)، پس پارچه از پیش جای بازو را خالی گذاشته
+has_sleeves = True
+# دکمه: شاخِ تیره، کمی براق
+button_mat = mat('دکمه', (.09, .075, .06), .35)
 
 
 def body_from_rings(body):
@@ -234,7 +237,7 @@ def garment_mesh(mode='dry'):
     """
     if sewn.get('meshes'):
         # نوارِ درزهای نمای قبلی می‌رود؛ با هر نما از نو ساخته می‌شود (ببینید shot)
-        for old in [o for o in bpy.data.objects if o.name.startswith('درزها')]:
+        for old in [o for o in bpy.data.objects if o.name.startswith(('درزها', 'دکمه'))]:
             bpy.data.objects.remove(old, do_unlink=True)
         verts, faces = [], []
         all_y = [mesh['positions'][i] for mesh in sewn['meshes'] for i in range(1, len(mesh['positions']), 3)]
@@ -246,6 +249,17 @@ def garment_mesh(mode='dry'):
         span = max(.35, hip_y - low)
         # نوارِ درزها جدا ساخته می‌شود (پایین): اگر با پارچه جوش بخورد، مثلث‌هایش روی
         # مثلث‌های پارچه می‌افتد و هموارسازی سوراخ می‌سازد (شورت: پهلو و پشت)
+        def deform(x, vertical, depth):
+            fall = max(0.0, min(1.0, (hip_y - vertical) / span))
+            if mode == 'air':
+                x += .38 * fall ** 1.6
+                depth += .04 * math.sin(vertical * 22 + x * 9) * fall
+            elif mode == 'water':
+                vertical -= .03 * fall
+                x *= 1 - .06 * fall
+                depth *= 1 - .06 * fall
+            return x, vertical, depth
+
         parts = [part for part in sewn['meshes'] if part.get('role') != 'seam']
         bands = [part for part in sewn['meshes'] if part.get('role') == 'seam']
         offsets = []
@@ -272,6 +286,18 @@ def garment_mesh(mode='dry'):
             indices = part['indices']
             for i in range(0, len(indices), 3):
                 faces.append((offset + indices[i], offset + indices[i + 1], offset + indices[i + 2]))
+        # دکمه‌ها (از sew.mjs): قرصی تیره روی بستِ جلو و کمربند، رو به بیرونِ تن
+        for k, button in enumerate(sewn.get('buttons') or []):
+            bx, by, bz = deform(*button['at'])
+            nx, ny, nz = button.get('normal') or [0, 0, 1]
+            centre = Vector((bx, -bz, by)) + Vector((nx, -nz, 0)) * .0035
+            bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=.0065, depth=.0025, location=centre)
+            ob_button = bpy.context.object
+            ob_button.name = 'دکمه %d' % k
+            ob_button.data.materials.append(button_mat)
+            ob_button.rotation_mode = 'QUATERNION'
+            ob_button.rotation_quaternion = Vector((nx, -nz, 0)).to_track_quat('Z', 'Y')
+            bpy.ops.object.shade_smooth()
         band_start = len(verts) if not bands else band_start
         band_faces = [f for f in faces if f[0] >= band_start]
         faces = [f for f in faces if f[0] < band_start]
