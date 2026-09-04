@@ -17,11 +17,16 @@ while True:
     job = os.path.join(PROCESSING, os.path.basename(source))
     try:
         os.replace(source, job)
+        sewn = job + '.sewn.json'
+        subprocess.run([
+            'node', '/engine/sew.mjs', job, sewn,
+        ], check=True, timeout=900)
         subprocess.run([
             'blender', '--background', '--factory-startup',
-            '--python', '/engine/render.py', '--', job,
+            '--python', '/engine/render.py', '--', job, sewn,
         ], check=True, timeout=900)
         os.remove(job)
+        os.remove(sewn)
     except Exception as error:
         failure = os.path.join(FAILED, os.path.basename(job))
         try:
