@@ -451,8 +451,10 @@ export const sewAnchored = (world, drape, placed, above, steps, chunk = 40, anch
         }
     }
 
-    // رها؛ از این‌جا وزن و درزها لباس را نگه می‌دارند
-    for (const { patch, vertex } of anchors) {
+    // سرشانه رها می‌شود؛ سنجاق فاق روی مانکن ثابت می‌ماند تا دو نیمه از مسیر
+    // کوتاهِ داخل لگن به یک سمت سُر نخورند.
+    for (const { patch, vertex, persistent } of anchors) {
+        if (persistent) continue;
         patch.invMass[vertex] = 1;
     }
 };
@@ -2551,3 +2553,4 @@ export default (initial = {}) => ({
         contexts.delete(this.$root);
     },
 });
+
