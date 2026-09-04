@@ -302,8 +302,14 @@ class BlazerGenerator extends BaseGenerator
             'mirror' => true,
             'outline' => $outline,
             'grainline' => $this->grainline($width * 0.5, 2, $length - 2),
+            /*
+             * خطِ برگردان موازیِ خطِ گردن است، به بلندیِ پایهٔ یقه: بالای آن پایه
+             * روی گردن می‌ایستد و پایینش روی سرشانه می‌خوابد. پیش از این خط عمودی
+             * کشیده شده بود (از (۰,۰) تا (۱,طول)) — یعنی روی لبهٔ کناریِ قطعه —
+             * و نه روی کاغذ راهنمای دوخت بود و نه در نمای سه‌بعدی یقه را می‌خواباند.
+             */
             'markers' => [
-                $this->marker('roll_line', 'خط برگردان', 0, 0, 1.0, $length),
+                $this->marker('roll_line', 'خط برگردان', 0, min(3.0, $length * 0.3), $width, min(3.0, $length * 0.3) + 1.5),
             ],
             'meta' => [
                 'part' => 'lapel',

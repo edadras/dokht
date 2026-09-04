@@ -302,6 +302,57 @@ class SvgRenderer
         return $marks;
     }
 
+    /**
+     * راهنمای دوخت روی لبه‌ها: نامِ هر لبه (سرشانه، پهلو، فاق، خط کمر…) در میانه‌اش.
+     *
+     * برچسبِ لبه همان است که رابطه‌های دوخت و جای دوخت از آن ساخته می‌شوند؛ تا
+     * امروز فقط در کد بود و خیاط روی کاغذ نمی‌دید کدام لبه به کدام می‌رسد.
+     */
+    protected function edgeGuides(PatternPiece $piece, bool $labels): string
+    {
+        if (! $labels) {
+            return '';
+        }
+
+        $outline = array_values($piece->outline ?? []);
+        $count = count($outline);
+
+        if ($count < 3) {
+            return '';
+        }
+
+        $tags = Geometry::edgeTags(['outline' => $outline, 'meta' => $piece->meta ?? []]);
+        $parts = [];
+
+        foreach ($tags as $index => $tag) {
+            $name = SeamAllowanceService::TAGS[$tag] ?? null;
+
+            if ($name === null || $tag === 'default' || ! isset($outline[$index], $outline[($index + 1) % $count])) {
+                continue;
+            }
+
+            $a = $outline[$index];
+            $b = $outline[($index + 1) % $count];
+
+            if (! isset($a['x'], $a['y'], $b['x'], $b['y'])) {
+                continue;
+            }
+
+            // لبهٔ خیلی کوتاه جای نوشته ندارد
+            if (hypot((float) $b['x'] - (float) $a['x'], (float) $b['y'] - (float) $a['y']) < 4.0) {
+                continue;
+            }
+
+            $mx = ((float) $a['x'] + (float) $b['x']) / 2;
+            $my = ((float) $a['y'] + (float) $b['y']) / 2;
+
+            $parts[] = '<text x="'.$this->n($mx).'" y="'.$this->n($my).'" font-size="0.85" fill="#57534e" '
+                .'text-anchor="middle" dominant-baseline="middle" opacity="0.8">'.$this->escape($name).'</text>';
+        }
+
+        return implode('', $parts);
+    }
+
     /** بندانگشتی کوچک برای فهرست‌ها. */
     public function thumbnail(Pattern $pattern, int $size = 220): string
     {
@@ -398,7 +449,15 @@ class SvgRenderer
 
             $parts[] = '<circle cx="'.$this->n($notch['x']).'" cy="'.$this->n($notch['y'])
                 .'" r="0.3" fill="none" stroke="#d4573e" stroke-width="0.12" />';
+
+            // راهنمای دوخت: نشانه با نامش (پنجهٔ فاق، نشانهٔ زانو…) تا خیاط بداند چه به چه می‌رسد
+            if ($labels && ! empty($notch['label'])) {
+                $parts[] = '<text x="'.$this->n(((float) $notch['x']) + 0.5).'" y="'.$this->n(((float) $notch['y']) + 0.35)
+                    .'" font-size="0.9" fill="#d4573e">'.$this->escape($notch['label']).'</text>';
+            }
         }
+
+        $parts[] = $this->edgeGuides($piece, $labels);
 
         // سوراخ‌های نشانه
         foreach ($piece->drills ?? [] as $drill) {

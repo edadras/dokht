@@ -63,6 +63,43 @@ const meshes = drape.patches
  */
 const band = seamBand(drape);
 
+/*
+ * جوشِ درزها برای رندر: هر سوزنِ زنده یک جفت رأس (قطعه، رأس) ↔ (قطعه، رأس).
+ *
+ * رندر هر قطعه را مشِ جدا می‌گرفت و هموارسازی لبهٔ آزادِ هر مش را تو می‌کشید؛
+ * درزِ بسته در عکس نواری روشن می‌شد. جوشِ فاصله‌ای (remove_doubles) هم جواب
+ * نبود: لایه‌های پارچه‌ای که روی هم خوابیده‌اند به هم می‌چسبیدند و سوراخ
+ * می‌ساختند (شورت، پهلو و پشت). پس دقیقاً همان رأس‌هایی که به هم دوخته‌اند جوش
+ * می‌خورند، نه بیشتر.
+ */
+const meshIndex = new Map();
+
+meshes.forEach((entry, index) => meshIndex.set(entry.id, index));
+
+const welds = [];
+
+for (const seam of drape.seams) {
+    if (seam.kind === 'crease' || ! seam.a) {
+        continue;
+    }
+
+    const other = seam.b || seam.a;
+    const ia = meshIndex.get(drape.patches.find((entry) => entry.patch === seam.a)?.id);
+    const ib = meshIndex.get(drape.patches.find((entry) => entry.patch === other)?.id);
+
+    if (ia === undefined || ib === undefined) {
+        continue;
+    }
+
+    for (let i = 0; i < seam.count; i++) {
+        if (seam.dead && seam.dead[i]) {
+            continue;
+        }
+
+        welds.push(ia, seam.pairs[i * 2], ib, seam.pairs[i * 2 + 1]);
+    }
+}
+
 if (band) {
     meshes.push({ id: 'seams', name: 'درزها', role: 'seam', positions: band.positions, indices: band.indices });
 }
@@ -76,5 +113,7 @@ writeFileSync(output, JSON.stringify({
     // پوستِ برخوردگر (متر): [y, نیم‌پهنا، میانگینِ عمق، جلو، پشت، مرکزِ z]؛ زیرِ بغل گود است تا آستین جا بگیرد
     hull: body.hull,
     meshes,
+    // [شمارهٔ مشِ a، رأسِ a، شمارهٔ مشِ b، رأسِ b] پشتِ سرِ هم؛ ببینید بالا
+    welds,
 }));
 

@@ -480,6 +480,66 @@ export const shoulderAnchors = (drape, table, payload) => {
         pin(pb, seam.b.from, seam.b.to, side);
     }
 
+    /*
+     * لنگرِ کمر: شلوار و دامن و شورت از کمر آویزان‌اند، نه از سرشانه.
+     *
+     * دوختِ بی‌وزن هیچ تکیه‌گاهی برای پایین‌تنه نداشت: سنجاقِ سرشانه به آن
+     * نمی‌رسد و لنگرِ فرورفتگی (sagOf) فقط رأس‌های بالای حلقهٔ آستین را
+     * می‌شمرد — که شلوار ندارد. پس درزها لباس را آزادانه پایین می‌کشیدند:
+     * اندازه گرفته شد روی جینِ کلوش، کمربند در چیدن روی ۹۹ سانتی‌متر و پس
+     * از دوختِ بی‌وزن روی ۸۷، پنج سانتی‌متر هم به یک سو رفته؛ بعد نگه‌دارنده
+     * همان‌جا میخش می‌کرد و کمربند روی باسن مچاله می‌ماند.
+     *
+     * خیاط کمربند را روی کمرِ مانکن سنجاق می‌کند و پاچه‌ها را به آن می‌دوزد.
+     * همین: در لباسی که بالاتنه ندارد، کمربند (نوارِ دورِ کمر) سرِ جای چیدنش
+     * سنجاق می‌شود؛ اگر کمربندی نباشد، لبه‌های «waist» پاچه و دامن.
+     */
+    const zoneOf = (piece) => (piece && piece.placement && piece.placement.zone) || '';
+    const bottoms = drape.patches.length > 0 && ! drape.patches.some(({ piece }) => {
+        const zone = zoneOf(piece);
+        return zone.startsWith('torso') || zone.startsWith('sleeve') || zone === 'collar';
+    });
+
+    if (bottoms) {
+        const here = (patch, v) => [patch.positions[v * 3], patch.positions[v * 3 + 1], patch.positions[v * 3 + 2]];
+        const bands = drape.patches.filter(({ piece }) => piece && piece.wraps === true && piece.placement && piece.placement.radius_hint === 'waist');
+
+        if (bands.length) {
+            for (const { patch } of bands) {
+                for (let v = 0; v < patch.count; v++) {
+                    anchors.push({ patch, vertex: v, target: here(patch, v) });
+                }
+            }
+        } else {
+            for (const entry of drape.patches) {
+                const piece = entry.piece;
+                const zone = zoneOf(piece);
+                if (! piece || ! Array.isArray(piece.edges) || ! Array.isArray(piece.polygon)) continue;
+                if (! (zone.startsWith('leg') || zone.startsWith('skirt'))) continue;
+                const n = piece.polygon.length;
+                const grain = entry.mesh.grain;
+                for (const edge of piece.edges) {
+                    if (edge.tag !== 'waist') continue;
+                    let walk = edge.start;
+                    for (let k = 0; k <= n; k++) {
+                        const [px, py] = piece.polygon[walk];
+                        let best = -1;
+                        let bd = Infinity;
+                        for (let v = 0; v < entry.patch.count; v++) {
+                            const d = Math.hypot(grain[v * 2] - px * scale, grain[v * 2 + 1] - py * scale);
+                            if (d < bd) { bd = d; best = v; }
+                        }
+                        if (best >= 0 && bd < 0.004) {
+                            anchors.push({ patch: entry.patch, vertex: best, target: here(entry.patch, best) });
+                        }
+                        if (walk === edge.end) break;
+                        walk = (walk + 1) % n;
+                    }
+                }
+            }
+        }
+    }
+
     return anchors;
 };
 
@@ -507,10 +567,19 @@ export const sewAnchored = (world, drape, placed, above, steps, chunk = 40, anch
         }
     }
 
+    /*
+     * لنگرِ فرورفتگی برای لباسی که به حلقهٔ آستین نمی‌رسد: ده سانتی‌متر زیرِ
+     * سرِ خودِ لباس. شلوار و دامن هیچ رأسی بالای حلقه ندارند و بی این، sagOf
+     * صفر می‌داد و فرورفتنشان در دوختِ بی‌وزن هرگز برنمی‌گشت (ببینید
+     * shoulderAnchors، لنگرِ کمر). بالاتنه دست‌نخورده می‌ماند: سرش بالاتر از
+     * حلقه است.
+     */
+    const level = Math.min(above, placedHigh - 0.10);
+
     for (let done = 0; done < steps; done += chunk) {
         world.presettle(Math.min(chunk, steps - done));
 
-        let sag = sagOf(drape, placed, above);
+        let sag = sagOf(drape, placed, level);
 
         if (sag < 0) {
             let high = -Infinity;

@@ -1037,7 +1037,8 @@ const placePiece = (piece, flat, body, options) => {
          * سانتی‌متر پشتِ تن). شعاعی که پهنای قطعه را دقیقاً در بازهٔ زاویه‌اش
          * جا بدهد — جلو و پشت هر یک نیم‌دور — و کمتر از خودِ پا نه.
          */
-        const fit = ((maxX - minX) * scale) / Math.max(0.5, u1 - u0);
+        // پاچه‌ای که از فاق می‌پیچد نیم‌دورِ پاست؛ بازهٔ زاویه‌ایِ سرور (یک‌چهارمِ کمر) جای پاچه روی تن است، نه پهنایش
+        const fit = ((maxX - minX) * scale) / (legInner !== null ? Math.PI : Math.max(0.5, u1 - u0));
 
         hold = Math.max(sampleTable(legs, midY)[0], fit) + gap;
     } else if (placement.zone === 'collar' && hint) {
@@ -1069,12 +1070,50 @@ const placePiece = (piece, flat, body, options) => {
      * میانگین می‌ماند.
      */
 
+    /*
+     * پیش‌تا: رویهٔ یقه و لپه از همان اول روی پایه‌اش خوابیده چیده می‌شود.
+     *
+     * قیدِ خطِ خواب (creaseAt) رویه را به آینه‌اش روی پایه می‌کشد، ولی جهتِ تا
+     * را تعیین نمی‌کند؛ لپهٔ کت روی استوانه بالای خطِ شکست چیده می‌شد و قید آن
+     * را به هر سو که آسان‌تر بود می‌خواباند — رو به بالا، دو گوشِ ایستاده روی
+     * شانه‌ها (رندرِ کتِ اسپرت). پس رأس‌های رویه از همان اول روی بازتابشان
+     * نسبت به خطِ خواب چیده می‌شوند، چند میلی‌متر بیرون‌تر از پایه، و قید
+     * فقط نگهشان می‌دارد. نخ (grain) دست‌نخورده می‌ماند: پارچه همان پارچه است.
+     */
+    let fold = null;
+
+    if (piece.roll !== undefined && piece.roll !== null) {
+        const usable = typeof piece.roll === 'number'
+            ? Number.isFinite(piece.roll)
+            : Number.isFinite(piece.roll.x1) && Number.isFinite(piece.roll.x2);
+
+        if (usable) {
+            const pre = new Float32Array(count * 2);
+
+            for (let i = 0; i < count; i++) {
+                pre[i * 2] = flat.positions[i * 2] * scale;
+                pre[i * 2 + 1] = flat.positions[i * 2 + 1] * scale;
+            }
+
+            fold = rollGeometry({ mesh: { grain: pre }, patch: { count } }, piece.roll, scale);
+        }
+    }
+
     for (let i = 0; i < count; i++) {
-        const x = flat.positions[i * 2];
-        const y = flat.positions[i * 2 + 1];
+        let x = flat.positions[i * 2];
+        let y = flat.positions[i * 2 + 1];
+        let lifted = 0;
 
         grain[i * 2] = x * scale;
         grain[i * 2 + 1] = y * scale;
+
+        if (fold && fold.over(i)) {
+            const [rx, ry] = fold.reflect(i);
+
+            x = rx / scale;
+            y = ry / scale;
+            lifted = FOLD_LIFT;
+        }
 
         // y الگو رو به پایین است؛ همین‌جا برمی‌گردد تا بقیه‌ی کد فقط با دستگاه
         // سه‌بعدی سروکار داشته باشد
@@ -1104,7 +1143,18 @@ const placePiece = (piece, flat, body, options) => {
             center = side * ((body.armOffset ?? (body.radii.shoulder * 0.87))
                 + (Math.max(0, along) * Math.sin(tilt)));
         } else if (legs) {
-            center = side * sampleTable(legs, world)[1];
+            /*
+             * و هرگز از خطِ میانِ دو پا رد نمی‌شود.
+             *
+             * استوانهٔ چیدنِ پاچه (شعاعِ خودِ قطعه، ۱۰ سانتی‌متر) از محورِ پا
+             * (۹٫۲) پهن‌تر است، پس داخلی‌ترین نوارش یک‌دو سانتی‌متر *درونِ رانِ
+             * پای دیگر* چیده می‌شد. برخوردگرِ آن پا در همان چهل گامِ اولِ دوخت
+             * آن نوار را به دورترین سویش هل می‌داد — سرِ درزِ داخلِ پای راست
+             * روی پهلوی پای چپ می‌نشست (اندازه گرفته شد: شورتِ برمودا، x از
+             * ۱− به ۱۷−). پس مرکزِ استوانه آن‌قدر بیرون می‌رود که لبهٔ داخلی روی
+             * خطِ میانی بماند.
+             */
+            center = side * Math.max(sampleTable(legs, world)[1], hold + 0.005);
         }
 
         /*
@@ -1222,7 +1272,8 @@ const placePiece = (piece, flat, body, options) => {
         const skin = arm || legs || placement.zone === 'collar'
             ? hold
             : Math.max(sampleRow(body.profile, world), hint || 0) + gap;
-        const reach = lerp(hold, skin, HUG);
+        // رویهٔ تاخورده چند میلی‌متر بیرونِ پایه (ببینید fold)
+        const reach = lerp(hold, skin, HUG) + lifted;
         /*
          * مرکزِ عمقیِ این تراز: محورِ بازو برای آستین (armDepth)، و برای تنه
          * مرکزِ خودِ مقطع (ستونِ ششمِ نیم‌رخ؛ آواتار گردن و باسنش پشتِ سینه
@@ -1234,7 +1285,8 @@ const placePiece = (piece, flat, body, options) => {
         let pz = reach * nudge * Math.cos(spin) + depth;
 
         if (pelvis > 0) {
-            const legMid = (u0 + u1) / 2;
+            // پاچه‌ای که از فاق می‌پیچد، دورِ جلو (۰) یا پشتِ (π) پا شمرده شده، نه دورِ میانهٔ بازهٔ سرور
+            const legMid = legInner !== null ? (Math.abs(uMid) > 1 ? Math.PI : 0) : (u0 + u1) / 2;
             const bodyMid = Math.abs(legMid) < 1 ? side * Math.PI / 4 : Math.PI - side * Math.PI / 4;
             const wrapped = Math.atan2(Math.sin(spin - legMid), Math.cos(spin - legMid));
             const bodySpin = bodyMid + wrapped / 2;
@@ -1383,6 +1435,110 @@ const arcOf = (state, from, to) => {
  * «سانتی‌متر»، سمتِ بلندتر به‌طور یکنواخت روی سمتِ کوتاه‌تر جمع می‌شود — همان
  * کاری که خیاط با پس‌دوزیِ یکنواخت می‌کند.
  */
+/*
+ * نشانه‌ها دو سوی درز را نقطه‌به‌نقطه هم‌تراز می‌کنند.
+ *
+ * جفت‌سازی با کسرِ طول، اضافه و کمِ دو سمت را یکنواخت پخش می‌کند — درست برای
+ * درزی که خیاط یکنواخت پس‌دوزی می‌کند، ولی نه برای درزِ داخلِ پای شلوار: نشانهٔ
+ * زانوی جلو باید روی نشانهٔ زانوی پشت بنشیند و پنجهٔ فاق روی پنجهٔ فاق؛ اضافهٔ
+ * پشت (۲ سانتی‌متر روی ران) فقط میانِ آن دو نشانه جمع می‌شود، نه سرتاسر. الگو
+ * همین نشانه‌ها را دارد (notches با کلیدِ pair). اگر نشانه‌ای با یک کلید روی
+ * هر دو کمان باشد، کسرِ طولِ کمانِ دوم تکه‌تکه (خطی میانِ نشانه‌ها) بازنگاشت
+ * می‌شود تا نشانه‌ها روبه‌روی هم بیفتند.
+ *
+ * @returns {object} همان کمانِ دوم، با t بازنگاشت‌شده؛ یا خودش اگر نشانهٔ مشترکی نبود
+ */
+const alignByNotches = (stateA, arcA, stateB, arcB, reverse, scale) => {
+    const notchesA = stateA.piece && stateA.piece.notches;
+    const notchesB = stateB.piece && stateB.piece.notches;
+
+    if (! Array.isArray(notchesA) || ! Array.isArray(notchesB) || ! notchesA.length || ! notchesB.length) {
+        return arcB;
+    }
+
+    // نزدیک‌ترین رأسِ کمان به نشانه، اگر روی همان لبه باشد (تا ۱٫۵ سانتی‌متر)
+    const onArc = (state, arc, notch) => {
+        let best = -1;
+        let bestGap = 1.5;
+
+        for (let i = 0; i < arc.vertices.length; i++) {
+            const v = arc.vertices[i] * 2;
+            const gap = Math.hypot(state.positions[v] - notch.x, state.positions[v + 1] - notch.y);
+
+            if (gap < bestGap) {
+                bestGap = gap;
+                best = i;
+            }
+        }
+
+        return best < 0 ? null : arc.t[best];
+    };
+
+    const found = new Map();
+
+    for (const notch of notchesA) {
+        if (! notch || ! notch.key) continue;
+        const t = onArc(stateA, arcA, notch);
+        if (t !== null && ! found.has(notch.key)) found.set(notch.key, { a: t });
+    }
+
+    const knots = [];
+
+    for (const notch of notchesB) {
+        if (! notch || ! notch.key || ! found.has(notch.key)) continue;
+        const entry = found.get(notch.key);
+        if (entry.b !== undefined) continue;
+        const t = onArc(stateB, arcB, notch);
+        if (t === null) continue;
+        entry.b = reverse ? 1 - t : t;
+        knots.push([entry.b, entry.a]);
+    }
+
+    if (! knots.length) {
+        return arcB;
+    }
+
+    knots.sort((one, two) => one[0] - two[0]);
+
+    // یکنوا و دور از دو سر، وگرنه بازنگاشت تا می‌خورد
+    const pins = [[0, 0]];
+
+    for (const [tb, ta] of knots) {
+        const last = pins[pins.length - 1];
+
+        if (tb > last[0] + 0.02 && ta > last[1] + 0.02 && tb < 0.98 && ta < 0.98) {
+            pins.push([tb, ta]);
+        }
+    }
+
+    pins.push([1, 1]);
+
+    if (pins.length < 3) {
+        return arcB;
+    }
+
+    const remap = (tb) => {
+        for (let i = 1; i < pins.length; i++) {
+            if (tb <= pins[i][0]) {
+                const [b0, a0] = pins[i - 1];
+                const [b1, a1] = pins[i];
+
+                return a0 + (a1 - a0) * ((tb - b0) / Math.max(1e-9, b1 - b0));
+            }
+        }
+
+        return 1;
+    };
+
+    const t = Float64Array.from(arcB.t, (value) => {
+        const mapped = remap(reverse ? 1 - value : value);
+
+        return reverse ? 1 - mapped : mapped;
+    });
+
+    return { ...arcB, t };
+};
+
 const pairArcs = (arcA, arcB, reverse) => {
     const tb = reverse ? Float64Array.from(arcB.t, (value) => 1 - value) : arcB.t;
     const order = reverse
@@ -1841,6 +1997,9 @@ const VERTICAL_ROOM = 0.03;
  * پوست — نزدیک ولی کشیده. ببینید جای مصرفش در placePiece.
  */
 const HUG = 1;
+
+/* فاصلهٔ رویهٔ پیش‌تاخورده از پایه‌اش سرِ چیدن (متر)؛ به اندازهٔ ضخامتِ برخورد، تا لایه‌ها از هم رد نشوند */
+const FOLD_LIFT = 0.008;
 
 /* میانگینِ نیم‌پهنا و نیم‌عمقِ بدن در یک ارتفاع */
 const sampleRow = (profile, y) => {
@@ -3125,9 +3284,50 @@ export const buildDrape = (payload, body, options = {}) => {
          * می‌خواند.
          */
         const flip = arcB.vertices.length > arcA.vertices.length;
-        const stitch = flip
-            ? pairArcs(arcB, arcA, Boolean(seam.reverse))
-            : pairArcs(arcA, arcB, Boolean(seam.reverse));
+        const [first, second, firstState, secondState] = flip
+            ? [arcB, arcA, stateB, stateA]
+            : [arcA, arcB, stateA, stateB];
+        let stitch = pairArcs(
+            first,
+            alignByNotches(firstState, first, secondState, second, Boolean(seam.reverse), scale),
+            Boolean(seam.reverse),
+        );
+
+        /*
+         * بستِ جلو بالای نقطهٔ شکست باز می‌ماند: آن‌جا لپه است و رو به بیرون
+         * برمی‌گردد.
+         *
+         * لبهٔ مرکزِ جلوی کت از سرِ گردن تا دم یک لبه است و سرور همه‌اش را
+         * می‌بست — از جمله بخشِ بالای خطِ برگردان. دو لپه در خطِ مرکز به هم
+         * دوخته و همان‌جا تا می‌خوردند: دو بالِ ایستاده روی سینه (رندرِ کتِ
+         * اسپرت). نقطهٔ شکست سرِ پایینِ خطِ برگردان است، همان‌جا که دکمهٔ اول
+         * بسته می‌شود؛ سوزن‌های بالاترش برداشته می‌شوند.
+         */
+        if (seam.closure && stitch.pairs.length) {
+            const host = flip ? stateB : stateA;
+            const roll = host.piece.roll;
+
+            if (roll && Number.isFinite(roll.y1) && Number.isFinite(roll.y2)) {
+                const breakY = (Math.max(roll.y1, roll.y2) - 0.5) * scale;
+                const grain = host.mesh.grain;
+                const keep = [];
+
+                for (let i = 0; i < stitch.pairs.length / 2; i++) {
+                    if (grain[stitch.pairs[i * 2] * 2 + 1] >= breakY) {
+                        keep.push(i);
+                    }
+                }
+
+                if (keep.length >= 2 && keep.length < stitch.pairs.length / 2) {
+                    stitch = {
+                        pairs: keep.flatMap((i) => [stitch.pairs[i * 2], stitch.pairs[i * 2 + 1]]),
+                        second: stitch.second ? keep.map((i) => stitch.second[i]) : stitch.second,
+                        weight: stitch.weight ? keep.map((i) => stitch.weight[i]) : stitch.weight,
+                    };
+                }
+            }
+        }
+
         const set = sew({
             a: flip ? stateB : stateA,
             b: flip ? stateA : stateB,

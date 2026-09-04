@@ -13,7 +13,7 @@
     وقتی که لباس آستین دارد.
   - Cycles روی CPU، چون کانتینر GPU و نمایشگر ندارد و EEVEE بی‌آن بالا نمی‌آید.
 """
-import bpy, json, math, os, sys
+import bmesh, bpy, json, math, os, sys
 from mathutils import Vector
 
 job_path = sys.argv[sys.argv.index('--') + 1]
@@ -233,6 +233,9 @@ def garment_mesh(mode='dry'):
     آخر تغییرِ شکلِ هندسی روی همان مشِ حل‌شده‌اند، نه شبیه‌سازیِ دوباره.
     """
     if sewn.get('meshes'):
+        # نوارِ درزهای نمای قبلی می‌رود؛ با هر نما از نو ساخته می‌شود (ببینید shot)
+        for old in [o for o in bpy.data.objects if o.name.startswith('درزها')]:
+            bpy.data.objects.remove(old, do_unlink=True)
         verts, faces = [], []
         all_y = [mesh['positions'][i] for mesh in sewn['meshes'] for i in range(1, len(mesh['positions']), 3)]
         low, high = min(all_y), max(all_y)
@@ -241,8 +244,17 @@ def garment_mesh(mode='dry'):
         hip_y = (float(body['height']) - float(body['level']['hip'])) / 100 if body.get('level') else low + (high - low) * .45
         # بالاتنهٔ کوتاه فقط کمی تکان می‌خورد؛ دامنِ بلند تا ته
         span = max(.35, hip_y - low)
-        for part in sewn['meshes']:
+        # نوارِ درزها جدا ساخته می‌شود (پایین): اگر با پارچه جوش بخورد، مثلث‌هایش روی
+        # مثلث‌های پارچه می‌افتد و هموارسازی سوراخ می‌سازد (شورت: پهلو و پشت)
+        parts = [part for part in sewn['meshes'] if part.get('role') != 'seam']
+        bands = [part for part in sewn['meshes'] if part.get('role') == 'seam']
+        offsets = []
+        for part in parts + bands:
+            if part.get('role') == 'seam':
+                # مرزِ پارچه و نوار: از این‌جا به بعد رأس‌های نوار است
+                band_start = len(verts)
             offset = len(verts)
+            offsets.append(offset)
             positions = part['positions']
             for i in range(0, len(positions), 3):
                 x, vertical, depth = positions[i:i + 3]
@@ -260,9 +272,70 @@ def garment_mesh(mode='dry'):
             indices = part['indices']
             for i in range(0, len(indices), 3):
                 faces.append((offset + indices[i], offset + indices[i + 1], offset + indices[i + 2]))
+        band_start = len(verts) if not bands else band_start
+        band_faces = [f for f in faces if f[0] >= band_start]
+        faces = [f for f in faces if f[0] < band_start]
+        if band_faces:
+            bmesh_verts = verts[band_start:]
+            band_faces = [tuple(i - band_start for i in f) for f in band_faces]
+            band_mesh = bpy.data.meshes.new('درزها')
+            band_mesh.from_pydata(bmesh_verts, [], band_faces)
+            band_mesh.update()
+            band_ob = bpy.data.objects.new('درزها', band_mesh)
+            bpy.context.collection.objects.link(band_ob)
+            band_ob.data.materials.append(cloth)
+            band_sol = band_ob.modifiers.new('ضخامت', 'SOLIDIFY')
+            band_sol.thickness = .0022
+            band_sol.offset = 1
+            for poly in band_mesh.polygons:
+                poly.use_smooth = True
+        verts = verts[:band_start]
         mesh = bpy.data.meshes.new('لباس دوخته‌شده')
         mesh.from_pydata(verts, [], faces)
         mesh.update()
+        # درزها به هم جوش می‌خورند: دو لبهٔ دوخته‌شده چند میلی‌متر از هم‌اند و
+        # هر قطعه یک مشِ جدا بود؛ هموارسازی لبهٔ آزادِ هر مش را تو می‌کشید و
+        # همان درزِ بسته در رندر یک نوارِ روشنِ چند سانتی‌متری می‌شد (شورت:
+        # مرکزِ جلو بسته بود، x=۰، ولی در عکس باز دیده می‌شد). فقط رأس‌هایی که
+        # واقعاً به هم دوخته‌اند (sewn.welds از sew.mjs)؛ جوشِ فاصله‌ای لایه‌های
+        # روی هم را هم می‌چسباند و سوراخ می‌ساخت.
+        welds = sewn.get('welds') or []
+        if welds:
+            parent = list(range(len(verts)))
+
+            def find(i):
+                while parent[i] != i:
+                    parent[i] = parent[parent[i]]
+                    i = parent[i]
+                return i
+
+            for k in range(0, len(welds) - 3, 4):
+                ma, va, mb, vb = welds[k:k + 4]
+                if ma >= len(offsets) or mb >= len(offsets):
+                    continue
+                a, b = find(offsets[ma] + va), find(offsets[mb] + vb)
+                if a != b:
+                    parent[a] = b
+            groups = {}
+            for i in range(len(verts)):
+                groups.setdefault(find(i), []).append(i)
+            for root, members in groups.items():
+                if len(members) > 1:
+                    cx = sum(verts[i][0] for i in members) / len(members)
+                    cy = sum(verts[i][1] for i in members) / len(members)
+                    cz = sum(verts[i][2] for i in members) / len(members)
+                    verts[root] = (cx, cy, cz)
+            faces = [tuple(find(i) for i in f) for f in faces]
+            faces = [f for f in faces if len(set(f)) == 3]
+            mesh = bpy.data.meshes.new('لباس دوخته‌شده')
+            mesh.from_pydata(verts, [], faces)
+            mesh.update()
+            bm = bmesh.new()
+            bm.from_mesh(mesh)
+            bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+            bm.to_mesh(mesh)
+            bm.free()
+            mesh.update()
         ob = bpy.data.objects.new('لباس دوخته‌شده', mesh)
         bpy.context.collection.objects.link(ob)
         ob.data.materials.append(cloth)
@@ -272,6 +345,8 @@ def garment_mesh(mode='dry'):
         cs.iterations = 6
         cs.smooth_type = 'LENGTH_WEIGHTED'
         cs.use_only_smooth = True
+        # لبه‌های آزاد (دم، لبهٔ لپه، درزی که باز مانده) سرِ جایشان می‌مانند
+        cs.use_pin_boundary = True
         sol = ob.modifiers.new('ضخامت', 'SOLIDIFY')
         sol.thickness = .0022
         sol.offset = 1

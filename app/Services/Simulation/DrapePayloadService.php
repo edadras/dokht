@@ -235,6 +235,37 @@ class DrapePayloadService
         $byCode = [];
 
         foreach ($models as $model) {
+            /*
+             * برگردانِ یقهٔ کت (part=lapel) قطعهٔ رویه است، نه یقه.
+             *
+             * نواری ۱۰ در ۲۷ سانتی‌متر که ژنراتورِ کت جدا می‌بُرد تا روی لپه
+             * دوخته شود. برای دوختِ سه‌بعدی نقشِ «یقه» می‌گرفت، دورِ گردن چیده
+             * و به گردنِ پشت دوخته می‌شد — دو شاخِ ایستاده بالای شانه‌ها در رندرِ
+             * کتِ اسپرت. لپه از تای خودِ تنهٔ جلو روی خطِ برگردان ساخته می‌شود و
+             * این نوار در نما چیزی اضافه نمی‌کند.
+             */
+            if (($model->meta['part'] ?? null) === 'lapel') {
+                $notes[] = "قطعه «{$model->code}» رویهٔ لپه است و در نمای سه‌بعدی نمی‌آید؛ لپه از تای تنهٔ جلو ساخته می‌شود.";
+
+                continue;
+            }
+
+            /*
+             * سجاف و کیسهٔ جیب درونِ لباس‌اند و دیده نمی‌شوند.
+             *
+             * سجافِ جلوی کت نواری ۱۲ سانتی‌متری است که پشتِ لبهٔ جلو دوخته می‌شود؛
+             * در دوختِ سه‌بعدی به هیچ درزی نمی‌رسید و روی سینه، جلوی تنه، آویزان
+             * می‌ماند — همان نوارهای عمودیِ رندرِ کتِ اسپرت. کیسهٔ جیب هم همین‌طور.
+             * هر دو مثلِ آستر (لایهٔ lining) از نما بیرون می‌مانند.
+             */
+            $part = (string) ($model->meta['part'] ?? '');
+
+            if (in_array($part, ['facing', 'pocket-bag', 'bag'], true) || str_ends_with((string) $model->code, '-bag')) {
+                $notes[] = "قطعه «{$model->code}» درونِ لباس است و در نمای سه‌بعدی نمی‌آید.";
+
+                continue;
+            }
+
             // یک قطعه خراب نباید کل نمای سه‌بعدی را ببرد؛ گزارش می‌شود و بقیه
             // لباس ساخته می‌شود.
             try {
@@ -343,21 +374,56 @@ class DrapePayloadService
          * کمرِ پشت به همان نیمه کشیده می‌شد (اندازه گرفته شد: جینِ کلوش).
          */
         $single = false;
+        $part = $model->meta['part'] ?? null;
+        $band = in_array($part, ['waistband', 'elastic-band', 'band'], true) && ! $model->mirror && $count === 4;
 
-        if (in_array($model->meta['part'] ?? null, ['waistband', 'elastic-band'], true)
-            && (int) $model->cut_quantity === 2
-            && ! $model->mirror
-            && $count === 4
-            && is_numeric($model->meta['band_girth'] ?? null)) {
+        if ($band) {
             [$minX, $minY, $maxX, $maxY] = Geometry::bounds($outline);
-            $width = (float) $model->meta['band_girth'] + (float) ($model->meta['band_overlap'] ?? 0);
+            $girth = is_numeric($model->meta['band_girth'] ?? null)
+                ? (float) $model->meta['band_girth'] + (float) ($model->meta['band_overlap'] ?? 0)
+                : null;
+            $width = match (true) {
+                // نیم‌نوار (دو بار بریده، یا یک بار روی تای پارچه): نوارِ کشِ کمرِ لگینگ ۲۸ سانتی‌متر کشیده شده بود و دورِ کمر ۶۳
+                $girth !== null && ($maxX - $minX) < 0.75 * $girth => $girth,
+                // کمربندِ دامن (waistbandPiece): هر نیمه، نیمِ کمر به‌اضافهٔ ۳٫۵ جای دکمه
+                $girth === null && (int) $model->cut_quantity === 2 => (2 * ($maxX - $minX)) - 3.5,
+                default => null,
+            };
+
+            if ($width !== null) {
+                $outline = [
+                    Geometry::point($minX, $minY),
+                    Geometry::point($minX + $width, $minY),
+                    Geometry::point($minX + $width, $maxY),
+                    Geometry::point($minX, $maxY),
+                ];
+                $single = true;
+            }
+        }
+
+        /*
+         * نوارِ تاشده، به بلندیِ تمام‌شده و سرِ دوخت پایین.
+         *
+         * کمربند روی کاغذ دو برابرِ بلندیِ تمام‌شده بریده می‌شود و روی خطِ تا
+         * برمی‌گردد؛ لبهٔ دوختش هم سرِ بالای کادر است. همان‌طور که بود روی تن
+         * چیده می‌شد: نواری هشت سانتی‌متری که از لبهٔ کمرِ شلوار *پایین* آویزان
+         * بود، دو لایه و روی باسنی پهن‌تر از خودش — و همان مچاله‌ای که در رندرِ
+         * جینِ کلوش دیده شد (نوار در ۸۸ تا ۹۴ سانتی‌متر، دورِ تن آن‌جا ۹۱ و
+         * دورِ نوار ۷۹). کمربندِ واقعی از لبهٔ کمر *بالا* می‌رود، به بلندیِ
+         * تمام‌شده. پس نوار به همان بلندی کوتاه می‌شود و سروته، تا لبهٔ دوختش
+         * (لبهٔ صفر) پایین بنشیند؛ ببینید placement برای ترازش.
+         */
+        $up = false;
+
+        if ($band && ($finished = $this->bandHeight($model, $outline)) !== null) {
+            [$minX, $minY, $maxX] = Geometry::bounds($outline);
             $outline = [
+                Geometry::point($minX, $minY + $finished),
+                Geometry::point($maxX, $minY + $finished),
+                Geometry::point($maxX, $minY),
                 Geometry::point($minX, $minY),
-                Geometry::point($minX + $width, $minY),
-                Geometry::point($minX + $width, $maxY),
-                Geometry::point($minX, $maxY),
             ];
-            $single = true;
+            $up = true;
         }
 
         $piece = [
@@ -368,7 +434,8 @@ class DrapePayloadService
             'notches' => $model->notches ?? [],
             'drills' => $model->drills ?? [],
             'pleats' => $model->pleats ?? [],
-            'markers' => $model->markers ?? [],
+            // خطِ تای نوارِ کوتاه‌شده دیگر معنایی ندارد
+            'markers' => $up ? [] : ($model->markers ?? []),
             'meta' => $model->meta ?? [],
         ];
 
@@ -400,7 +467,43 @@ class DrapePayloadService
             'tags' => $tags,
             'unfolded' => $unfolded,
             'single' => $single,
+            'band_up' => $up,
         ];
+    }
+
+    /**
+     * بلندیِ تمام‌شدهٔ نوارِ تاشده، اگر نوار دو برابرش بریده شده باشد.
+     *
+     * از meta.finished_height، وگرنه از نشانگرِ «fold» که در میانهٔ نوار کشیده
+     * شده. نواری که تا ندارد (بندِ تک‌لایه) null می‌گیرد و دست نمی‌خورد.
+     */
+    protected function bandHeight(PatternPiece $model, array $outline): ?float
+    {
+        [, $minY, , $maxY] = Geometry::bounds($outline);
+        $full = $maxY - $minY;
+        $finished = null;
+
+        if (is_numeric($model->meta['finished_height'] ?? null)) {
+            $finished = (float) $model->meta['finished_height'];
+        } else {
+            foreach ((array) ($model->markers ?? []) as $marker) {
+                if (($marker['key'] ?? '') !== 'fold' || ! isset($marker['from']['y'], $marker['to']['y'])) {
+                    continue;
+                }
+
+                if (abs((float) $marker['from']['y'] - (float) $marker['to']['y']) < 0.05) {
+                    $finished = (float) $marker['from']['y'] - $minY;
+
+                    break;
+                }
+            }
+        }
+
+        if ($finished === null || $finished < 0.5 || $full < 1.8 * $finished || $full > 2.2 * $finished) {
+            return null;
+        }
+
+        return $finished;
     }
 
     /**
@@ -621,6 +724,7 @@ class DrapePayloadService
             'edges' => $edges,
             'origins' => $origins,
             'unfolded' => $prepared['unfolded'],
+            'band_up' => $prepared['band_up'] ?? false,
             'meta' => $piece['meta'] ?? [],
         ];
 
@@ -654,6 +758,20 @@ class DrapePayloadService
              */
             'wraps' => $this->wrapsAround($role, $model),
             'darts' => $darts['darts'],
+            /*
+             * نشانه‌های جفت‌شدن، در همان دستگاهِ چندضلعی (آینه و چرخش رویشان
+             * اعمال شده). مرورگر با آن‌ها دو سوی درز را نقطه‌به‌نقطه هم‌تراز
+             * می‌کند — نشانهٔ زانو روی زانو، پنجهٔ فاق روی پنجهٔ فاق — نه فقط
+             * به نسبتِ طول؛ ببینید alignByNotches در pattern-drape.js.
+             */
+            'notches' => array_values(array_map(
+                fn (array $notch) => [
+                    'x' => round((float) $notch['x'], 3),
+                    'y' => round((float) $notch['y'], 3),
+                    'key' => (string) ($notch['pair'] ?? $notch['label'] ?? ''),
+                ],
+                array_filter((array) ($piece['notches'] ?? []), fn ($notch) => is_array($notch) && isset($notch['x'], $notch['y'])),
+            )),
             'placement' => array_filter(
                 array_intersect_key($placement, array_flip([
                     'zone', 'u0', 'u1', 'y_top', 'y_end', 'radius_hint', 'radius', 'flip', 'laps',
@@ -907,7 +1025,35 @@ class DrapePayloadService
         $bottom = $this->levelOf($anchors['bottom'], $body);
         $part = $this->partLevel($model->meta['part'] ?? null, $body);
 
+        /*
+         * نوارِ کمر از لبهٔ دوختش بالا می‌رود (ببینید prepare): لبهٔ کمر پایینِ
+         * نوار است و سرِ نوار به بلندیِ تمام‌شده بالاتر.
+         */
+        $waistBand = ($instance['band_up'] ?? false)
+            ? min(0.95, ($bottom ?? $part ?? $body->level('waist')) + ($height / $body->height))
+            : null;
+
+        /*
+         * پاچه از فاقش آویزان است، نه از لبهٔ کمرش.
+         *
+         * بلندیِ فاقِ الگو (crotch_depth) با «کمر متوسط» چهار سانتی‌متر و با
+         * «کمر کوتاه» نه سانتی‌متر از فاقِ ایستادهٔ تن کمتر است: لبهٔ کمرِ شلوار
+         * عمداً زیرِ گودی کمر می‌نشیند. با y_top = ترازِ کمر، فاقِ الگو هفت
+         * سانتی‌متر بالاتر از فاقِ مانکن می‌افتاد؛ آن نوار درونِ لگنِ برخوردگر
+         * بود و در دوختِ بی‌وزنی به پهلوها هل داده می‌شد — سرِ درزِ داخلِ پای
+         * راست روی پهلوی چپ (اندازه گرفته شد: شورتِ برمودا، x از ۱+ به ۱۷−).
+         * پس نقطهٔ فاقِ الگو روی فاقِ تن می‌نشیند و کمر هرجا که الگو گفته.
+         */
+        $rise = $role === 'leg' && is_numeric($model->meta['crotch_depth'] ?? null)
+            ? (float) $model->meta['crotch_depth']
+            : null;
+        $legTop = $rise !== null && $rise > 5.0
+            ? min(0.95, $body->level('crotch') + ($rise / $body->height))
+            : null;
+
         $yTop = match (true) {
+            $waistBand !== null => $waistBand,
+            $legTop !== null => $legTop,
             $role === 'collar' => $this->collarLevel($instance, $body),
             // مچ‌بند روی همان محورِ دست است ولی سرِ دیگرش: پای آستین، نه حلقه
             $role === 'sleeve' && $part !== null => $part,
@@ -972,6 +1118,32 @@ class DrapePayloadService
             $span = min($span, 2 * M_PI);
             $u0 = M_PI - ($span / 2);
             $u1 = M_PI + ($span / 2);
+        } elseif ($role === 'leg' && ($legSide = $this->legSide($instance)) !== 0) {
+            /*
+             * هر پاچه یک‌چهارمِ کمر را می‌گیرد: پای راستِ جلو از مرکزِ جلو تا پهلوی
+             * راست، و همین‌طور بقیه.
+             *
+             * پیش از این هر دو پاچهٔ جلو همان بازهٔ قرینهٔ دورِ مرکزِ جلو را
+             * می‌گرفتند (چپ و راست فرقی نداشت) و برای بریدنِ کمربند میانِ چهار
+             * پاچه (ببینید shareAlong)، دو پای جلو روی یک نقطهٔ کمربند می‌افتادند و
+             * ترتیبشان قرعه می‌شد: کمربند به ترتیبِ راست‌جلو، چپ‌جلو، راست‌پشت،
+             * چپ‌پشت بریده می‌شد — یعنی پهلوی چپِ جلو به پشتِ *راست* می‌رسید.
+             * کمربندی که سرِ کمر سنجاق باشد، با این ترتیب پاچه‌ها را دورِ خودشان
+             * می‌پیچاند (اندازه گرفته شد: شورتِ برمودا، جلوها پشتِ تن). سمتِ
+             * پاچه از لبهٔ فاقش درمی‌آید، همان قاعدهٔ مرورگر (ببینید placePiece).
+             */
+            /*
+             * جهت هم مهم است: onBody زاویه را خطی روی x می‌گذارد، پس سرِ فاق
+             * (x کوچک برای پای راست، x بزرگ برای چپ) باید روی خطِ مرکز بیفتد و
+             * سرِ دیگر روی پهلو. برای پشت یعنی u0 > u1.
+             */
+            $quarter = M_PI / 2;
+            [$u0, $u1] = match (true) {
+                $side === 'back' && $legSide > 0 => [M_PI, $quarter],
+                $side === 'back' => [M_PI + $quarter, M_PI],
+                $legSide > 0 => [0.0, $quarter],
+                default => [-$quarter, 0.0],
+            };
         } elseif ($role === 'leg') {
             // دو نمونهٔ پاچه، دو پای جداگانه‌اند نه دو نیمهٔ یک لوله؛ پس هر کدام
             // روی استوانهٔ خودش وسط‌چین می‌شود.
@@ -1505,6 +1677,53 @@ class DrapePayloadService
     }
 
     /**
+     * سمتِ پاچه از لبهٔ فاقش: فاق سمتِ داخلِ پاست.
+     *
+     * همان قاعدهٔ placePiece در مرورگر: اگر لبهٔ فاق در نیمهٔ +x قطعه باشد،
+     * داخلِ پا رو به +x است، یعنی پای چپ (−۱)؛ وگرنه راست (+۱). بی لبهٔ فاق،
+     * صفر.
+     */
+    protected function legSide(array $instance): int
+    {
+        $polygon = $instance['polygon'] ?? [];
+        $count = count($polygon);
+
+        if ($count < 3) {
+            return 0;
+        }
+
+        $sum = 0.0;
+        $hits = 0;
+
+        foreach ($instance['edges'] ?? [] as $edge) {
+            if (($edge['tag'] ?? '') !== 'crotch') {
+                continue;
+            }
+
+            $walk = (int) $edge['start'];
+
+            for ($k = 0; $k <= $count; $k++) {
+                $sum += (float) ($polygon[$walk]['x'] ?? 0);
+                $hits++;
+
+                if ($walk === (int) $edge['end']) {
+                    break;
+                }
+
+                $walk = ($walk + 1) % $count;
+            }
+        }
+
+        if ($hits === 0) {
+            return 0;
+        }
+
+        [$minX, , $maxX] = $instance['bounds'];
+
+        return ($sum / $hits) > (($minX + $maxX) / 2) ? -1 : 1;
+    }
+
+    /**
      * ارتفاع لبه بالای قطعه‌هایی که خودشان برچسب گویا ندارند.
      *
      * سجاف و پیش‌بند و مچ‌بند لبه‌هایشان «default» است و از روی هندسه نمی‌شود
@@ -1922,7 +2141,7 @@ class DrapePayloadService
                     'length' => $length,
                     'instance' => $instance,
                     'at' => $this->onBody($instance, $middle),
-                    'frame' => $this->frame($instance['role']),
+                    'frame' => $this->frame($instance),
                     'body_side' => $this->bodySide($instance),
                 ];
             }
@@ -2147,7 +2366,7 @@ class DrapePayloadService
                 'tag' => (string) ($info['tag'] ?? 'default'),
                 'instance' => $instance,
                 'at' => $at = $this->onBody($instance, $middle),
-                'frame' => $this->frame($instance['role']),
+                'frame' => $this->frame($instance),
                 'body_side' => $this->arcSide($instance, $at),
             ];
         }
@@ -2453,7 +2672,7 @@ class DrapePayloadService
                 'tag' => $tag,
                 'instance' => $instance,
                 'at' => $this->onBody($instance, DrapeGeometry::arcMidpoint($instance['polygon'], $from, $to)),
-                'frame' => $this->frame($instance['role']),
+                'frame' => $this->frame($instance),
                 'body_side' => $this->bodySide($instance),
             ];
         }
@@ -2492,6 +2711,16 @@ class DrapePayloadService
                 continue;
             }
 
+            /*
+             * دو پاچه دو پای جداگانه‌اند و با درزِ فاق به هم می‌رسند، که رابطهٔ
+             * خودش را دارد. لبه‌ای که این‌جا «مرزِ مشترک» شمرده می‌شد درزِ داخلِ
+             * پا بود: دو پاچه از داخلِ پا به هم دوخته می‌شدند و پای چپ مثلِ دامنِ
+             * راپ روی پای راست می‌افتاد (اندازه گرفته شد: شورتِ برمودا).
+             */
+            if ($first['role'] === 'leg') {
+                continue;
+            }
+
             // مرز مشترک دو نیمه: جایی که بازهٔ زاویه‌ای یکی تمام و دیگری شروع می‌شود
             $meeting = $this->meetingAngle($first['placement'], $second['placement']);
 
@@ -2514,7 +2743,7 @@ class DrapePayloadService
 
             $front = abs(atan2(sin($meeting), cos($meeting))) < M_PI_2;
 
-            $out[] = $this->seam(
+            $seam = $this->seam(
                 $a,
                 $b,
                 $front ? 'بستن مرکز جلو' : 'بستن مرکز پشت',
@@ -2522,6 +2751,9 @@ class DrapePayloadService
                 null,
                 ['reverse' => true],
             );
+            // بستِ لباس، نه درزِ دوخت: مرورگر بالای نقطهٔ شکستِ خطِ برگردان را باز می‌گذارد (لپه)
+            $seam['closure'] = true;
+            $out[] = $seam;
         }
 
         return array_merge($out, $this->buttonCollars($instances));
@@ -2619,7 +2851,7 @@ class DrapePayloadService
                     'length' => $info['length'],
                     'instance' => $instance,
                     'at' => $at,
-                    'frame' => $this->frame($instance['role']),
+                    'frame' => $this->frame($instance),
                     'body_side' => $this->bodySide($instance),
                 ];
             }
@@ -3133,11 +3365,17 @@ class DrapePayloadService
      * زاویهٔ دورِ آستین دور بازو می‌چرخد و زاویهٔ تنه دور تن؛ مقایسه مستقیم این دو
      * بی‌معناست، پس برای درزی که میان دو دستگاه است فقط ارتفاع سنجیده می‌شود.
      */
-    protected function frame(string $role): string
+    protected function frame(array $instance): string
     {
-        return match ($role) {
+        return match ($instance['role']) {
             'sleeve' => 'arm',
-            'leg' => 'limb',
+            /*
+             * پاچه‌ای که لبهٔ فاق دارد زاویه‌اش در دستگاهِ تن است — یک‌چهارمِ کمر
+             * (ببینید placement). بی این، درزِ کمربند به چهار پاچه فقط با ارتفاع
+             * سنجیده می‌شد و هر چهار سرِ کمر هم‌ارتفاع‌اند؛ ترتیبِ تکه‌های کمربند
+             * قرعه می‌شد و پشتِ چپ به پهلوی راست می‌رسید.
+             */
+            'leg' => $this->legSide($instance) !== 0 ? 'body' : 'limb',
             default => 'body',
         };
     }
