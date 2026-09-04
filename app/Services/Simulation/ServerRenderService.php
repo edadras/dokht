@@ -36,6 +36,8 @@ class ServerRenderService
                 fn ($file, $view) => [$view => asset('storage/'.$relative.'/'.$file)]
             )->all();
             $data['model'] = isset($data['model']) ? asset('storage/'.$relative.'/'.$data['model']) : null;
+            // برگهٔ کنارِ همِ پنج نما با عنوان (اختیاری؛ رندرهای قدیمی ندارند)
+            $data['sheet'] = ! empty($data['sheet']) ? asset('storage/'.$relative.'/'.$data['sheet']) : null;
 
             return $data;
         }

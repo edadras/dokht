@@ -41,6 +41,7 @@
             <div x-data="{
                     status: @js($renderStatus),
                     images: @js($serverRender['images'] ?? []),
+                    sheet: @js($serverRender['sheet'] ?? null),
                     model: @js($serverRender['model'] ?? null),
                     labels: @js($renderLabels),
                     async poll() {
@@ -51,6 +52,7 @@
                             if (data && data.status) {
                                 this.status = data.status;
                                 this.images = data.images || {};
+                                this.sheet = data.sheet || null;
                                 this.model = data.model || null;
                             }
                         } catch (error) {}
@@ -59,6 +61,12 @@
                 }" x-init="poll()" class="mb-5">
                 <template x-if="status === 'ready'">
                     <div>
+                        {{-- برگهٔ پنج‌نما: جلو، پهلو، پشت، وزنِ آب، جریانِ هوا — یک تصویر، با عنوان --}}
+                        <template x-if="sheet">
+                            <figure class="mb-3 overflow-hidden rounded-2xl border border-stone-200 bg-stone-950 shadow-sm">
+                                <a :href="sheet" target="_blank" rel="noopener"><img :src="sheet" alt="برگهٔ پنج‌نما" class="h-auto w-full"></a>
+                            </figure>
+                        </template>
                         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                             <template x-for="[key, url] in Object.entries(images)" :key="key">
                                 <figure class="overflow-hidden rounded-2xl border border-stone-200 bg-stone-950 shadow-sm">
