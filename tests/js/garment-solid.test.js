@@ -13,6 +13,7 @@ import { armCentre, armJoint, buildBody } from '../../resources/js/lib/mannequin
 import {
     bodyColliders, bodyEnvelope, chainAt, depthAt, smooth,
 } from '../../resources/js/components/garment-solid.js';
+import { anchorTargets } from '../../resources/js/lib/pattern-drape.js';
 
 const body = buildBody({
     height: 168, bust: 92, under_bust: 78, waist: 74, hip: 100,
@@ -82,6 +83,56 @@ test('دو پا در هیچ ارتفاعی داخل هم نمی‌روند', () 
     body.leg.forEach((row) => {
         assert.ok(row.x >= row.r * 0.95, `در ارتفاع ${row.y} پاها تو رفته‌اند`);
     });
+});
+
+test('درز فاق بادی زیرِ بدن سنجاق می‌شود، نه روی شکم', async () => {
+    const { drapeBody } = await import('../../resources/js/lib/mannequin.js');
+    const table = drapeBody(body);
+    const polygon = [[-6, 0], [0, 4], [6, 0], [6, -20], [-6, -20]];
+    const makePiece = (id, side) => ({
+        id, code: id, side, instance: 0,
+        polygon,
+        edges: [{ tag: 'crotch', start: 0, end: 2, length: 14.4 }],
+        placement: { zone: `torso_${side}` },
+    });
+    const front = makePiece('bodysuit-front#0', 'front');
+    const back = makePiece('bodysuit-back#0', 'back');
+    const makeEntry = (piece) => ({
+        piece,
+        patch: { count: 5, positions: new Float32Array(15) },
+        mesh: {
+            grain: new Float32Array([
+                -0.06, 0, 0, 0.04, 0.06, 0, 0.06, -0.20, -0.06, -0.20,
+            ]),
+        },
+    });
+    const entries = [makeEntry(front), makeEntry(back)];
+    const payload = {
+        pieces: [front, back],
+        seams: [{
+            label: 'درز فاق بادی', kind: 'seam',
+            a: { piece: front.id, from: 0, to: 2 },
+            b: { piece: back.id, from: 0, to: 2 },
+            reverse: true,
+        }],
+    };
+    const pins = anchorTargets(entries, table, payload, 0.01);
+    const crotch = pins.filter(({ target }) => target[1] < table.level.crotch);
+
+    assert.equal(crotch.length, 6, 'سه نقطه از هر دو سوی درز باید روی هم سنجاق شوند');
+    assert.ok(crotch.every(({ persistent }) => persistent), 'سنجاق فاق تا پایان شبیه‌سازی ثابت می‌ماند');
+    assert.ok(crotch.every(({ target }) => Math.abs(target[2]) < 1e-6), 'درز روی محور زیر بدن است');
+    assert.ok(Math.min(...crotch.map(({ target }) => target[0])) <= -0.059);
+    assert.ok(Math.max(...crotch.map(({ target }) => target[0])) >= 0.059);
+    assert.ok(
+        pins.find((pin) => pin.patch === entries[0].patch && pin.vertex === 0).target[0] < 0
+        && pins.find((pin) => pin.patch === entries[1].patch && pin.vertex === 0).target[0] > 0,
+        'روی قطعهٔ دوم جهت درزِ reverse نیز وارونه می‌شود',
+    );
+    assert.ok(
+        Math.min(...crotch.map(({ target }) => target[1])) <= table.level.crotch - 0.047,
+        'گودی خودِ الگو در وسط فاق حفظ می‌شود',
+    );
 });
 
 test('دست بیرونِ تنه آویزان است', () => {
@@ -364,3 +415,4 @@ test('صاف‌کردن، لبهٔ آزاد را به درونِ پارچه نم
 
     assert.ok(worst < 1e-4, `لبه ${(worst * 1000).toFixed(2)} میلی‌متر تو کشیده شد`);
 });
+
