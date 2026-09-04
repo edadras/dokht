@@ -1249,8 +1249,14 @@ const placePiece = (piece, flat, body, options) => {
          * برسند؛ نتیجه سرِ آستینِ سوراخ و بازوی لخت بود. وقتی سرِ کپ بیرون
          * است، از آن‌جا به سمتِ جلو یعنی زاویهٔ *کم‌شونده*.
          */
-        // فقط آستینِ کپ‌دار؛ مچ‌بند نواری قرینه است و جهتِ جفت‌سازیِ سرور را با پیچشِ معمولی می‌خواهد
-        const capSleeve = outward !== 0 && Array.isArray(piece.edges) && piece.edges.some((edge) => edge.tag === 'armhole');
+        /*
+         * فقط آستینِ یک‌تکهٔ کپ‌دار. مچ‌بند نواری قرینه است، و آستینِ دوتکه (رو و
+         * زیر) بازهٔ زاویه‌ای خودش را از سرور دارد و با پیچشِ معمولی جفت می‌شود:
+         * با پیچشِ وارونه، آستینِ زیر روی بیرونِ بازو می‌افتاد و داخلِ بازو لخت
+         * می‌ماند (اندازه گرفته شد: کتِ اسپرت، بازو بیرونِ آستین).
+         */
+        const capSleeve = outward !== 0 && options.onePieceSleeve !== false
+            && Array.isArray(piece.edges) && piece.edges.some((edge) => edge.tag === 'armhole');
         let spin = uMid + outward + (capSleeve ? -1 : 1) * (x * scale - xMid) / hold;
 
         /*
@@ -3410,8 +3416,16 @@ export const buildDrape = (payload, body, options = {}) => {
     const patches = [];
     const meshes = [];
 
+    /*
+     * آستینِ یک‌تکه یا دوتکه؟ اگر بیش از یک قطعهٔ کپ‌دار در هر سمت باشد، دوتکه
+     * است و پیچشِ وارونهٔ سرِ کپ (ببینید placePiece) برایش نیست.
+     */
+    const capPieces = flats.filter(({ piece }) => (piece.placement?.zone || '') === 'sleeve'
+        && Array.isArray(piece.edges) && piece.edges.some((edge) => edge.tag === 'armhole')).length;
+    const onePieceSleeve = capPieces <= 2;
+
     for (const { piece, flat, notched } of flats) {
-        const placed = placePiece(piece, flat, body, { ...settings, scale });
+        const placed = placePiece(piece, flat, body, { ...settings, scale, onePieceSleeve });
         const count = flat.positions.length / 2;
         const patch = new TriPatch({
             positions: placed.positions,

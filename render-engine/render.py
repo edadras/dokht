@@ -267,7 +267,9 @@ def garment_mesh(mode='dry'):
             return x, vertical, depth
 
         parts = [part for part in sewn['meshes'] if part.get('role') != 'seam']
-        bands = [part for part in sewn['meshes'] if part.get('role') == 'seam']
+        # وقتی جوشِ رأس‌ها هست، نوارِ درز زائد است: درز جوش خورده و نوارِ جداگانه
+        # روی همان جا مثل یک تکهٔ روشنِ شناور دیده می‌شد (جین: خطِ فاق و پهلوها)
+        bands = [] if sewn.get('welds') else [part for part in sewn['meshes'] if part.get('role') == 'seam']
         offsets = []
         for part in parts + bands:
             if part.get('role') == 'seam':
