@@ -1249,7 +1249,9 @@ const placePiece = (piece, flat, body, options) => {
          * برسند؛ نتیجه سرِ آستینِ سوراخ و بازوی لخت بود. وقتی سرِ کپ بیرون
          * است، از آن‌جا به سمتِ جلو یعنی زاویهٔ *کم‌شونده*.
          */
-        let spin = uMid + outward + (outward ? -1 : 1) * (x * scale - xMid) / hold;
+        // فقط آستینِ کپ‌دار؛ مچ‌بند نواری قرینه است و جهتِ جفت‌سازیِ سرور را با پیچشِ معمولی می‌خواهد
+        const capSleeve = outward !== 0 && Array.isArray(piece.edges) && piece.edges.some((edge) => edge.tag === 'armhole');
+        let spin = uMid + outward + (capSleeve ? -1 : 1) * (x * scale - xMid) / hold;
 
         /*
          * پای شلوار از لبهٔ فاق می‌پیچد: داخلِ پا رو به تن، بیرون رو به پهلو.
@@ -2968,7 +2970,16 @@ export const armholeTargets = (patches, body, scale = 0.01) => {
             const meanX = walk.reduce((sum, v) => sum + piece.polygon[v][0], 0) / walk.length;
             const u = u0 + (u1 - u0) * ((meanX - minX) / spanX);
 
-            armholes.push({ entry, piece, walk, side: Math.sin(u) >= 0 ? 1 : -1, front: Math.cos(u) >= 0, upper: touches(piece, walk[0], 'shoulder'), length: edge.length });
+            /*
+             * جلو یا پشت از ناحیهٔ خودِ پنل، نه از کسینوسِ زاویه: لبهٔ حلقهٔ یوک و
+             * پنلِ پشت درست روی پهلو (u≈π/۲) می‌افتد و کسینوسش صفرِ منفی‌ای است
+             * که با یک ذره خطا مثبت می‌شود — آن‌وقت نیمهٔ پشتِ حلقه روی بیضیِ جلو
+             * می‌نشست و آستینِ همان سمت نود درجه می‌تابید (اندازه گرفته شد: پیراهن،
+             * آستینِ راست ۳۳٪ مثلثِ رو به داخل، درزِ زیرش روی پشتِ بازو).
+             */
+            const front = zone.includes('front') ? true : zone.includes('back') ? false : Math.cos(u) >= 0;
+
+            armholes.push({ entry, piece, walk, side: Math.sin(u) >= 0 ? 1 : -1, front, upper: touches(piece, walk[0], 'shoulder'), length: edge.length });
         }
     }
 
@@ -3012,6 +3023,238 @@ export const armholeTargets = (patches, body, scale = 0.01) => {
 
     return out;
 };
+
+/**
+ * سنجاق‌های خیاط روی مانکن: خطِ سرشانه، سرِ کپِ آستین، بیضیِ حلقه، و کمر.
+ *
+ * چیدن همین‌ها را پیش از چیدنِ صُلب می‌نشاند (وگرنه یوک با هفت سوزنِ سرشانه
+ * ۱۱۸ درجه دورِ تن می‌چرخید و آستین را با خودش می‌تاباند) و دوختِ بی‌وزنی
+ * همان‌ها را نگه می‌دارد (shoulderAnchors در نماگر).
+ *
+ * @returns {{patch: object, vertex: number, target: number[]}[]}
+ */
+export const anchorTargets = (patches, body, payload, scale = 0.01) => {
+    const anchors = [];
+
+    if (! payload || ! payload.seams || ! payload.pieces) {
+        return anchors;
+    }
+
+    const entryOf = (id) => patches.find((entry) => entry.piece && entry.piece.id === id);
+    const rowAt = (rows, y) => {
+        if (! rows || ! rows.length) return [0, 0, 0, 0, 0];
+        if (y <= rows[0][0]) return rows[0].slice(1);
+        for (let i = 1; i < rows.length; i++) {
+            if (y <= rows[i][0]) {
+                const t = (y - rows[i - 1][0]) / Math.max(1e-6, rows[i][0] - rows[i - 1][0]);
+                return rows[i - 1].slice(1).map((v, k) => lerp(v, rows[i][k + 1] ?? 0, t));
+            }
+        }
+        return rows[rows.length - 1].slice(1);
+    };
+    const czAt = (y) => rowAt(body.profile, y)[4] || 0;
+    // خطِ سرشانهٔ بدن: از پای گردن (کمی بیرونِ شعاعِ گردن، کمی زیرِ ترازِ گردن) تا سرِ شانه (سرِ مفصل، کمی بالاتر)
+    const neck = [body.radii.neck + 0.006, body.level.neck - 0.012, czAt(body.level.neck) + 0.004];
+    /*
+     * سرِ شانه *روی* گنبدِ دلتویید است، نه درونش.
+     *
+     * برخوردگرِ بازو بالای مفصل دو حلقهٔ گنبدی دارد (۰٫۸۶ و ۰٫۵۵ شعاعِ بازو در
+     * ۰٫۴۵ و ۰٫۸۵ آن بالاتر از مفصل؛ ببینید bodyColliders). سنجاقِ سرِ شانه
+     * ۱٫۸ سانتی‌متر بالای مفصل بود — درونِ همان گنبد. تا وقتی سنجاق بود
+     * برخوردگر کاری نمی‌توانست بکند و پس از رها شدن پارچه را از درونِ گنبد به
+     * بیرون پرت می‌کرد: سرِ آستین پنج سانتی‌متر پایین می‌افتاد و میانِ ۱۳۳ تا
+     * ۱۳۶ سانتی‌متر هیچ پارچه‌ای روی سرِ شانه نمی‌ماند (اندازه گرفته شد:
+     * پیراهن؛ همان لکهٔ پوست که کاربر «پارگیِ سرشانه» می‌خواند). پس سرِ شانه
+     * روی سرِ گنبد سنجاق می‌شود، به اندازهٔ ضخامتِ پارچه بالاتر.
+     */
+    const ball = Math.max(0.03, ...(body.armTable || []).map((row) => row[1] || 0));
+    const domeTop = body.armTop + 0.85 * ball;
+    const tip = [body.armOffset, domeTop + 0.008, czAt(body.level.shoulder) + 0.004];
+    const along = (side, t) => [
+        side * lerp(neck[0], tip[0], t),
+        lerp(neck[1], tip[1], t),
+        lerp(neck[2], tip[2], t),
+    ];
+    const edgeOf = (piece, from, to) => (piece.edges || []).find((edge) => {
+        const n = piece.polygon.length;
+        const inside = (v) => {
+            let walk = edge.start;
+            for (let k = 0; k <= n; k++) {
+                if (walk === v) return true;
+                if (walk === edge.end) return false;
+                walk = (walk + 1) % n;
+            }
+            return false;
+        };
+        return inside(from) && inside(to);
+    });
+    const touches = (piece, vertex, tag) => (piece.edges || []).some((edge) => edge.tag === tag && (edge.start === vertex || edge.end === vertex));
+
+    const pin = (piece, from, to, side) => {
+        const entry = entryOf(piece.id);
+        if (! entry) return;
+        const n = piece.polygon.length;
+        const walk = [from];
+        while (walk[walk.length - 1] !== to && walk.length <= n) {
+            walk.push((walk[walk.length - 1] + 1) % n);
+        }
+        // سرِ گردن اول
+        if (! touches(piece, from, 'neck') && touches(piece, to, 'neck')) {
+            walk.reverse();
+        }
+        const cum = [0];
+        for (let i = 1; i < walk.length; i++) {
+            const a = piece.polygon[walk[i - 1]];
+            const b = piece.polygon[walk[i]];
+            cum.push(cum[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1]));
+        }
+        const total = cum[cum.length - 1] || 1;
+        const grain = entry.mesh.grain;
+        for (let i = 0; i < walk.length; i++) {
+            const [px, py] = piece.polygon[walk[i]];
+            let best = -1;
+            let bd = Infinity;
+            for (let v = 0; v < entry.patch.count; v++) {
+                const d = Math.hypot(grain[v * 2] - px * scale, grain[v * 2 + 1] - py * scale);
+                if (d < bd) { bd = d; best = v; }
+            }
+            if (best >= 0 && bd < 0.004) {
+                anchors.push({ patch: entry.patch, vertex: best, target: along(side, cum[i] / total) });
+            }
+        }
+    };
+
+    for (const seam of payload.seams) {
+        if ((seam.kind || 'seam') !== 'seam' || ! seam.a || ! seam.b) continue;
+        const pa = payload.pieces.find((piece) => piece.id === seam.a.piece);
+        const pb = payload.pieces.find((piece) => piece.id === seam.b.piece);
+        if (! pa || ! pb || pa === pb) continue;
+        const ea = edgeOf(pa, seam.a.from, seam.a.to);
+        const eb = edgeOf(pb, seam.b.from, seam.b.to);
+        if (! ea || ! eb || ea.tag !== 'shoulder' || eb.tag !== 'shoulder') continue;
+        // همان قراردادِ placePiece: چپ/راستِ صریح، وگرنه آینه‌شده (flip یا نمونهٔ فرد) چپ است
+        const sideOf = (piece) => {
+            if (piece.side === 'right') return 1;
+            if (piece.side === 'left') return -1;
+            if (piece.side === 'front') return ((piece.placement && piece.placement.flip) || piece.instance % 2) ? -1 : 1;
+            return 0;
+        };
+        const side = sideOf(pa) || sideOf(pb);
+        if (! side) continue;
+        pin(pa, seam.a.from, seam.a.to, side);
+        pin(pb, seam.b.from, seam.b.to, side);
+    }
+
+    /*
+     * سرِ کپِ آستین روی سرِ شانه.
+     *
+     * سرشانه سنجاق می‌شد ولی آستین نه: سرِ کپ در دوختِ بی‌وزنی از سرِ شانه دور
+     * می‌ماند و درزِ حلقه در بالاترین نقطه‌اش تا ده سانتی‌متر باز می‌ماند
+     * (اندازه گرفته شد: پیراهن ۱۰٫۳، کت اسپرت ۷٫۱). در عکس همان «پارگیِ
+     * سرشانه» بود: پوستِ سرِ شانه از میانِ حلقهٔ باز، و نوارِ درز که مثلِ نخِ
+     * پاره از سرِ آستین تا تنه کشیده می‌شد. خیاط سرِ کپ را روی سرِ شانه سنجاق
+     * می‌کند و بعد دورِ حلقه را می‌دوزد؛ این‌جا هم بالاترین رأسِ الگوی آستین
+     * (سرِ کپ) روی سرِ شانهٔ بدن، کمی بیرون‌تر از سرِ درزِ سرشانه، سنجاق می‌شود.
+     */
+    for (const entry of patches) {
+        const piece = entry.piece;
+        const zone = (piece && piece.placement && piece.placement.zone) || '';
+
+        if (! piece || ! zone.startsWith('sleeve') || ! Array.isArray(piece.edges)) continue;
+        if (! piece.edges.some((edge) => edge.tag === 'armhole')) continue;
+
+        const side = piece.side === 'right' ? 1 : piece.side === 'left' ? -1 : (((piece.placement && piece.placement.flip) || piece.instance % 2) ? -1 : 1);
+        const grain = entry.mesh.grain;
+        let apex = -1;
+        let high = Infinity;
+
+        for (let v = 0; v < entry.patch.count; v++) {
+            if (grain[v * 2 + 1] < high) {
+                high = grain[v * 2 + 1];
+                apex = v;
+            }
+        }
+
+        // فقط اگر سرِ کپ واقعاً بالاترین نقطهٔ قطعه است و کپ پهنای معناداری دارد (آستینِ دوتکه: پنلِ رو)
+        if (apex < 0) continue;
+
+        // سرِ کپ درست روی سرِ شانه، دو میلی‌متر بیرون‌تر از سرِ درزِ سرشانه
+        const tipX = side * (body.armOffset + 0.003);
+        anchors.push({ patch: entry.patch, vertex: apex, target: [tipX, domeTop + 0.010, czAt(body.level.shoulder) + 0.004] });
+    }
+
+    /*
+     * حلقهٔ آستینِ تنه دورِ مفصلِ بازو سنجاق می‌شود — همان بیضی‌ای که چیدن
+     * از پیش رویش نشانده (ببینید armholeTargets در pattern-drape.js). این‌جا
+     * فقط در دوختِ بی‌وزنی نگه داشته می‌شود.
+     */
+    for (const target of armholeTargets(patches, body, scale)) {
+        anchors.push(target);
+    }
+
+    /*
+     * لنگرِ کمر: شلوار و دامن و شورت از کمر آویزان‌اند، نه از سرشانه.
+     *
+     * دوختِ بی‌وزن هیچ تکیه‌گاهی برای پایین‌تنه نداشت: سنجاقِ سرشانه به آن
+     * نمی‌رسد و لنگرِ فرورفتگی (sagOf) فقط رأس‌های بالای حلقهٔ آستین را
+     * می‌شمرد — که شلوار ندارد. پس درزها لباس را آزادانه پایین می‌کشیدند:
+     * اندازه گرفته شد روی جینِ کلوش، کمربند در چیدن روی ۹۹ سانتی‌متر و پس
+     * از دوختِ بی‌وزن روی ۸۷، پنج سانتی‌متر هم به یک سو رفته؛ بعد نگه‌دارنده
+     * همان‌جا میخش می‌کرد و کمربند روی باسن مچاله می‌ماند.
+     *
+     * خیاط کمربند را روی کمرِ مانکن سنجاق می‌کند و پاچه‌ها را به آن می‌دوزد.
+     * همین: در لباسی که بالاتنه ندارد، کمربند (نوارِ دورِ کمر) سرِ جای چیدنش
+     * سنجاق می‌شود؛ اگر کمربندی نباشد، لبه‌های «waist» پاچه و دامن.
+     */
+    const zoneOf = (piece) => (piece && piece.placement && piece.placement.zone) || '';
+    const bottoms = patches.length > 0 && ! patches.some(({ piece }) => {
+        const zone = zoneOf(piece);
+        return zone.startsWith('torso') || zone.startsWith('sleeve') || zone === 'collar';
+    });
+
+    if (bottoms) {
+        const here = (patch, v) => [patch.positions[v * 3], patch.positions[v * 3 + 1], patch.positions[v * 3 + 2]];
+        const bands = patches.filter(({ piece }) => piece && piece.wraps === true && piece.placement && piece.placement.radius_hint === 'waist');
+
+        if (bands.length) {
+            for (const { patch } of bands) {
+                for (let v = 0; v < patch.count; v++) {
+                    anchors.push({ patch, vertex: v, target: here(patch, v) });
+                }
+            }
+        } else {
+            for (const entry of patches) {
+                const piece = entry.piece;
+                const zone = zoneOf(piece);
+                if (! piece || ! Array.isArray(piece.edges) || ! Array.isArray(piece.polygon)) continue;
+                if (! (zone.startsWith('leg') || zone.startsWith('skirt'))) continue;
+                const n = piece.polygon.length;
+                const grain = entry.mesh.grain;
+                for (const edge of piece.edges) {
+                    if (edge.tag !== 'waist') continue;
+                    let walk = edge.start;
+                    for (let k = 0; k <= n; k++) {
+                        const [px, py] = piece.polygon[walk];
+                        let best = -1;
+                        let bd = Infinity;
+                        for (let v = 0; v < entry.patch.count; v++) {
+                            const d = Math.hypot(grain[v * 2] - px * scale, grain[v * 2 + 1] - py * scale);
+                            if (d < bd) { bd = d; best = v; }
+                        }
+                        if (best >= 0 && bd < 0.004) {
+                            anchors.push({ patch: entry.patch, vertex: best, target: here(entry.patch, best) });
+                        }
+                        if (walk === edge.end) break;
+                        walk = (walk + 1) % n;
+                    }
+                }
+            }
+        }
+    }
+
+    return anchors;
+};
+
 
 export const buildDrape = (payload, body, options = {}) => {
     const settings = { ...DEFAULTS, ...options };
@@ -3625,8 +3868,8 @@ export const buildDrape = (payload, body, options = {}) => {
 
     ceiling += 0.02;
 
-    // لبه‌های حلقهٔ تنه از همین اول دورِ مفصلِ بازو می‌نشینند؛ ببینید armholeTargets
-    for (const { patch, vertex, target } of armholeTargets(patches, body, scale)) {
+    // سرشانه، سرِ کپ، حلقه و کمر از همین اول سرِ جای خودشان روی مانکن می‌نشینند؛ ببینید anchorTargets
+    for (const { patch, vertex, target } of anchorTargets(patches, body, payload, scale)) {
         patch.positions[vertex * 3] = target[0];
         patch.positions[vertex * 3 + 1] = target[1];
         patch.positions[vertex * 3 + 2] = target[2];
