@@ -40,6 +40,24 @@ class SewingRelationBuilder
             ],
         ]);
 
+        /*
+         * سازگاری با بادی‌هایی که پیش از افزوده شدن برچسب crotch در پایگاه
+         * داده ذخیره شده‌اند. در نیم‌الگوی بادی لبهٔ آخر همیشه سرِ فاق است؛
+         * فقط همین دو کد را ترمیم می‌کنیم تا هیچ لبهٔ آزاد دیگری تغییر نکند.
+         */
+        $tagged = $tagged->map(function (array $entry): array {
+            if (in_array($entry['piece']->code, ['bodysuit-front', 'bodysuit-back'], true)
+                && ! in_array('crotch', $entry['tags'], true)) {
+                $edge = count($entry['piece']->outline ?? []) - 1;
+
+                if ($edge >= 0) {
+                    $entry['tags'][$edge] = 'crotch';
+                }
+            }
+
+            return $entry;
+        });
+
         $relations = [];
 
         $front = static::pick($tagged, ['front_bodice', 'front_leg', 'skirt_front'], 'front');
@@ -54,6 +72,20 @@ class SewingRelationBuilder
         if ($front && $back) {
             $label = ($front['part'] === 'front_leg') ? 'درز پهلو و داخل پا' : 'درز پهلو';
             $relations = array_merge($relations, static::pairTag($front, $back, 'side', $label));
+
+            /*
+             * بادی هم مثل شلوار در فاق بسته می‌شود، اما قطعه‌هایش نقش
+             * front_bodice/back_bodice دارند و وارد شاخهٔ پاچه‌ها نمی‌شوند.
+             * فقط وقتی هر دو پنل برچسب صریح crotch دارند این رابطه ساخته می‌شود؛
+             * بنابراین پایینِ آزادِ تاپ‌ها و پیراهن‌ها دست‌نخورده می‌ماند.
+             */
+            if (static::edgesWithTag($front, 'crotch') !== []
+                && static::edgesWithTag($back, 'crotch') !== []) {
+                $relations = array_merge(
+                    $relations,
+                    static::pairTag($front, $back, 'crotch', 'درز فاق بادی'),
+                );
+            }
         }
 
         /*
@@ -1257,3 +1289,4 @@ class SewingRelationBuilder
         return null;
     }
 }
+
