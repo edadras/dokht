@@ -158,8 +158,8 @@ class TopBodysuitGenerator extends TopBaseGenerator
             ) - 6.0 - $legRise,
         );
 
-        $front = $this->carveLeg($front, $legSideY);
-        $back = $this->carveLeg($back, $legSideY);
+        $front = $this->markCrotch($this->carveLeg($front, $legSideY));
+        $back = $this->markCrotch($this->carveLeg($back, $legSideY));
 
         $pieces = [$front, $back];
 
@@ -181,7 +181,7 @@ class TopBodysuitGenerator extends TopBaseGenerator
 
         if ($this->flag($params, 'gusset', true)) {
             $pieces[] = $this->bandPiece('bodysuit-gusset', 'نوار فاق', 14, 7, [
-                'cut' => 2, 'part' => 'gusset',
+                'cut' => 2, 'part' => 'gusset', 'layer' => 'lining',
                 'meta' => [
                     'girth_role' => 'trim',
                     'notes' => ['دو لایه بریده می‌شود؛ ردیف قزن روی همین نوار می‌نشیند.'],
@@ -216,4 +216,22 @@ class TopBodysuitGenerator extends TopBaseGenerator
             'shape' => 'scoop',
         ]);
     }
+
+    /**
+     * لبهٔ آخرِ نیم‌الگو سرِ آزاد فاق است؛ بعد از باز شدن روی دولای بسته، دو
+     * نیم‌کمان می‌شود. برچسب صریح لازم است تا جلو و پشت زیرِ فاق به هم برسند
+     * و زبانهٔ وسط لباس آزاد نماند.
+     */
+    protected function markCrotch(array $piece): array
+    {
+        $edge = count($piece['outline'] ?? []) - 1;
+
+        if ($edge >= 0) {
+            $piece['meta']['edges'][$edge] = 'crotch';
+            $piece['meta']['crotch_edges'] = [$edge];
+        }
+
+        return $piece;
+    }
 }
+
