@@ -107,6 +107,10 @@ try:
 except Exception:
     cloth_rgb = (.92, .9, .86)
 cloth = mat('پارچه', cloth_rgb, max(.35, .82 - float(fabric.get('sheen', .15)) * .5), sheen=.35)
+_alpha = 1 - max(0.0, min(.6, float(fabric.get('transparency', 0) or 0)))
+if _alpha < 1:
+    cloth.node_tree.nodes['Principled BSDF'].inputs['Alpha'].default_value = _alpha
+    cloth.blend_method = 'BLEND'
 # بافتِ ریزِ پارچه: نویزِ ریز روی نرمال، تا سطح مثل پلاستیکِ صاف نباشد
 _nodes = cloth.node_tree.nodes
 _links = cloth.node_tree.links
@@ -207,7 +211,8 @@ def garment_mesh(mode='dry'):
         body = sewn.get('body') or {}
         # از خطِ باسن به پایین تغییر می‌کند؛ بالاتنه سرِ جایش می‌ماند
         hip_y = (float(body['height']) - float(body['level']['hip'])) / 100 if body.get('level') else low + (high - low) * .45
-        span = max(.01, hip_y - low)
+        # بالاتنهٔ کوتاه فقط کمی تکان می‌خورد؛ دامنِ بلند تا ته
+        span = max(.35, hip_y - low)
         for part in sewn['meshes']:
             offset = len(verts)
             positions = part['positions']
@@ -334,13 +339,28 @@ camera.data.lens = 60
 camera.data.sensor_fit = 'VERTICAL'
 
 
+def frame():
+    """قاب از خودِ لباس: از کمی زیرِ پایین‌ترین نقطهٔ لباس تا بالای گردنِ مانکن؛ لباسِ بلند تا زمین."""
+    ys = [m['positions'][i] for m in sewn.get('meshes', []) for i in range(1, len(m['positions']), 3)]
+    low = min(ys) if ys else 0.0
+    top = max(max(ys) if ys else height * .8, height * .86)
+    bottom = 0.0 if low < .25 else low - .12
+    centre = (top + bottom) / 2
+    extent = max(.9, top - bottom + .16)
+    half_fov = math.atan((camera.data.sensor_height / 2) / camera.data.lens)
+    return centre, extent / 2 / math.tan(half_fov) * 1.06
+
+
 def shot(name, pos, mode='dry'):
     global garment_ob
     if mode != 'dry':
         bpy.data.objects.remove(garment_ob, do_unlink=True)
         garment_ob = garment_mesh(mode)
+    centre, distance = frame()
+    direction = Vector(pos).normalized()
+    pos = (direction.x * distance, direction.y * distance, centre)
     camera.location = pos
-    target = Vector((0, 0, height * .47))
+    target = Vector((0, 0, centre))
     camera.rotation_euler = (target - Vector(pos)).to_track_quat('-Z', 'Y').to_euler()
     scene.render.filepath = os.path.join(out, name + '.png')
     bpy.ops.render.render(write_still=True)
@@ -349,12 +369,11 @@ def shot(name, pos, mode='dry'):
         garment_ob = garment_mesh('dry')
 
 
-D = 4.4
-shot('front', (0, -D, height * .5))
-shot('side', (D, 0, height * .5))
-shot('back', (0, D, height * .5))
-shot('water', (0, -D, height * .5), 'water')
-shot('airflow', (0, -D, height * .5), 'air')
+shot('front', (0, -1, 0))
+shot('side', (1, 0, 0))
+shot('back', (0, 1, 0))
+shot('water', (0, -1, 0), 'water')
+shot('airflow', (0, -1, 0), 'air')
 
 scene.render.filepath = os.path.join(out, 'garment.glb')
 bpy.ops.export_scene.gltf(filepath=scene.render.filepath, export_format='GLB', use_selection=False)

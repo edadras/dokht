@@ -32,11 +32,16 @@ sewAnchored(world, drape, placed, body.level.armhole, Math.max(240, drape.stats.
 supportGarment(drape, { band: 0.08, strength: 1 });
 world.law.gravity = gravity;
 world.presettle(40);
-world.iterations = Math.max(12, drape.stats.solver.iterations);
+/*
+ * روی سرور وقت هست: دو برابرِ مرورگر تکرار و گام، تا درزها بسته‌تر و پارچه
+ * آرام‌تر بنشیند. SEW_FAST=1 همان تنظیمِ مرورگر را می‌دهد، برای آزمونِ سریع.
+ */
+const fast = process.env.SEW_FAST === '1';
+world.iterations = Math.max(fast ? 12 : 24, drape.stats.solver.iterations);
 world.seamPasses = drape.stats.solver.seamPasses ?? world.seamPasses;
-world.presettle(300);
+world.presettle(fast ? 300 : 600);
 world.enableContact();
-world.presettle(150);
+world.presettle(fast ? 150 : 300);
 finishGarment(world, drape, weldSeams);
 
 const meshes = drape.patches
