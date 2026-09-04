@@ -404,7 +404,21 @@ export const shoulderAnchors = (drape, table, payload) => {
     const czAt = (y) => rowAt(table.profile, y)[4] || 0;
     // خطِ سرشانهٔ بدن: از پای گردن (کمی بیرونِ شعاعِ گردن، کمی زیرِ ترازِ گردن) تا سرِ شانه (سرِ مفصل، کمی بالاتر)
     const neck = [table.radii.neck + 0.006, table.level.neck - 0.012, czAt(table.level.neck) + 0.004];
-    const tip = [table.armOffset - 0.004, table.armTop + 0.018, czAt(table.level.shoulder) + 0.004];
+    /*
+     * سرِ شانه *روی* گنبدِ دلتویید است، نه درونش.
+     *
+     * برخوردگرِ بازو بالای مفصل دو حلقهٔ گنبدی دارد (۰٫۸۶ و ۰٫۵۵ شعاعِ بازو در
+     * ۰٫۴۵ و ۰٫۸۵ آن بالاتر از مفصل؛ ببینید bodyColliders). سنجاقِ سرِ شانه
+     * ۱٫۸ سانتی‌متر بالای مفصل بود — درونِ همان گنبد. تا وقتی سنجاق بود
+     * برخوردگر کاری نمی‌توانست بکند و پس از رها شدن پارچه را از درونِ گنبد به
+     * بیرون پرت می‌کرد: سرِ آستین پنج سانتی‌متر پایین می‌افتاد و میانِ ۱۳۳ تا
+     * ۱۳۶ سانتی‌متر هیچ پارچه‌ای روی سرِ شانه نمی‌ماند (اندازه گرفته شد:
+     * پیراهن؛ همان لکهٔ پوست که کاربر «پارگیِ سرشانه» می‌خواند). پس سرِ شانه
+     * روی سرِ گنبد سنجاق می‌شود، به اندازهٔ ضخامتِ پارچه بالاتر.
+     */
+    const ball = Math.max(0.03, ...(table.armTable || []).map((row) => row[1] || 0));
+    const domeTop = table.armTop + 0.85 * ball;
+    const tip = [table.armOffset, domeTop + 0.008, czAt(table.level.shoulder) + 0.004];
     const along = (side, t) => [
         side * lerp(neck[0], tip[0], t),
         lerp(neck[1], tip[1], t),
@@ -513,8 +527,109 @@ export const shoulderAnchors = (drape, table, payload) => {
         // فقط اگر سرِ کپ واقعاً بالاترین نقطهٔ قطعه است و کپ پهنای معناداری دارد (آستینِ دوتکه: پنلِ رو)
         if (apex < 0) continue;
 
-        const tipX = side * (table.armOffset + 0.004);
-        anchors.push({ patch: entry.patch, vertex: apex, target: [tipX, table.armTop + 0.022, czAt(table.level.shoulder) + 0.004] });
+        // سرِ کپ درست روی سرِ شانه، دو میلی‌متر بیرون‌تر از سرِ درزِ سرشانه
+        const tipX = side * (table.armOffset + 0.003);
+        anchors.push({ patch: entry.patch, vertex: apex, target: [tipX, domeTop + 0.010, czAt(table.level.shoulder) + 0.004] });
+    }
+
+    /*
+     * حلقهٔ آستینِ تنه دورِ مفصلِ بازو سنجاق می‌شود.
+     *
+     * پنلِ پشت روی استوانهٔ تنه چیده می‌شود و لبهٔ حلقه‌اش همان‌جا روی دنده‌ها
+     * می‌ماند (x=۱۴، پشتِ بغل)، در حالی که پشتِ مفصلِ بازو در x=۱۸ تا ۲۳ است.
+     * آستین به همان لبه دوخته می‌شد و نیمهٔ پشتش از *میانِ* بازو و تن رد می‌شد
+     * نه دورِ بازو — پشتِ بازو از سرِ شانه تا ده سانتی‌متر پایین‌تر لخت
+     * (اندازه گرفته شد: پیراهن، سوزن‌های حلقهٔ پشت روی x=۱۴ و z=−۴، حلقهٔ جلو
+     * روی x=۲۱ و z=+۵). خیاط حلقه را دورِ مفصل سنجاق می‌کند: از سرِ شانه، جلو
+     * از جلوی بازو پایین تا زیرِ بغل و پشت از پشتِ بازو. همین: هر لبهٔ «armhole»
+     * پنل‌های تنه روی بیضی‌ای دورِ مفصل سنجاق می‌شود، به نسبتِ طولش از سرِ شانه.
+     */
+    const ringTop = domeTop + 0.008;
+    const ringBottom = table.level.armhole - 0.05;
+    const ringZ = ball + 0.008;
+    const onRing = (side, theta, front) => {
+        const yc = (ringTop + ringBottom) / 2;
+        const ry = (ringTop - ringBottom) / 2;
+        const inward = (1 - Math.cos(theta)) / 2;
+
+        return [
+            side * lerp(table.armOffset + 0.005, 0.15, inward),
+            yc + ry * Math.cos(theta),
+            (front ? 1 : -1) * ringZ * Math.sin(theta) + czAt(table.level.shoulder),
+        ];
+    };
+    const armholes = [];
+
+    for (const entry of drape.patches) {
+        const piece = entry.piece;
+        const zone = (piece && piece.placement && piece.placement.zone) || '';
+
+        if (! piece || ! zone.startsWith('torso') || ! Array.isArray(piece.edges) || ! Array.isArray(piece.polygon)) continue;
+
+        const n = piece.polygon.length;
+        const xs = piece.polygon.map((point) => point[0]);
+        const minX = Math.min(...xs);
+        const spanX = Math.max(1e-6, Math.max(...xs) - minX);
+        const u0 = piece.placement.u0 ?? 0;
+        const u1 = piece.placement.u1 ?? 0;
+
+        for (const edge of piece.edges) {
+            if (edge.tag !== 'armhole' || edge.length < 1) continue;
+
+            const walk = [edge.start];
+            while (walk[walk.length - 1] !== edge.end && walk.length <= n) walk.push((walk[walk.length - 1] + 1) % n);
+            // سرِ بالا: رأسی که به سرشانه چسبیده، وگرنه رأسِ بالاترِ الگو (y کوچک‌تر)
+            const top0 = touches(piece, walk[0], 'shoulder');
+            const top1 = touches(piece, walk[walk.length - 1], 'shoulder');
+            if (top1 && ! top0) walk.reverse();
+            else if (! top0 && ! top1 && piece.polygon[walk[0]][1] > piece.polygon[walk[walk.length - 1]][1]) walk.reverse();
+
+            const meanX = walk.reduce((sum, v) => sum + piece.polygon[v][0], 0) / walk.length;
+            const u = u0 + (u1 - u0) * ((meanX - minX) / spanX);
+            const side = Math.sin(u) >= 0 ? 1 : -1;
+            const front = Math.cos(u) >= 0;
+            const upper = touches(piece, walk[0], 'shoulder');
+
+            armholes.push({ entry, piece, walk, side, front, upper, length: edge.length });
+        }
+    }
+
+    // هر سمت و هر نیمه (جلو/پشت) یک کمان است که شاید میان دو پنل (یوک و پشت) تقسیم شده باشد
+    for (const side of [-1, 1]) {
+        for (const front of [true, false]) {
+            const parts = armholes.filter((arc) => arc.side === side && arc.front === front);
+            if (! parts.length) continue;
+            parts.sort((a, b) => Number(b.upper) - Number(a.upper));
+            const total = parts.reduce((sum, arc) => sum + arc.length, 0) || 1;
+            let offset = 0;
+
+            for (const arc of parts) {
+                const { entry, piece, walk } = arc;
+                const grain = entry.mesh.grain;
+                const cum = [0];
+                for (let i = 1; i < walk.length; i++) {
+                    const a = piece.polygon[walk[i - 1]];
+                    const b = piece.polygon[walk[i]];
+                    cum.push(cum[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1]));
+                }
+                const len = cum[cum.length - 1] || 1;
+
+                for (let i = 0; i < walk.length; i++) {
+                    const [px, py] = piece.polygon[walk[i]];
+                    let best = -1;
+                    let bd = Infinity;
+                    for (let v = 0; v < entry.patch.count; v++) {
+                        const d = Math.hypot(grain[v * 2] - px * scale, grain[v * 2 + 1] - py * scale);
+                        if (d < bd) { bd = d; best = v; }
+                    }
+                    if (best < 0 || bd >= 0.004) continue;
+                    const theta = Math.PI * (offset + (cum[i] / len) * arc.length) / total;
+                    anchors.push({ patch: entry.patch, vertex: best, target: onRing(side, theta, front) });
+                }
+
+                offset += arc.length;
+            }
+        }
     }
 
     /*

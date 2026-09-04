@@ -2541,7 +2541,7 @@ const seedPlacement = (patches, seams, ceiling = Infinity) => {
                     if (used < 0) {
                         spot.slid = (spot.slid || 0) - used;
                     }
-                }, headroom, spot.depth || 0);
+                }, headroom, spot.depth || 0, ! spot.spinLocked);
             }
 
             placed[link.other] = 1;
@@ -2566,7 +2566,7 @@ const seedPlacement = (patches, seams, ceiling = Infinity) => {
  * قطعه دورِ بدن می‌چرخد و سُر می‌خورد تا نشانه‌هایش روبه‌روی نشانه‌های همسایه
  * بیاید — دقیقاً کاری که خیاط با قطعه روی مانکن می‌کند.
  */
-const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null, roomUp = Infinity, depth = 0) => {
+const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null, roomUp = Infinity, depth = 0, allowSpin = true) => {
     const n = source.length / 3;
     let dot = 0;
     let cross = 0;
@@ -2583,7 +2583,7 @@ const spinFit = (patch, source, target, axis = 0, room = Infinity, spent = null,
         rise += target[i * 3 + 1] - source[i * 3 + 1];
     }
 
-    const theta = Math.abs(dot) + Math.abs(cross) < 1e-9 ? 0 : Math.atan2(cross, dot);
+    const theta = ! allowSpin || Math.abs(dot) + Math.abs(cross) < 1e-9 ? 0 : Math.atan2(cross, dot);
     /*
      * سُر خوردنِ عمودی حد دارد، وگرنه آستین از شانه می‌افتد.
      *
@@ -2795,7 +2795,7 @@ const alignPatches = (patches, seams, rounds, radial = false, ceiling = Infinity
             const positions = patch.positions;
 
             // چرخش کوچک و میراشده؛ بیش از ده درجه در یک دور، قطعه را پرت می‌کند
-            const theta = inertia[p] > 1e-6
+            const theta = inertia[p] > 1e-6 && ! patches[p].spinLocked
                 ? clamp((spin[p] / inertia[p]) * 0.5, -0.17, 0.17)
                 : 0;
 
@@ -3113,6 +3113,20 @@ export const buildDrape = (payload, body, options = {}) => {
             })(),
             // قطعهٔ روی اندام روی آن سُر نمی‌خورد؛ تنه و دامن جا دارند
             room: Math.abs(placed.axis) > 1e-6 ? VERTICAL_ROOM : Infinity,
+            /*
+             * آستینِ یک‌تکه دورِ محورِ بازو نمی‌چرخد.
+             *
+             * سرِ کپش رو به بیرونِ بازو چیده می‌شود (ببینید outward در placePiece)
+             * و همان جهتِ فیزیکیِ درست است. ولی چیدنِ صُلب آن را می‌چرخاند تا به
+             * حلقهٔ تنه‌ای برسد که هنوز روی استوانهٔ تنه چسبیده است — و سرِ کپ
+             * ۱۲۵ درجه به سمتِ جلو می‌رفت: پس از دوخت، بیرونِ بازو از ۱۲۷ تا ۱۳۶
+             * سانتی‌متر هیچ پارچه‌ای نداشت و بازو از سرِ آستین بیرون می‌زد
+             * (اندازه گرفته شد: پیراهن، ستونِ میانیِ کپ روی z=+۳ تا +۵ چیده شده
+             * بود). حلقهٔ تنه بعداً دورِ مفصل سنجاق می‌شود (shoulderAnchors)، پس
+             * آستین همان‌جا که هست می‌ماند و فقط بالا و پایین می‌رود.
+             */
+            spinLocked: piece.placement?.zone === 'sleeve'
+                && ((piece.placement.u1 ?? 0) - (piece.placement.u0 ?? 0)) >= Math.PI * 1.8,
         });
         meshes.push(mesh);
         stats.triangles += flat.indices.length / 3;

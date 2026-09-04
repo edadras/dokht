@@ -200,8 +200,14 @@ def body_from_rings(body):
         joint_y = up(float(ring0['y']) + 0.5 * float(arm[0]['r']))
         tilt = float(body.get('armTilt', 0.085))
         arm_z = float(body.get('armZ', 0)) / 100
+        ball = float(arm[0]['r']) / 100
         for side in (-1, 1):
             arings = []
+            # گنبدِ دلتویید بالای مفصل، همان دو حلقه‌ای که برخوردگرِ حل‌کننده دارد
+            # (bodyColliders)؛ بی‌آن، پارچه‌ای که روی گنبدِ نادیدنی می‌نشست در عکس
+            # بالای شانه معلق بود و زیرش پوست پیدا بود
+            for up_frac, r_frac in ((.85, .55), (.45, .86)):
+                arings.append(circle(side * (joint_x - up_frac * ball * math.sin(tilt)), joint_y + up_frac * ball * math.cos(tilt), 0, r_frac * ball, arm_z))
             for row in arm:
                 along = float(row['y']) / 100
                 cx = side * (joint_x + along * math.sin(tilt))
