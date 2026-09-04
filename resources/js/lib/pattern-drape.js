@@ -1017,6 +1017,19 @@ const placePiece = (piece, flat, body, options) => {
     const outward = Math.abs(u1 - centre) >= Math.abs(u0 - centre);
     const rim = torso ? edgeTable(flat.positions, count, minY, maxY, outward) : null;
     const rimBack = torso && across ? edgeTable(flat.positions, count, minY, maxY, ! outward) : null;
+    /*
+     * پاچه ردیف‌به‌ردیف نیم‌دور می‌پیچد، نه با یک شعاع برای کلِ قطعه.
+     *
+     * لگینگ از ۲۶ سانتی‌متر در بالا به ۸ در مچ می‌رسد؛ با شعاعِ ثابت (پهنای
+     * بیشینه تقسیم بر π) مچِ جلو تنها ۵۲ درجه از پا را می‌گرفت و همه‌اش سمتِ
+     * داخل بود: درزِ پهلوی جلو و پشت ۱۱۰ درجه از هم، و برای رسیدن به هم از میانِ
+     * دو پا رد می‌شدند — پای راست از زانو به پایین لخت (اندازه گرفته شد). هر
+     * ردیف با پهنای خودش دقیقاً نیم‌دور می‌پیچد؛ مخروطِ ملایم کششِ افقی ندارد
+     * چون طولِ کمانِ هر ردیف همان پهنای همان ردیف است.
+     */
+    const legRims = legInner !== null
+        ? [edgeTable(flat.positions, count, minY, maxY, side < 0), edgeTable(flat.positions, count, minY, maxY, side > 0)]
+        : null;
 
     const arm = zone === 'sleeve';
     let hold;
@@ -1121,6 +1134,18 @@ const placePiece = (piece, flat, body, options) => {
         const world = lerp(top, tail, along) - (y - minY) * scale;
         const u = lerp(u0, u1, along);
 
+        // ردیفِ پاچه: لبهٔ داخلی، پهنا و شعاعِ نیم‌دورِ همین ردیف (ببینید legRims)
+        let legRow = null;
+
+        if (legRims) {
+            const at = (y - minY) / Math.max(1e-6, maxY - minY);
+            const inner = sampleRim(legRims[0], at) * scale;
+            const outer = sampleRim(legRims[1], at) * scale;
+            const width = Math.max(0.02, Math.abs(outer - inner));
+
+            legRow = { inner, width, reach: Math.max(sampleTable(legs, world)[0], width / Math.PI) + gap };
+        }
+
         let center = 0;
 
         if (zone === 'sleeve') {
@@ -1154,7 +1179,7 @@ const placePiece = (piece, flat, body, options) => {
              * ۱− به ۱۷−). پس مرکزِ استوانه آن‌قدر بیرون می‌رود که لبهٔ داخلی روی
              * خطِ میانی بماند.
              */
-            center = side * Math.max(sampleTable(legs, world)[1], hold + 0.005);
+            center = side * Math.max(sampleTable(legs, world)[1], (legRow ? legRow.reach : hold) + 0.005);
         }
 
         /*
@@ -1224,8 +1249,8 @@ const placePiece = (piece, flat, body, options) => {
          * جینِ کلوش). این‌جا زاویه از سرِ فاق شمرده می‌شود: جلو از −π/۲ (داخل)
          * تا +π/۲ (بیرون) از جلوی پا، پشت از −π/۲ به سمتِ −۳π/۲ از پشتِ پا.
          */
-        if (legs && legInner !== null) {
-            const t = Math.abs(x - legInner) * scale / hold;
+        if (legRow) {
+            const t = Math.PI * Math.abs(x * scale - legRow.inner) / legRow.width;
             const isBack = Math.abs(uMid) > 1;
 
             spin = side * (-Math.PI / 2 + (isBack ? -t : t));
@@ -1273,7 +1298,7 @@ const placePiece = (piece, flat, body, options) => {
             ? hold
             : Math.max(sampleRow(body.profile, world), hint || 0) + gap;
         // رویهٔ تاخورده چند میلی‌متر بیرونِ پایه (ببینید fold)
-        const reach = lerp(hold, skin, HUG) + lifted;
+        const reach = (legRow ? legRow.reach : lerp(hold, skin, HUG)) + lifted;
         /*
          * مرکزِ عمقیِ این تراز: محورِ بازو برای آستین (armDepth)، و برای تنه
          * مرکزِ خودِ مقطع (ستونِ ششمِ نیم‌رخ؛ آواتار گردن و باسنش پشتِ سینه
