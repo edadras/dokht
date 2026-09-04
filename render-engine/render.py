@@ -182,10 +182,12 @@ def body_from_rings(body):
     if ys and min(ys) < crotch - .03 and body.get('leg'):
         for side in (-1, 1):
             lrings = []
+            # همان محورِ برخوردگر: x ثابت (leg[0].x)، نه x هر حلقه — وگرنه پای مانکن از داخلِ پای شلوار بیرون می‌زد
+            leg_x = float(body['leg'][0].get('x', 9)) / 100
             for row in body['leg']:
                 cy = crotch - float(row['y']) / 100
                 r = max(.01, float(row['r']) / 100 - .003)
-                cx = side * float(row.get('x', 9)) / 100
+                cx = side * leg_x
                 lrings.append([(cx + r * math.cos(2 * math.pi * i / N), -(r * math.sin(2 * math.pi * i / N)), cy) for i in range(N)])
             loft('پا', lrings, form)
     if has_sleeves:

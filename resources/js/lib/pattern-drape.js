@@ -748,7 +748,8 @@ export const triangulate = (polygon, { target = 3, smoothing = 3 } = {}) => {
 
 const legTable = (body) => {
     const { level, radii } = body;
-    const offset = radii.hip * 0.42;
+    // محورِ پا همان محورِ برخوردگر است (۹٫۲ در برابرِ ۶٫۶ سانتی‌متر؛ اختلافش پای مانکن را از داخلِ شلوار بیرون می‌زد)
+    const offset = body.legAxis ?? radii.hip * 0.42;
 
     return [
         [level.ankle, radii.ankle * 1.25],

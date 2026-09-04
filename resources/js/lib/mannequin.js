@@ -492,6 +492,8 @@ export const drapeBody = (body) => {
         hull,
         armTable,
         armLength: body.armLength / 100,
+        // محورِ پا: همان‌جا که برخوردگرِ پا ایستاده (leg[0].x)؛ چیدنِ شلوار هم از همین می‌خواند
+        legAxis: body.leg[0].x / 100,
         armOffset: armJoint(body).x / 100,
         // کجیِ بازو از خودِ بدن (آواتار کجیِ خودش را دارد)؛ وگرنه ثابتِ مانکن
         armTilt: body.armTilt ?? ARM_TILT,
