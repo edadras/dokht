@@ -910,8 +910,26 @@ export const seamBand = (drape) => {
 
         base += seam.count * 2;
 
+        /*
+         * و هیچ چهارضلعی‌ای که یکی از یال‌هایش از BAND_REACH بلندتر باشد: دو سوزنِ
+         * پشتِ سرِ هم که چند سانتی‌متر از هم افتاده‌اند (سرِ حلقهٔ آستین) نوار
+         * نمی‌سازند، مثلثِ باریکِ دراز می‌سازند — همان «نخِ پاره» روی سرشانه.
+         */
+        const far = (p, q) => {
+            const dx = positions[p] - positions[q];
+            const dy = positions[p + 1] - positions[q + 1];
+            const dz = positions[p + 2] - positions[q + 2];
+
+            return dx * dx + dy * dy + dz * dz > BAND_REACH * BAND_REACH;
+        };
+
         for (let i = 0; i + 1 < seam.count; i++) {
             const one = start + i * 2;
+            const [a0, b0, a1, b1] = [one * 3, (one + 1) * 3, (one + 2) * 3, (one + 3) * 3];
+
+            if (far(a0, a1) || far(b0, b1) || far(a0, b0) || far(a1, b1)) {
+                continue;
+            }
 
             indices.push(one, one + 1, one + 2, one + 1, one + 3, one + 2);
         }
@@ -939,7 +957,8 @@ export const seamBand = (drape) => {
         return dx * dx + dy * dy + dz * dz;
     };
 
-    const REACH = 0.07 * 0.07;
+    // گوشه هم به همان اندازهٔ نوار می‌رسد؛ با هفت سانتی‌متر، گوشهٔ حلقه مثلثِ باریکِ دراز می‌ساخت
+    const REACH = BAND_REACH * BAND_REACH;
 
     for (let i = 0; i < ends.length; i++) {
         for (let j = i + 1; j < ends.length; j++) {
