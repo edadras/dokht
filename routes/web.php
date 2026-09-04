@@ -204,6 +204,8 @@ Route::middleware(['auth', 'workshop'])->group(function () {
         ->name('projects.pattern.generate');
     Route::post('projects/{project}/simulate', [SimulationController::class, 'store'])->name('projects.simulate');
     Route::get('simulations/{simulation}', [SimulationController::class, 'show'])->name('simulations.show');
+    Route::get('simulations/{simulation}/render-status', [SimulationController::class, 'renderStatus'])
+        ->name('simulations.render-status');
     Route::post('projects/{project}/cutting', [CuttingLayoutController::class, 'store'])->name('projects.cutting');
     Route::get('cutting-layouts/{cuttingLayout}', [CuttingLayoutController::class, 'show'])
         ->name('cutting-layouts.show');
@@ -255,3 +257,4 @@ Route::middleware(['auth', 'workshop'])->group(function () {
         Route::resource('guides', AdminGuideController::class)->except('show');
     });
 });
+
