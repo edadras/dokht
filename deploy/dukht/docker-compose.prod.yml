@@ -82,6 +82,24 @@ services:
     networks:
       - dukht
 
+  renderer:
+    build:
+      context: .
+      dockerfile: render-engine/Dockerfile
+    container_name: dukht-renderer
+    restart: unless-stopped
+    environment:
+      BLENDER_USER_CONFIG: /tmp/blender-config
+    volumes:
+      - dukht_storage:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 6G
+    networks:
+      - dukht
+
   mysql:
     image: mysql:8.4
     container_name: dukht-mysql
