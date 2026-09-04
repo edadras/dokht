@@ -2,8 +2,11 @@ import bpy, json, math, os, sys
 from mathutils import Vector
 
 job_path = sys.argv[sys.argv.index('--') + 1]
+sewn_path = sys.argv[sys.argv.index('--') + 2]
 with open(job_path, encoding='utf-8') as stream:
     job = json.load(stream)
+with open(sewn_path, encoding='utf-8') as stream:
+    sewn = json.load(stream)
 p = job.get('payload', {})
 avatar = p.get('avatar', {})
 garment = p.get('garment', {})
@@ -36,7 +39,7 @@ def cylinder(name, a, b, radius, material):
     ob.rotation_mode = 'QUATERNION'; ob.rotation_quaternion = direction.to_track_quat('Z', 'Y')
     bpy.ops.object.shade_smooth(); return ob
 
-skin = mat('مانکن', (.72, .68, .61), .72)
+skin = mat('مانکن', (.28, .26, .24), .78)
 cloth_hex = str(fabric.get('color', '#eeeae3')).lstrip('#')
 try: cloth_rgb = tuple(int(cloth_hex[i:i+2], 16)/255 for i in (0,2,4))
 except Exception: cloth_rgb = (.92,.9,.86)
@@ -58,6 +61,34 @@ for side in (-1,1):
     cylinder('Leg', (side*.105,0,z_waist-.22), (side*.09,0,.12), .075, skin)
 
 def garment_mesh(mode='dry'):
+    if sewn.get('meshes'):
+        verts, faces = [], []
+        all_y = [mesh['positions'][i] for mesh in sewn['meshes'] for i in range(1, len(mesh['positions']), 3)]
+        low, high = min(all_y), max(all_y)
+        span = max(.01, high - low)
+        for part in sewn['meshes']:
+            offset = len(verts)
+            positions = part['positions']
+            for i in range(0, len(positions), 3):
+                x, vertical, depth = positions[i:i + 3]
+                fall = max(0.0, min(1.0, (high - vertical) / span))
+                if mode == 'air':
+                    x += .42 * fall * fall
+                    depth += .05 * math.sin(vertical * 28) * fall
+                elif mode == 'water':
+                    vertical -= .035 * fall
+                verts.append((x, -depth, vertical))
+            indices = part['indices']
+            for i in range(0, len(indices), 3):
+                faces.append((offset + indices[i], offset + indices[i + 1], offset + indices[i + 2]))
+        mesh = bpy.data.meshes.new('لباس دوخته‌شده')
+        mesh.from_pydata(verts, [], faces); mesh.update()
+        ob = bpy.data.objects.new('لباس دوخته‌شده', mesh)
+        bpy.context.collection.objects.link(ob); ob.data.materials.append(cloth)
+        sol = ob.modifiers.new('ضخامت', 'SOLIDIFY'); sol.thickness = .0022
+        for poly in mesh.polygons: poly.use_smooth = True
+        return ob
+
     lengths = garment.get('lengths', {})
     skirt_cm = float(lengths.get('skirt', 90) or 90)
     bottom = max(.04, z_waist-skirt_cm/100)
@@ -95,9 +126,9 @@ bpy.ops.mesh.primitive_plane_add(size=8, location=(0,0,0)); floor=bpy.context.ob
 floor.data.materials.append(mat('زمین',(.12,.12,.12),.8))
 floor.hide_render = True
 
-bpy.ops.object.light_add(type='AREA', location=(3,-4,4)); bpy.context.object.data.energy=950; bpy.context.object.data.shape='DISK'; bpy.context.object.data.size=4
-bpy.ops.object.light_add(type='AREA', location=(-3,-1,3)); bpy.context.object.data.energy=650; bpy.context.object.data.size=3
-bpy.ops.object.light_add(type='AREA', location=(0,3,4)); bpy.context.object.data.energy=800; bpy.context.object.data.size=2
+bpy.ops.object.light_add(type='AREA', location=(3,-4,4)); bpy.context.object.data.energy=320; bpy.context.object.data.shape='DISK'; bpy.context.object.data.size=4
+bpy.ops.object.light_add(type='AREA', location=(-3,-1,3)); bpy.context.object.data.energy=180; bpy.context.object.data.size=3
+bpy.ops.object.light_add(type='AREA', location=(0,3,4)); bpy.context.object.data.energy=240; bpy.context.object.data.size=2
 
 scene=bpy.context.scene
 try:
@@ -122,7 +153,7 @@ shot('front',(0,-3.25,height*.58)); shot('side',(3.25,0,height*.58)); shot('back
 shot('water',(0,-3.25,height*.58),'water'); shot('airflow',(0,-3.25,height*.58),'air')
 scene.render.filepath=os.path.join(out,'garment.glb')
 bpy.ops.export_scene.gltf(filepath=scene.render.filepath, export_format='GLB', use_selection=False)
-manifest={'engine':'Blender server renderer','images':{k:k+'.png' for k in ('front','side','back','water','airflow')},'model':'garment.glb'}
+manifest={'engine':'Blender server renderer','mode':'pattern-sewn','seam_error':sewn.get('seam_error'),'pieces':len(sewn.get('meshes',[])),'images':{k:k+'.png' for k in ('front','side','back','water','airflow')},'model':'garment.glb'}
 tmp=os.path.join(out,'manifest.json.tmp')
 with open(tmp,'w',encoding='utf-8') as stream: json.dump(manifest,stream,ensure_ascii=False)
 os.replace(tmp,os.path.join(out,'manifest.json'))
