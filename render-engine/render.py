@@ -102,10 +102,15 @@ def circle(cx, cy, cz, r, zc=0.0):
 form = mat('مانکن', (.66, .62, .56), .92)
 steel = mat('فلز', (.55, .55, .56), .35, .9)
 cloth_hex = str(fabric.get('color', '#eeeae3')).lstrip('#')
+def linear(c):
+    """sRGB → خطی؛ Blender رنگِ پایه را خطی می‌خواهد. بی‌این، کرم (#e8ddc8) سفید رندر می‌شد."""
+    return c / 12.92 if c <= .04045 else ((c + .055) / 1.055) ** 2.4
+
+
 try:
-    cloth_rgb = tuple(int(cloth_hex[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    cloth_rgb = tuple(linear(int(cloth_hex[i:i + 2], 16) / 255) for i in (0, 2, 4))
 except Exception:
-    cloth_rgb = (.92, .9, .86)
+    cloth_rgb = (.82, .78, .71)
 cloth = mat('پارچه', cloth_rgb, max(.35, .82 - float(fabric.get('sheen', .15)) * .5), sheen=.35)
 _alpha = 1 - max(0.0, min(.6, float(fabric.get('transparency', 0) or 0)))
 if _alpha < 1:
@@ -148,11 +153,20 @@ def body_from_rings(body):
         return ring
 
     neck_level = float(body['level']['neck'])
-    torso = sorted([r for r in body['torso'] if float(r['y']) >= neck_level - 1e-6], key=lambda r: -float(r['y']))
-    rings = [ellipse(float(r['rx']), float(r['front']), float(r['back']), float(r.get('z', 0)), up(r['y'])) for r in torso]
-    # سرِ مانکن: همان حلقهٔ گردن، دو سانتی‌متر بالاتر و کمی تنگ‌تر، تا بسته شود
-    top = torso[-1]
-    rings.append(ellipse(float(top['rx']) * .96, float(top['front']) * .96, float(top['back']) * .96, float(top.get('z', 0)), up(top['y']) + .02))
+    crotch_up = up(body['level']['crotch'])
+    hull = sewn.get('hull')
+    if hull:
+        # همان پوستی که پارچه رویش نشسته (برخوردگر، با گودیِ زیرِ بغل)، سه میلی‌متر تو‌رفته تا از زیرِ پارچه بیرون نزند
+        rows = sorted([r for r in hull if r[0] >= crotch_up - 1e-6 and r[0] <= up(neck_level) + 1e-6], key=lambda r: r[0])
+        rings = [ellipse(max(.5, r[1] * 100 - .3), max(.5, r[3] * 100 - .3), max(.5, r[4] * 100 - .3), (r[5] if len(r) > 5 else 0) * 100, r[0]) for r in rows]
+        top_ring = rows[-1]
+        rings.append(ellipse(top_ring[1] * 96, top_ring[3] * 96, top_ring[4] * 96, (top_ring[5] if len(top_ring) > 5 else 0) * 100, top_ring[0] + .02))
+    else:
+        torso = sorted([r for r in body['torso'] if float(r['y']) >= neck_level - 1e-6], key=lambda r: -float(r['y']))
+        rings = [ellipse(float(r['rx']), float(r['front']), float(r['back']), float(r.get('z', 0)), up(r['y'])) for r in torso]
+        # سرِ مانکن: همان حلقهٔ گردن، دو سانتی‌متر بالاتر و کمی تنگ‌تر، تا بسته شود
+        top = torso[-1]
+        rings.append(ellipse(float(top['rx']) * .96, float(top['front']) * .96, float(top['back']) * .96, float(top.get('z', 0)), up(top['y']) + .02))
     loft('تنه', rings, form, levels=2)
     # پایهٔ مانکن: میلهٔ فلزی از زیرِ فاق تا زمین و صفحهٔ گرد
     crotch = up(body['level']['crotch'])
@@ -294,6 +308,15 @@ def garment_mesh(mode='dry'):
 
 
 garment_ob = garment_mesh('dry')
+
+# اشکال‌زدایی: RENDER_HIDE=form یا cloth یکی را از رندر برمی‌دارد
+for _name in os.environ.get('RENDER_HIDE', '').split(','):
+    if _name == 'form':
+        for _ob in list(bpy.data.objects):
+            if _ob.name.startswith(('تنه', 'بازو', 'میله', 'پایه')):
+                _ob.hide_render = True
+    elif _name == 'cloth':
+        garment_ob.hide_render = True
 
 # ── استودیو: کفِ روشن با سایهٔ نرم، پس‌زمینهٔ روشن، سه نورِ سطحی ──────────────
 bpy.ops.mesh.primitive_plane_add(size=12, location=(0, 0, 0))

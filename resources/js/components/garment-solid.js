@@ -602,7 +602,7 @@ export const bodyColliders = (Collider, body, table, grow = 1) => {
  * ساخته می‌شود: میان هر دو سوزنِ پشتِ سرِ هم، دو مثلث. جایی که درز بسته است،
  * نوار پهنای صفر دارد و دیده نمی‌شود؛ جایی که باز مانده، پارچه است نه سوراخ.
  */
-const seamBand = (drape) => {
+export const seamBand = (drape) => {
     const positions = [];
     const indices = [];
     const ends = [];
@@ -619,10 +619,18 @@ const seamBand = (drape) => {
         const start = base;
 
         for (let i = 0; i < seam.count; i++) {
+            /*
+             * سوزنِ خاموش (ناسازگار؛ ببینید weldSeams) نوار نمی‌گیرد: جای هر دو
+             * سرش همان رأسِ این سمت گذاشته می‌شود تا مثلث‌هایش مساحتِ صفر بگیرند.
+             */
             const a = seam.pairs[i * 2] * 3;
-            const b = seam.pairs[i * 2 + 1] * 3;
+            const b = seam.dead && seam.dead[i] ? -1 : seam.pairs[i * 2 + 1] * 3;
 
-            positions.push(pa[a], pa[a + 1], pa[a + 2], pb[b], pb[b + 1], pb[b + 2]);
+            if (b < 0) {
+                positions.push(pa[a], pa[a + 1], pa[a + 2], pa[a], pa[a + 1], pa[a + 2]);
+            } else {
+                positions.push(pa[a], pa[a + 1], pa[a + 2], pb[b], pb[b + 1], pb[b + 2]);
+            }
         }
 
         base += seam.count * 2;

@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { buildDrape, supportGarment, weldSeams } from '/app/resources/js/lib/pattern-drape.js';
 import { ClothWorld, Collider } from '/app/resources/js/lib/cloth-solver.js';
-import { finishGarment, heightsOf, sewAnchored, bodyColliders } from '/app/resources/js/components/garment-solid.js';
+import { finishGarment, heightsOf, sewAnchored, bodyColliders, seamBand } from '/app/resources/js/components/garment-solid.js';
 import { buildBody, drapeBody } from '/app/resources/js/lib/mannequin.js';
 
 const input = process.argv[2];
@@ -54,12 +54,24 @@ const meshes = drape.patches
         indices: Array.from(mesh.indices),
     }));
 
+/*
+ * نوارِ خودِ درزها هم صادر می‌شود — همان که مرورگر می‌کشد. درزِ بسته‌شده چند
+ * میلی‌متر باز می‌ماند و بی‌این نوار، در رندر مثلِ پارگیِ سرشانه دیده می‌شد.
+ */
+const band = seamBand(drape);
+
+if (band) {
+    meshes.push({ id: 'seams', name: 'درزها', role: 'seam', positions: band.positions, indices: band.indices });
+}
+
 writeFileSync(output, JSON.stringify({
     format: 'dokht-sewn-mesh',
     seam_error: world.seamError(),
     stats: drape.stats,
     // همان تنی که پارچه رویش دوخته شد (حلقه‌ها، سانتی‌متر)؛ رندر مانکن را از همین می‌سازد
     body: raw,
+    // پوستِ برخوردگر (متر): [y, نیم‌پهنا، میانگینِ عمق، جلو، پشت، مرکزِ z]؛ زیرِ بغل گود است تا آستین جا بگیرد
+    hull: body.hull,
     meshes,
 }));
 

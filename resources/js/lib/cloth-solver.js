@@ -1536,6 +1536,11 @@ export class SeamSet {
         this.b = b || a;
         this.pairs = pairs instanceof Uint32Array ? pairs : Uint32Array.from(pairs);
         this.count = this.pairs.length / 2;
+        /*
+         * سوزنِ خاموش: جفتی که ناسازگار از آب درآمد (ببینید weldSeams) نه حل
+         * می‌شود، نه در خطای درز می‌آید، نه نوارِ درز رویش کشیده می‌شود.
+         */
+        this.dead = new Uint8Array(this.count);
 
         /*
          * سوزن می‌تواند میانِ دو رأس بنشیند، نه فقط روی یک رأس.
@@ -1613,12 +1618,28 @@ export class SeamSet {
     }
 
     /* فاصله‌ی امروزِ هر جفت؛ مبنای رمپِ دوختن و هم معیار سلامت درز */
+    /** خاموش کردنِ یک سوزن؛ از این پس مثلِ نبوده است */
+    disable(i) {
+        this.dead[i] = 1;
+    }
+
     measure(out = null) {
-        const { a, pairs, count } = this;
+        const { a, pairs, count, dead } = this;
         const point = [0, 0, 0];
         let total = 0;
+        let live = 0;
 
         for (let i = 0; i < count; i++) {
+            if (dead[i]) {
+                if (out) {
+                    out[i] = 0;
+                }
+
+                continue;
+            }
+
+            live++;
+
             const ia = pairs[i * 2] * 3;
 
             this.target(i, point);
@@ -1636,7 +1657,7 @@ export class SeamSet {
             total += length;
         }
 
-        return count ? total / count : 0;
+        return live ? total / live : 0;
     }
 
     /* میانگین فاصله‌ی جفت‌ها؛ همان «چقدر درز هنوز باز است» */
@@ -1679,7 +1700,7 @@ export class SeamSet {
          */
         this.projectHinge(strength);
 
-        const { a, b, pairs, second, weight, gap, rest, count } = this;
+        const { a, b, pairs, second, weight, gap, rest, count, dead } = this;
         const pa = a.positions;
         const pb = b.positions;
         const wa = a.invMass;
@@ -1688,6 +1709,10 @@ export class SeamSet {
         const point = [0, 0, 0];
 
         for (let i = 0; i < count; i++) {
+            if (dead[i]) {
+                continue;
+            }
+
             const na = pairs[i * 2];
             const nb = pairs[i * 2 + 1];
             const w = second && weight ? weight[i] : 0;

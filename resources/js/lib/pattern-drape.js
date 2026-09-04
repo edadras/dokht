@@ -3388,6 +3388,10 @@ const surfaceStitches = (state, host, reach) => {
  *
  * چند تکرار لازم است چون رأسی که روی دو درز است، هر بار میانهٔ یکی را می‌گیرد.
  */
+/** سوزنی دورتر از این (متر) *و* چند برابر دورتر از همسایه‌هایش روی همان درز، جوش نمی‌خورد */
+const WELD_REACH = 0.05;
+const WELD_OUTLIER = 3;
+
 export const weldSeams = (drape, rounds = 8) => {
     /*
      * جابه‌جاییِ لبه باید به درونِ قطعه پخش شود.
@@ -3457,8 +3461,60 @@ export const weldSeams = (drape, rounds = 8) => {
             const wa = seam.a.invMass;
             const wb = (seam.b || seam.a).invMass;
             const point = [0, 0, 0];
+            /*
+             * فاصلهٔ هر سوزن پیش از جوش، و میانهٔ همین درز.
+             *
+             * سوزنی که از میانهٔ درزِ خودش خیلی دورتر مانده، سازگار نیست: سرِ کپِ
+             * آستینِ پیراهن هم به نوکِ سرشانهٔ جلو سنجاق بود و هم به گوشهٔ یوک، و آن
+             * دو ده سانتی‌متر از هم دورند در حالی که بقیهٔ درز یک سانتی‌متر است.
+             * جوشِ زوری همان یک رأس را ده سانتی‌متر می‌کشید و مشِ آستین میانِ دو
+             * رأسِ همسایه (۹ میلی‌متر در الگو) پاره می‌شد — «سرشانهٔ پاره» در رندر.
+             * چنین سوزنی جوش نمی‌خورد و نوارِ درز جایش را با پارچه می‌پوشاند.
+             *
+             * ملاک نسبی است، نه مطلق: درزی که *سراسرش* باز مانده (چیپائو ۱۵
+             * سانتی‌متر) باید جوش بخورد، و با سقفِ مطلقِ ۵ سانتی‌متر سه مدلِ دروازه
+             * رد شدند.
+             */
+            const gaps = new Float64Array(seam.count);
 
             for (let i = 0; i < seam.count; i++) {
+                if (seam.dead && seam.dead[i]) {
+                    continue;
+                }
+
+                seam.target(i, point);
+
+                const at = seam.pairs[i * 2] * 3;
+
+                gaps[i] = Math.hypot(point[0] - pa[at], point[1] - pa[at + 1], point[2] - pa[at + 2]);
+            }
+
+            /*
+             * ملاک محلی است: سوزنی جوش نمی‌خورد که از هر دو همسایه‌اش روی همان
+             * درز چند برابر دورتر مانده باشد. درزی که سراسرش باز مانده — کمرِ
+             * دامنِ کلوش، ۵ تا ۳۳ سانتی‌متر پیوسته — همسایه‌های دور دارد و جوش
+             * می‌خورد (با میانهٔ درز به‌جای همسایه، همان دامن از دروازه رد شد).
+             */
+            const lonely = (i) => {
+                const near = Math.max(i > 0 ? gaps[i - 1] : 0, i + 1 < seam.count ? gaps[i + 1] : 0);
+
+                return gaps[i] > Math.max(WELD_REACH, near * WELD_OUTLIER);
+            };
+
+            for (let i = 0; i < seam.count; i++) {
+                if (seam.dead && seam.dead[i]) {
+                    continue;
+                }
+
+                if (lonely(i)) {
+                    // خاموش می‌شود: نه در خطای درز می‌آید، نه نوارِ درز رویش کشیده می‌شود
+                    if (seam.disable) {
+                        seam.disable(i);
+                    }
+
+                    continue;
+                }
+
                 const na = seam.pairs[i * 2];
                 const nb = seam.pairs[i * 2 + 1];
                 const w = seam.second && seam.weight ? seam.weight[i] : 0;
