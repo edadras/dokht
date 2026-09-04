@@ -22,10 +22,11 @@ with open(job_path, encoding='utf-8') as stream:
     job = json.load(stream)
 with open(sewn_path, encoding='utf-8') as stream:
     sewn = json.load(stream)
-p = job.get('payload', {})
-avatar = p.get('avatar', {})
-garment = p.get('garment', {})
-fabric = p.get('fabric', {})
+p = job.get('payload') or {}
+# آرایهٔ خالیِ PHP در JSON فهرست است، نه شیء
+avatar = p.get('avatar') if isinstance(p.get('avatar'), dict) else {}
+garment = p.get('garment') if isinstance(p.get('garment'), dict) else {}
+fabric = p.get('fabric') if isinstance(p.get('fabric'), dict) else {}
 out = os.path.join(os.environ.get('RENDER_OUT', '/data/app/public/renders'), job['id'])
 os.makedirs(out, exist_ok=True)
 SAMPLES = int(os.environ.get('RENDER_SAMPLES', '96'))
