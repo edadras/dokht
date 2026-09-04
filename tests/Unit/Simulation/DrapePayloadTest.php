@@ -1053,6 +1053,40 @@ class DrapePayloadTest extends TestCase
     }
 
     /**
+     * نوار فاقِ بادی لایهٔ داخلی است، نه یک قطعهٔ آزاد روی یقه.
+     *
+     * الگوریتمِ قدیمی لبهٔ 14 سانتی‌متری آن را به نزدیک‌ترین لبهٔ هم‌طولِ تنه،
+     * یعنی خط یقه، می‌دوخت. خروجیِ بصری همان فلپِ کج روی شانه بود.
+     */
+    public function test_loose_bodysuit_gusset_is_not_adopted_by_the_neck(): void
+    {
+        $payload = $this->payload('top_bodysuit');
+
+        $this->assertSame([], array_values(array_filter(
+            $payload['pieces'],
+            fn (array $piece) => str_contains((string) $piece['code'], 'bodysuit-gusset'),
+        )));
+
+        $crotch = [];
+
+        foreach ($payload['seams'] as $seam) {
+            $ends = [(string) $seam['a']['piece'], (string) $seam['b']['piece']];
+            $this->assertFalse(
+                collect($ends)->contains(fn (string $id) => str_contains($id, 'bodysuit-gusset')),
+                'نوار فاق نباید با دوختِ حدسی به یقه یا هر قطعهٔ دیگری برسد.',
+            );
+
+            if (($seam['label'] ?? '') === 'درز فاق بادی') {
+                $crotch[] = $seam;
+                $this->assertStringContainsString('bodysuit-front', implode('|', $ends));
+                $this->assertStringContainsString('bodysuit-back', implode('|', $ends));
+            }
+        }
+
+        $this->assertNotEmpty($crotch, 'لبهٔ فاق جلو و پشت بادی باید صریحاً به هم دوخته شوند.');
+    }
+
+    /**
      * قطعهٔ آینه‌شده تکراری نیست؛ آن یکی طرف است.
      *
      * پاچهٔ راست و چپ یک کد دارند، یک بازهٔ زاویه‌ای و یک ارتفاع — فرقشان فقط
@@ -1229,3 +1263,4 @@ class DrapePayloadTest extends TestCase
         }
     }
 }
+
