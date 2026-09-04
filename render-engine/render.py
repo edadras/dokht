@@ -253,6 +253,12 @@ def garment_mesh(mode='dry'):
         ob = bpy.data.objects.new('لباس دوخته‌شده', mesh)
         bpy.context.collection.objects.link(ob)
         ob.data.materials.append(cloth)
+        # هموارسازیِ اصلاحی: چین‌های ریزِ عددیِ حل‌کننده را می‌گیرد، چین‌های درشت می‌مانند
+        cs = ob.modifiers.new('هموار', 'CORRECTIVE_SMOOTH')
+        cs.factor = .5
+        cs.iterations = 6
+        cs.smooth_type = 'LENGTH_WEIGHTED'
+        cs.use_only_smooth = True
         sol = ob.modifiers.new('ضخامت', 'SOLIDIFY')
         sol.thickness = .0022
         sol.offset = 1

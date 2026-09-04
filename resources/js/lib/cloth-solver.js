@@ -1380,7 +1380,7 @@ export class TriPatch extends PatchBase {
         if (warp.length) groups.push(distanceGroup(warp, fabric.warp, restOf));
         if (weft.length) groups.push(distanceGroup(weft, fabric.weft, restOf));
         if (bias.length) groups.push(distanceGroup(bias, fabric.shear, restOf));
-        if (bend.length) groups.push(distanceGroup(bend, fabric.bend, restOf));
+        if (bend.length) groups.push({ ...distanceGroup(bend, fabric.bend, restOf), kind: 'bend' });
 
         this.edgeCount = edges.length;
 
@@ -2297,6 +2297,31 @@ export class ClothWorld {
     allowStretch(give) {
         for (const patch of this.patches) {
             patch.give = Math.max(1, give);
+        }
+    }
+
+    /**
+     * اتو: قیدِ خمش سفت می‌شود تا چین‌های یخ‌زده باز شوند.
+     *
+     * پارچه در راهِ رسیدن به درزها چین می‌خورد و چون خمش نرم است، همان چین‌ها
+     * پس از نشستن می‌مانند. خیاط لباسِ تمام‌شده را اتو می‌کند؛ این‌جا هم پس از
+     * نشستن، قیدِ خمش (فاصلهٔ دو رأسِ روبه‌رویِ هر یالِ مشترک) سفت و کم‌چین
+     * می‌شود و چند گام دیگر حل می‌شود: درزها و برخورد سرِ جایشان، چین‌ها باز.
+     *
+     * @param {number} strength ۰ تا ۱؛ سختیِ خمش و سقفِ جمع‌شدگی
+     */
+    iron(strength = 0.9) {
+        const k = clamp(strength, 0, 1);
+
+        for (const patch of this.patches) {
+            for (const group of patch.groups) {
+                if (group.kind !== 'bend') {
+                    continue;
+                }
+
+                group.softness = Math.max(group.softness, k);
+                group.minScale = Math.max(group.minScale, 1 - 0.06 * (1 - k) - 0.02);
+            }
         }
     }
 

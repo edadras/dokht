@@ -20,7 +20,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { buildDrape, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
 import { ClothWorld, Collider } from '../../resources/js/lib/cloth-solver.js';
-import { finishGarment, heightsOf, sewAnchored } from '../../resources/js/components/garment-solid.js';
+import { finishGarment, heightsOf, sewAnchored, shoulderAnchors } from '../../resources/js/components/garment-solid.js';
 import { bodyColliders, makeBody, rawBody } from './fixtures/payload.js';
 
 const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -635,7 +635,7 @@ const bench = (file) => {
     const placedYs = heightsOf(drape);
 
     /* دوختِ بی‌وزنِ لنگردار؛ ببینید sewAnchored در garment-solid.js */
-    sewAnchored(world, drape, placedYs, body.level.armhole, Math.max(240, drape.stats.presettle));
+    sewAnchored(world, drape, placedYs, body.level.armhole, Math.max(240, drape.stats.presettle), 40, shoulderAnchors(drape, body, payload.drape));
 
     const stitched = world.seamError();
 

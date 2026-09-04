@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { buildDrape, supportGarment, weldSeams } from '/app/resources/js/lib/pattern-drape.js';
 import { ClothWorld, Collider } from '/app/resources/js/lib/cloth-solver.js';
-import { finishGarment, heightsOf, sewAnchored, bodyColliders, seamBand } from '/app/resources/js/components/garment-solid.js';
+import { finishGarment, heightsOf, sewAnchored, shoulderAnchors, bodyColliders, seamBand } from '/app/resources/js/components/garment-solid.js';
 import { buildBody, drapeBody } from '/app/resources/js/lib/mannequin.js';
 
 const input = process.argv[2];
@@ -28,7 +28,7 @@ dress(1);
 const gravity = world.law.gravity;
 world.law.gravity = 0;
 const placed = heightsOf(drape);
-sewAnchored(world, drape, placed, body.level.armhole, Math.max(240, drape.stats.presettle));
+sewAnchored(world, drape, placed, body.level.armhole, Math.max(240, drape.stats.presettle), 40, shoulderAnchors(drape, body, payload.drape));
 supportGarment(drape, { band: 0.08, strength: 1 });
 world.law.gravity = gravity;
 world.presettle(40);
@@ -42,6 +42,9 @@ world.seamPasses = drape.stats.solver.seamPasses ?? world.seamPasses;
 world.presettle(fast ? 300 : 600);
 world.enableContact();
 world.presettle(fast ? 150 : 300);
+// اتو: قیدِ خمش سفت می‌شود و چین‌های یخ‌زده باز می‌شوند؛ ببینید ClothWorld.iron
+world.iron(0.9);
+world.presettle(fast ? 100 : 200);
 finishGarment(world, drape, weldSeams);
 
 const meshes = drape.patches

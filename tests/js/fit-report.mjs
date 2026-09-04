@@ -18,7 +18,7 @@
 import { readFileSync } from 'node:fs';
 import { buildDrape, supportGarment, weldSeams } from '../../resources/js/lib/pattern-drape.js';
 import { ClothWorld, Collider, clearanceAt } from '../../resources/js/lib/cloth-solver.js';
-import { finishGarment, heightsOf, sewAnchored } from '../../resources/js/components/garment-solid.js';
+import { finishGarment, heightsOf, sewAnchored, shoulderAnchors } from '../../resources/js/components/garment-solid.js';
 import { bodyColliders, makeBody, rawBody } from './fixtures/payload.js';
 
 const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -42,7 +42,7 @@ world.law.gravity = 0;
 const placed = heightsOf(drape);
 
 /* دوختِ بی‌وزنِ لنگردار؛ ببینید sewAnchored در garment-solid.js */
-sewAnchored(world, drape, placed, body.level.armhole, Math.max(240, drape.stats.presettle));
+sewAnchored(world, drape, placed, body.level.armhole, Math.max(240, drape.stats.presettle), 40, shoulderAnchors(drape, body, payload.drape));
 
 supportGarment(drape, { band: 0.08, strength: 1 });
 drape.patches.forEach((entry) => entry.patch.applyPins(IDENTITY));

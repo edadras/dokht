@@ -363,8 +363,143 @@ export const sagOf = (drape, was, above = -Infinity) => {
  * @param {number} above فقط رأس‌های بالای این تراز لنگرند (حلقهٔ آستین)
  * @param {number} steps شمارِ کلِ گام‌های بی‌وزنی
  */
-export const sewAnchored = (world, drape, placed, above, steps, chunk = 40) => {
+
+/**
+ * لنگرِ سرشانه: لبه‌های درزِ سرشانه روی خطِ سرشانهٔ خودِ بدن.
+ *
+ * چیدنِ استوانه‌ای سرشانه را نمی‌فهمد: نقطهٔ گردنِ جلو روی x=۱۳٫۷ می‌افتاد
+ * (باید ≈۱۰ باشد) و لبهٔ جلویِ یوک پشتِ گردن روی z=−۷٫۶؛ درزِ سرشانه در تعادل
+ * ۵٫۴ سانتی‌متر باز می‌ماند، جوش آن را می‌بست و مش را می‌کشید (اندازه گرفته
+ * شد روی پیراهن). خیاط تکه را از سرشانه به مانکن سنجاق می‌کند و بعد می‌دوزد؛
+ * این‌جا هم رأس‌های هر دو لبهٔ درزِ سرشانه در مرحلهٔ بی‌وزنیِ دوخت روی خطِ
+ * سرشانهٔ بدن سنجاق می‌شوند — از پای گردن تا سرِ شانه، به نسبتِ طولشان روی
+ * لبه — و بعد رها می‌شوند تا وزن و بقیهٔ درزها کارشان را بکنند.
+ *
+ * درزِ سرشانه یعنی: درزی که هر دو لبه‌اش «shoulder» باشد و یکی از دو قطعه
+ * چپ/راست داشته باشد (جلو). لبهٔ قطعهٔ روبه‌رو (یوک یا پشت) همان سمت را
+ * می‌گیرد. سرِ گردنِ هر لبه سری است که به لبهٔ «neck» چسبیده.
+ *
+ * @returns {{patch: object, vertex: number, target: number[]}[]}
+ */
+export const shoulderAnchors = (drape, table, payload) => {
+    const anchors = [];
+
+    if (! payload || ! payload.seams || ! payload.pieces) {
+        return anchors;
+    }
+
+    const scale = payload.scale ?? 0.01;
+    const entryOf = (id) => drape.patches.find((entry) => entry.piece && entry.piece.id === id);
+    const rowAt = (rows, y) => {
+        if (! rows || ! rows.length) return [0, 0, 0, 0, 0];
+        if (y <= rows[0][0]) return rows[0].slice(1);
+        for (let i = 1; i < rows.length; i++) {
+            if (y <= rows[i][0]) {
+                const t = (y - rows[i - 1][0]) / Math.max(1e-6, rows[i][0] - rows[i - 1][0]);
+                return rows[i - 1].slice(1).map((v, k) => lerp(v, rows[i][k + 1] ?? 0, t));
+            }
+        }
+        return rows[rows.length - 1].slice(1);
+    };
+    const czAt = (y) => rowAt(table.profile, y)[4] || 0;
+    // خطِ سرشانهٔ بدن: از پای گردن (کمی بیرونِ شعاعِ گردن، کمی زیرِ ترازِ گردن) تا سرِ شانه (سرِ مفصل، کمی بالاتر)
+    const neck = [table.radii.neck + 0.006, table.level.neck - 0.012, czAt(table.level.neck) + 0.004];
+    const tip = [table.armOffset - 0.004, table.armTop + 0.018, czAt(table.level.shoulder) + 0.004];
+    const along = (side, t) => [
+        side * lerp(neck[0], tip[0], t),
+        lerp(neck[1], tip[1], t),
+        lerp(neck[2], tip[2], t),
+    ];
+    const edgeOf = (piece, from, to) => (piece.edges || []).find((edge) => {
+        const n = piece.polygon.length;
+        const inside = (v) => {
+            let walk = edge.start;
+            for (let k = 0; k <= n; k++) {
+                if (walk === v) return true;
+                if (walk === edge.end) return false;
+                walk = (walk + 1) % n;
+            }
+            return false;
+        };
+        return inside(from) && inside(to);
+    });
+    const touches = (piece, vertex, tag) => (piece.edges || []).some((edge) => edge.tag === tag && (edge.start === vertex || edge.end === vertex));
+
+    const pin = (piece, from, to, side) => {
+        const entry = entryOf(piece.id);
+        if (! entry) return;
+        const n = piece.polygon.length;
+        const walk = [from];
+        while (walk[walk.length - 1] !== to && walk.length <= n) {
+            walk.push((walk[walk.length - 1] + 1) % n);
+        }
+        // سرِ گردن اول
+        if (! touches(piece, from, 'neck') && touches(piece, to, 'neck')) {
+            walk.reverse();
+        }
+        const cum = [0];
+        for (let i = 1; i < walk.length; i++) {
+            const a = piece.polygon[walk[i - 1]];
+            const b = piece.polygon[walk[i]];
+            cum.push(cum[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1]));
+        }
+        const total = cum[cum.length - 1] || 1;
+        const grain = entry.mesh.grain;
+        for (let i = 0; i < walk.length; i++) {
+            const [px, py] = piece.polygon[walk[i]];
+            let best = -1;
+            let bd = Infinity;
+            for (let v = 0; v < entry.patch.count; v++) {
+                const d = Math.hypot(grain[v * 2] - px * scale, grain[v * 2 + 1] - py * scale);
+                if (d < bd) { bd = d; best = v; }
+            }
+            if (best >= 0 && bd < 0.004) {
+                anchors.push({ patch: entry.patch, vertex: best, target: along(side, cum[i] / total) });
+            }
+        }
+    };
+
+    for (const seam of payload.seams) {
+        if ((seam.kind || 'seam') !== 'seam' || ! seam.a || ! seam.b) continue;
+        const pa = payload.pieces.find((piece) => piece.id === seam.a.piece);
+        const pb = payload.pieces.find((piece) => piece.id === seam.b.piece);
+        if (! pa || ! pb || pa === pb) continue;
+        const ea = edgeOf(pa, seam.a.from, seam.a.to);
+        const eb = edgeOf(pb, seam.b.from, seam.b.to);
+        if (! ea || ! eb || ea.tag !== 'shoulder' || eb.tag !== 'shoulder') continue;
+        // همان قراردادِ placePiece: چپ/راستِ صریح، وگرنه آینه‌شده (flip یا نمونهٔ فرد) چپ است
+        const sideOf = (piece) => {
+            if (piece.side === 'right') return 1;
+            if (piece.side === 'left') return -1;
+            if (piece.side === 'front') return ((piece.placement && piece.placement.flip) || piece.instance % 2) ? -1 : 1;
+            return 0;
+        };
+        const side = sideOf(pa) || sideOf(pb);
+        if (! side) continue;
+        pin(pa, seam.a.from, seam.a.to, side);
+        pin(pb, seam.b.from, seam.b.to, side);
+    }
+
+    return anchors;
+};
+
+export const sewAnchored = (world, drape, placed, above, steps, chunk = 40, anchors = []) => {
     let placedHigh = -Infinity;
+
+    // سنجاقِ سرشانه: بی‌حرکت روی خطِ سرشانهٔ بدن تا آخرِ دوختِ بی‌وزن
+    const hold = () => {
+        for (const { patch, vertex, target } of anchors) {
+            patch.invMass[vertex] = 0;
+            patch.positions[vertex * 3] = target[0];
+            patch.positions[vertex * 3 + 1] = target[1];
+            patch.positions[vertex * 3 + 2] = target[2];
+            patch.previous[vertex * 3] = target[0];
+            patch.previous[vertex * 3 + 1] = target[1];
+            patch.previous[vertex * 3 + 2] = target[2];
+        }
+    };
+
+    hold();
 
     for (let i = 0; i < placed.length; i++) {
         if (placed[i] > placedHigh) {
@@ -395,7 +530,13 @@ export const sewAnchored = (world, drape, placed, above, steps, chunk = 40) => {
 
         if (Math.abs(sag) > 0.002) {
             shift(drape, { x: 0, y: 0, z: 0 }, { x: 0, y: sag, z: 0 });
+            hold();
         }
+    }
+
+    // رها؛ از این‌جا وزن و درزها لباس را نگه می‌دارند
+    for (const { patch, vertex } of anchors) {
+        patch.invMass[vertex] = 1;
     }
 };
 
@@ -420,6 +561,7 @@ export const finishGarment = (world, drape, weldSeams) => {
     weldSeams(drape);
     world.pushOutside(1);
 };
+
 
 /** جابه‌جاییِ صُلبِ کلِ لباس؛ هیچ درزی باز نمی‌شود. */
 export const shift = (drape, want, have) => {
@@ -1311,7 +1453,7 @@ export default (initial = {}) => ({
              * کردن). ببینید sewAnchored؛ بازنشانیِ یک‌بارهٔ قبلی سقفِ ۶
              * سانتی‌متری داشت و فرورفتنِ ۱۹ سانتی‌متریِ بلوزها را برنمی‌گرداند.
              */
-            sewAnchored(world, drape, placed, table.level.armhole, Math.max(240, drape.stats.presettle));
+            sewAnchored(world, drape, placed, table.level.armhole, Math.max(240, drape.stats.presettle), 40, shoulderAnchors(drape, table, this.payload.drape));
 
             /*
              * ۲) لباسِ دوخته‌شده را برمی‌داریم و سرِ جایش می‌گذاریم.
