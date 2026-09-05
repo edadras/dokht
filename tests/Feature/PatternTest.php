@@ -226,10 +226,18 @@ class PatternTest extends TestCase
         $this->get(route('patterns.show', $pattern))
             ->assertOk()
             ->assertSee('بالاتنه جلو')
+            ->assertSee('دوخت واقعی الگو روی مانکن')
+            ->assertSee('serverModelViewer()', false)
+            ->assertDontSee('garmentSolid(', false)
             ->assertSee('جای دوخت')
             ->assertSee('دوخت مجازی')
             ->assertSee('نقشه الگو')
             ->assertSee('<path', false);
+
+        $this->assertFileExists(storage_path('app/render-queue/pattern-'.$pattern->id.'.json'));
+        $this->get(route('patterns.render-status', $pattern))
+            ->assertOk()
+            ->assertJson(['status' => 'pending']);
     }
 
     public function test_update_regenerates_with_new_ease(): void

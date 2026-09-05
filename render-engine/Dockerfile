@@ -18,3 +18,4 @@ RUN chmod +x /engine/worker.py
 
 ENV BLENDER_USER_CONFIG=/tmp/blender-config
 CMD ["python3", "/engine/worker.py"]
+

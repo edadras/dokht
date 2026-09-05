@@ -195,10 +195,15 @@ abstract class SwimBaseGenerator extends TopBaseGenerator
             // جابه‌جا شود، پوشش «کم» ممکن است پارچهٔ بیشتری بخورد تا «کامل».
             $legDrop = ($isFront ? $legRise : $legRise * 0.55) + ((1 - $share) * $bodyRise * 0.45);
             $control = $quarter * (0.3 + (0.35 * $share));
+            $sideDrop = min($bodyRise - 3.0, max(3.5, $bodyRise * 0.28));
 
             $outline = [
                 Geometry::point(0, 0),
                 Geometry::point($quarter, 0),
+                // درز پهلو یک لبهٔ واقعی و کوتاه است. پیش‌تر این رأس وجود
+                // نداشت و کل منحنی خط پا با برچسب side به پشت دوخته می‌شد؛
+                // دو سوراخ پا بسته و پایین‌تنه به توده‌ای مثلثی تبدیل می‌شد.
+                Geometry::point($quarter, $sideDrop),
                 Geometry::curve(
                     $gusset / 2,
                     $bodyRise,
@@ -220,14 +225,16 @@ abstract class SwimBaseGenerator extends TopBaseGenerator
                 ],
                 'meta' => [
                     'part' => $part,
-                    'edges' => ['waist', 'side', 'hem', 'default'],
-                    'fold_edges' => [3],
+                    'edges' => ['waist', 'side', 'hem', 'crotch', 'default'],
+                    'fold_edges' => [4],
                     'side' => $side,
                     'stretch' => $stretch,
+                    'crotch_depth' => round($bodyRise, 2),
                     'girth_role' => 'shell',
                     'girth' => ['waist' => round($quarter * 2, 2)],
                     'girth_factor' => 2,
                     'leg_edge' => 2,
+                    'crotch_edge' => 3,
                     'notes' => [
                         'لبهٔ پا و کمر هر دو کش می‌خورند؛ بدون کش، مایو در آب می‌افتد.',
                     ],

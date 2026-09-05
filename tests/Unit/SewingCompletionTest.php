@@ -72,6 +72,35 @@ class SewingCompletionTest extends TestCase
         );
     }
 
+    public function test_bandeau_bikini_never_sews_the_top_to_the_bottom(): void
+    {
+        $pattern = $this->pattern('swim_bikini_bandeau');
+        $relations = SewingRelationBuilder::suggest($pattern);
+        $links = $this->links($relations);
+
+        $this->assertContains('bandeau-top → bandeau-top', $links);
+        $this->assertContains('bandeau-bottom-front → bandeau-bottom-back', $links);
+        $this->assertCount(3, $relations, 'تاپ دو پهلو و شورت یک درز پهلو و یک درز فاق دارد.');
+
+        foreach ($relations as $relation) {
+            $pieces = $relation['from']['piece'].'|'.$relation['to']['piece'];
+            $this->assertFalse(
+                str_contains($pieces, 'bandeau-top|bandeau-bottom')
+                || str_contains($pieces, 'bandeau-bottom') && str_ends_with($pieces, '|bandeau-top'),
+                "تاپ و شورت نباید مستقیم به هم دوخته شوند: {$pieces}",
+            );
+        }
+
+        $front = $pattern->pieces->firstWhere('code', 'bandeau-bottom-front');
+        $this->assertSame(['waist', 'side', 'hem', 'crotch', 'default'], $front->meta['edges']);
+        $this->assertSame([4], $front->meta['fold_edges']);
+
+        $crotch = collect($relations)->firstWhere('label', 'درز فاق شورت مایو');
+        $this->assertSame(3, $crotch['from']['edge']);
+        $this->assertSame(3, $crotch['to']['edge']);
+        $this->assertSame(1, collect($relations)->firstWhere('label', 'درز پهلوی شورت مایو')['from']['edge']);
+    }
+
     public function test_a_princess_bodice_gets_its_two_panel_seams(): void
     {
         $links = $this->links($this->complete('bodice_princess_armhole'));

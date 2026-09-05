@@ -20,7 +20,9 @@ use App\Services\Pattern\SeamAllowanceService;
 use App\Services\Pattern\SewingRelationBuilder;
 use App\Services\Pattern\StitchPlanService;
 use App\Services\Pattern\SvgRenderer;
+use App\Services\Simulation\ClothPreviewService;
 use App\Services\Simulation\DrapePayloadService;
+use App\Services\Simulation\ServerRenderService;
 use App\Support\Measurements;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -144,6 +146,7 @@ class PatternController extends Controller
         $pattern->load(['pieces', 'garmentType', 'template', 'measurementSet.customer']);
 
         $plan = $this->stitchPlan($pattern);
+        $serverRender = $this->serverRender($pattern);
 
         return view('patterns.show', [
             'pattern' => $pattern,
@@ -159,9 +162,47 @@ class PatternController extends Controller
             'sizes' => Measurements::sizes(),
             // شکلِ لباس روی همین اندازه‌ها؛ اگر ساختنش بگیرد، صفحه نباید بشکند
             'flats' => $this->garmentFlats($pattern),
-            'solid' => $this->garmentSolid($pattern, $plan),
+            'serverRender' => $serverRender,
+            'serverRenderStatusUrl' => route('patterns.render-status', $pattern),
             'stitchPlan' => $plan,
         ]);
+    }
+
+    /** وضعیت و خروجی رندر مستقل همین الگو، حتی اگر به پروژه‌ای وصل نباشد. */
+    public function renderStatus(Pattern $pattern): JsonResponse
+    {
+        $pattern->loadMissing(['pieces', 'garmentType']);
+
+        return response()->json($this->serverRender($pattern));
+    }
+
+    /**
+     * موتور سرور برای صفحهٔ الگو به Simulation وابسته نیست. پارچهٔ آخرین پروژه
+     * در اولویت است و برای الگوی مستقل، اولین پارچهٔ کارگاه استفاده می‌شود.
+     *
+     * @return array<string, mixed>
+     */
+    protected function serverRender(Pattern $pattern): array
+    {
+        try {
+            $fabric = $pattern->projects()
+                ->with('fabric')
+                ->latest('id')
+                ->first()?->fabric
+                ?? Fabric::query()->orderBy('id')->first();
+            $payload = app(ClothPreviewService::class)->payload(
+                $pattern,
+                $fabric,
+                Measurements::complete($pattern->measurements ?? []),
+                ['zones' => [], 'pose' => 'stand'],
+            );
+
+            return app(ServerRenderService::class)->ensurePattern($pattern, $payload);
+        } catch (Throwable $error) {
+            report($error);
+
+            return ['status' => 'failed'];
+        }
     }
 
     /**

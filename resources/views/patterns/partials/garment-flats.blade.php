@@ -49,11 +49,3 @@
         @endforeach
     @endif
 </x-card>
-
-{{-- و بعد همان لباس، روی مانکن --}}
-@if (($solid['ok'] ?? false))
-    <x-card title="روی مانکن" icon="user"
-        subtitle="همان لباس بالا، این بار دور بدنِ همین مشتری — با رنگ و جنس پارچه.">
-        @include('patterns.partials.garment-solid', ['solid' => $solid])
-    </x-card>
-@endif

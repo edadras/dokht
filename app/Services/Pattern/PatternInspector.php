@@ -31,7 +31,7 @@ use App\Support\Format;
 class PatternInspector
 {
     /** برچسب‌های مجاز لبه. */
-    public const EDGE_TAGS = ['neck', 'shoulder', 'armhole', 'side', 'hem', 'waist', 'default'];
+    public const EDGE_TAGS = ['neck', 'shoulder', 'armhole', 'side', 'hem', 'waist', 'crotch', 'default'];
 
     /** «روی لبه بودن» یک نقطه: سه میلی‌متر، همان پهنای خط مداد. */
     protected const ON_EDGE = 0.3;

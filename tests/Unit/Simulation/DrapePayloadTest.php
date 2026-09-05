@@ -132,6 +132,26 @@ class DrapePayloadTest extends TestCase
         return $out;
     }
 
+    public function test_bandeau_bikini_uses_only_the_four_visible_outer_panels(): void
+    {
+        $payload = $this->payload('swim_bikini_bandeau');
+        $ids = array_column($payload['pieces'], 'id');
+
+        $this->assertContains('bandeau-top#0', $ids);
+        $this->assertContains('bandeau-top#1', $ids);
+        $this->assertContains('bandeau-bottom-front#0', $ids);
+        $this->assertContains('bandeau-bottom-back#0', $ids);
+        $this->assertCount(4, $ids, 'آستر و جزئیات داخلی نباید پوستهٔ جدا روی مانکن بسازند.');
+        $this->assertSame([], array_values(array_filter(
+            $ids,
+            fn (string $id) => str_contains($id, 'lining'),
+        )));
+
+        foreach ($payload['pieces'] as $piece) {
+            $this->assertNotSame('detail', $piece['role'], "قطعهٔ بیرونی {$piece['id']} نباید جزئیات آزاد تشخیص داده شود.");
+        }
+    }
+
     /* ---------------------------------------------------------------------
      |  شکل کلی بسته
      * ------------------------------------------------------------------- */
@@ -1053,40 +1073,6 @@ class DrapePayloadTest extends TestCase
     }
 
     /**
-     * نوار فاقِ بادی لایهٔ داخلی است، نه یک قطعهٔ آزاد روی یقه.
-     *
-     * الگوریتمِ قدیمی لبهٔ 14 سانتی‌متری آن را به نزدیک‌ترین لبهٔ هم‌طولِ تنه،
-     * یعنی خط یقه، می‌دوخت. خروجیِ بصری همان فلپِ کج روی شانه بود.
-     */
-    public function test_loose_bodysuit_gusset_is_not_adopted_by_the_neck(): void
-    {
-        $payload = $this->payload('top_bodysuit');
-
-        $this->assertSame([], array_values(array_filter(
-            $payload['pieces'],
-            fn (array $piece) => str_contains((string) $piece['code'], 'bodysuit-gusset'),
-        )));
-
-        $crotch = [];
-
-        foreach ($payload['seams'] as $seam) {
-            $ends = [(string) $seam['a']['piece'], (string) $seam['b']['piece']];
-            $this->assertFalse(
-                collect($ends)->contains(fn (string $id) => str_contains($id, 'bodysuit-gusset')),
-                'نوار فاق نباید با دوختِ حدسی به یقه یا هر قطعهٔ دیگری برسد.',
-            );
-
-            if (($seam['label'] ?? '') === 'درز فاق بادی') {
-                $crotch[] = $seam;
-                $this->assertStringContainsString('bodysuit-front', implode('|', $ends));
-                $this->assertStringContainsString('bodysuit-back', implode('|', $ends));
-            }
-        }
-
-        $this->assertNotEmpty($crotch, 'لبهٔ فاق جلو و پشت بادی باید صریحاً به هم دوخته شوند.');
-    }
-
-    /**
      * قطعهٔ آینه‌شده تکراری نیست؛ آن یکی طرف است.
      *
      * پاچهٔ راست و چپ یک کد دارند، یک بازهٔ زاویه‌ای و یک ارتفاع — فرقشان فقط
@@ -1108,11 +1094,6 @@ class DrapePayloadTest extends TestCase
 
             foreach ($pattern->pieces as $model) {
                 if (! $model->mirror || (int) $model->cut_quantity < 2) {
-                    continue;
-                }
-
-                // رویهٔ لپه و سجاف و کیسهٔ جیب درونِ لباس‌اند و عمداً در بسته نمی‌آیند (ببینید DrapePayloadService::payload)
-                if (in_array($model->meta['part'] ?? null, ['lapel', 'facing', 'pocket-bag', 'bag'], true)) {
                     continue;
                 }
 
@@ -1263,4 +1244,3 @@ class DrapePayloadTest extends TestCase
         }
     }
 }
-

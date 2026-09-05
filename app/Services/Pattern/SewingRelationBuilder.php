@@ -16,7 +16,7 @@ use Illuminate\Support\Collection;
 class SewingRelationBuilder
 {
     /** برچسب‌هایی که لبه‌شان دوخته می‌شود. دم و لبهٔ آزاد در این فهرست نیستند. */
-    public const SEWABLE_TAGS = ['side', 'shoulder', 'armhole', 'neck', 'waist', 'strap', 'default'];
+    public const SEWABLE_TAGS = ['side', 'shoulder', 'armhole', 'neck', 'waist', 'crotch', 'strap', 'default'];
 
     /** آیا این الگو تنها یک قطعهٔ آستین دارد؟ ببینید complete() و pairScore(). */
     protected static bool $loneSleeve = false;
@@ -60,6 +60,55 @@ class SewingRelationBuilder
 
         $relations = [];
 
+        /*
+         * شورت مایو پاچهٔ شلوار نیست و تاپ بندو هم «جلوی» شورت نیست.
+         *
+         * پیش‌تر pick() تاپِ front_bodice را به‌عنوان جلو و قطعهٔ پشت شورت را
+         * به‌عنوان پشت انتخاب می‌کرد و پهلوی این دو را به هم می‌دوخت. خروجی
+         * واقعی همان نوار موربی بود که از سینه تا فاق کشیده می‌شد. قطعات مایو
+         * قرارداد صریح دارند: دو نیمهٔ تاپ از دو پهلو بسته می‌شوند و جلو/پشت
+         * شورت هم در پهلو و فاق به هم می‌رسند.
+         */
+        foreach ($tagged as $entry) {
+            $meta = $entry['piece']->meta ?? [];
+            $base = (string) ($meta['variant']['base'] ?? '');
+            $isBandeauTop = (string) $entry['piece']->code === 'bandeau-top'
+                || str_starts_with($base, 'swim_bikini_bandeau');
+
+            if (($entry['part'] ?? null) !== 'front_bodice'
+                || ! $isBandeauTop
+                || (int) ($entry['piece']->cut_quantity ?? 1) < 2) {
+                continue;
+            }
+
+            $sides = static::sideEdgesOf($entry);
+
+            if ($sides['left'] !== null && $sides['right'] !== null) {
+                $relations[] = static::relation(
+                    $entry,
+                    $sides['left'],
+                    $entry,
+                    $sides['right'],
+                    'بستن پهلوهای تاپ بندو',
+                );
+            }
+        }
+
+        $swimBottomFront = $tagged->first(
+            fn (array $entry) => ($entry['part'] ?? null) === 'swim_bottom_front',
+        );
+        $swimBottomBack = $tagged->first(
+            fn (array $entry) => ($entry['part'] ?? null) === 'swim_bottom_back',
+        );
+
+        if ($swimBottomFront && $swimBottomBack) {
+            $relations = array_merge(
+                $relations,
+                static::pairTag($swimBottomFront, $swimBottomBack, 'side', 'درز پهلوی شورت مایو'),
+                static::pairTag($swimBottomFront, $swimBottomBack, 'crotch', 'درز فاق شورت مایو'),
+            );
+        }
+
         $front = static::pick($tagged, ['front_bodice', 'front_leg', 'skirt_front'], 'front');
         $back = static::pick($tagged, ['back_bodice', 'back_leg', 'skirt_back'], 'back');
         $yoke = static::pick($tagged, ['yoke'], null);
@@ -69,7 +118,10 @@ class SewingRelationBuilder
             $relations = array_merge($relations, static::pairTag($front, $shoulderSource, 'shoulder', 'درز سرشانه'));
         }
 
-        if ($front && $back) {
+        $frontIsSwimBottom = str_starts_with((string) ($front['part'] ?? ''), 'swim_bottom_');
+        $backIsSwimBottom = str_starts_with((string) ($back['part'] ?? ''), 'swim_bottom_');
+
+        if ($front && $back && ! $frontIsSwimBottom && ! $backIsSwimBottom) {
             $label = ($front['part'] === 'front_leg') ? 'درز پهلو و داخل پا' : 'درز پهلو';
             $relations = array_merge($relations, static::pairTag($front, $back, 'side', $label));
 
@@ -1289,4 +1341,3 @@ class SewingRelationBuilder
         return null;
     }
 }
-

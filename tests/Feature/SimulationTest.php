@@ -144,8 +144,29 @@ class SimulationTest extends TestCase
         $this->get(route('simulations.show', $simulation))
             ->assertOk()
             ->assertSee('گزارش تست تناسب')
+            ->assertSee('خروجی واقعی این شبیه‌سازی')
+            ->assertSee('serverModelViewer()', false)
+            ->assertDontSee('garmentViewer(', false)
             ->assertSee('راه رفتن')
             ->assertSee('دور سینه');
+    }
+
+    public function test_project_simulation_step_uses_the_server_render_instead_of_browser_sewing(): void
+    {
+        $project = $this->project();
+        Simulation::factory()->create([
+            'workshop_id' => $this->workshop()->id,
+            'project_id' => $project->id,
+            'pattern_id' => $project->pattern_id,
+            'fabric_id' => $project->fabric_id,
+        ]);
+
+        $this->get(route('projects.step', [$project, 'simulation']))
+            ->assertOk()
+            ->assertSee('لباس دوخته‌شده روی مانکن')
+            ->assertSee('serverModelViewer()', false)
+            ->assertDontSee('garmentViewer(', false)
+            ->assertDontSee('شبیه‌سازی زنده');
     }
 
     public function test_a_stored_simulation_from_the_factory_renders(): void

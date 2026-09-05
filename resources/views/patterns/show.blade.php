@@ -28,6 +28,12 @@
 
     <div class="mt-6 grid gap-6 lg:grid-cols-3">
         <div class="space-y-6 lg:col-span-2">
+            @include('partials.server-render', [
+                'serverRender' => $serverRender,
+                'serverRenderStatusUrl' => $serverRenderStatusUrl,
+                'serverRenderTitle' => 'دوخت واقعی الگو روی مانکن',
+            ])
+
             @include('patterns.partials.garment-flats', ['flats' => $flats])
 
             @include('patterns.partials.stitch-plan', ['stitchPlan' => $stitchPlan])

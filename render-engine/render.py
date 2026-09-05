@@ -647,3 +647,4 @@ tmp = os.path.join(out, 'manifest.json.tmp')
 with open(tmp, 'w', encoding='utf-8') as stream:
     json.dump(manifest, stream, ensure_ascii=False)
 os.replace(tmp, os.path.join(out, 'manifest.json'))
+

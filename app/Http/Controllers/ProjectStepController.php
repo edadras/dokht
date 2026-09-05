@@ -12,6 +12,7 @@ use App\Models\Project;
 use App\Models\Simulation;
 use App\Services\Fit\FitAnalysisService;
 use App\Services\Simulation\ClothPreviewService;
+use App\Services\Simulation\ServerRenderService;
 use App\Support\Jalali;
 use App\Support\Measurements;
 use Illuminate\Http\Request;
@@ -255,13 +256,20 @@ class ProjectStepController extends Controller
     protected function simulationData(Project $project): array
     {
         $analysis = $this->analysis($project, $project->settings['pose'] ?? 'stand');
+        $simulation = $project->latestSimulation;
 
         return [
             'poses' => Simulation::POSES,
             'pose' => $project->settings['pose'] ?? 'stand',
             'analysis' => $analysis,
             'payload' => $this->preview($project, $analysis),
-            'simulation' => $project->latestSimulation,
+            'simulation' => $simulation,
+            'serverRender' => $simulation
+                ? app(ServerRenderService::class)->result($simulation)
+                : ['status' => 'none'],
+            'serverRenderStatusUrl' => $simulation
+                ? route('simulations.render-status', $simulation)
+                : null,
         ];
     }
 

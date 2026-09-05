@@ -1,5 +1,4 @@
 @php
-    use App\Models\Simulation;
     use App\Support\Jalali;
 @endphp
 
@@ -17,76 +16,13 @@
             </x-slot:action>
         </x-empty-state>
     @else
-        <div x-data="garmentViewer(@js(['payload' => $payload, 'pose' => $pose]))" class="grid gap-5 lg:grid-cols-3">
-            {{-- صحنه‌ی سه‌بعدی --}}
+        <div x-data="{ pose: @js($pose) }" class="grid gap-5 lg:grid-cols-3">
             <div class="lg:col-span-2">
-                <div class="overflow-hidden rounded-2xl border border-stone-200 bg-stone-900 shadow-sm">
-                    <div x-ref="stage" class="relative aspect-4/5 w-full sm:aspect-video">
-                        <div x-cloak x-show="! supported"
-                            class="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center text-stone-200">
-                            <x-icon name="alert" class="h-8 w-8" />
-                            <p class="text-sm leading-6">
-                                مرورگر شما نمای سه‌بعدی را پشتیبانی نمی‌کند.
-                                نگران نباشید؛ همه‌ی نتیجه‌های تست تناسب در مرحله‌ی بعد به شکل جدول و رنگ دیده می‌شود.
-                            </p>
-                        </div>
-                    </div>
-
-                    {{-- ابزار دید --}}
-                    <div class="flex flex-wrap items-center gap-2 border-t border-stone-800 bg-stone-900 px-4 py-3">
-                        <button type="button" @click="setView('front')"
-                            class="rounded-lg bg-stone-800 px-3 py-1.5 text-xs font-medium text-stone-200 hover:bg-stone-700">
-                            جلو
-                        </button>
-                        <button type="button" @click="setView('side')"
-                            class="rounded-lg bg-stone-800 px-3 py-1.5 text-xs font-medium text-stone-200 hover:bg-stone-700">
-                            پهلو
-                        </button>
-                        <button type="button" @click="setView('back')"
-                            class="rounded-lg bg-stone-800 px-3 py-1.5 text-xs font-medium text-stone-200 hover:bg-stone-700">
-                            پشت
-                        </button>
-
-                        <button type="button" @click="toggleRotate()"
-                            class="rounded-lg px-3 py-1.5 text-xs font-medium"
-                            x-bind:class="autoRotate ? 'bg-brand-600 text-white' : 'bg-stone-800 text-stone-200 hover:bg-stone-700'">
-                            چرخش خودکار
-                        </button>
-
-                        <button type="button" @click="toggleZones()"
-                            class="rounded-lg px-3 py-1.5 text-xs font-medium"
-                            x-bind:class="showZones ? 'bg-brand-600 text-white' : 'bg-stone-800 text-stone-200 hover:bg-stone-700'">
-                            نقشه‌ی فشار
-                        </button>
-
-                        <button type="button" @click="toggleLive()"
-                            class="rounded-lg px-3 py-1.5 text-xs font-medium"
-                            x-bind:class="liveSim ? 'bg-brand-600 text-white' : 'bg-stone-800 text-stone-200 hover:bg-stone-700'">
-                            شبیه‌سازی زنده
-                        </button>
-
-                        <span class="ms-auto text-[11px] text-stone-400">
-                            با کشیدن ماوس بچرخانید، با غلتک بزرگ و کوچک کنید.
-                        </span>
-                    </div>
-                </div>
-
-                {{-- توضیح یک‌خطی: کاربر باید بداند چه چیزی را دارد می‌بیند --}}
-                <p class="mt-3 text-xs leading-6 text-stone-500">
-                    پارچه همین‌جا زنده حساب می‌شود: زیر وزن خودش می‌افتد، به بدن می‌خورد و با هر تغییر حالت
-                    چند لحظه طول می‌کشد تا دوباره بنشیند. پارچه‌ی لخت‌تر بیشتر چین می‌خورد و به بدن می‌چسبد،
-                    پارچه‌ی سفت‌تر فرم خودش را نگه می‌دارد.
-                </p>
-
-                {{-- راهنمای رنگ --}}
-                <div class="mt-4 flex flex-wrap gap-2">
-                    @foreach (Simulation::LEVELS as $key => $level)
-                        <span class="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1 text-xs">
-                            <span class="h-2.5 w-2.5 rounded-full" style="background: {{ $level['color'] }}"></span>
-                            {{ $level['label'] }}
-                        </span>
-                    @endforeach
-                </div>
+                @include('partials.server-render', [
+                    'serverRender' => $serverRender,
+                    'serverRenderStatusUrl' => $serverRenderStatusUrl,
+                    'serverRenderTitle' => 'لباس دوخته‌شده روی مانکن',
+                ])
             </div>
 
             <div class="space-y-5">
@@ -95,7 +31,7 @@
                     subtitle="هر حالت نیاز نواحی مختلف را تغییر می‌دهد.">
                     <div class="grid grid-cols-2 gap-2">
                         @foreach ($poses as $key => $label)
-                            <button type="button" @click="setPose(@js($key))"
+                            <button type="button" @click="pose = @js($key)"
                                 class="rounded-xl border-2 px-3 py-2 text-sm font-medium transition"
                                 x-bind:class="pose === @js($key)
                                     ? 'border-brand-500 bg-brand-50 text-brand-700'

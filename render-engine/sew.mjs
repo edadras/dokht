@@ -201,4 +201,3 @@ writeFileSync(output, JSON.stringify({
     buttons,
 }));
 
-
